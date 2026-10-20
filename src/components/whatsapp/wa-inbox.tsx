@@ -292,6 +292,8 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   const [qrOpen, setQrOpen] = useState(false);
   const [qrQuery, setQrQuery] = useState("");
   const [manageQr, setManageQr] = useState(false);
+  /** The add / edit contact form, when open. */
+  const [editing, setEditing] = useState<ContactDraft | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [, tick] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
@@ -406,15 +408,42 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
       {/* Header */}
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         <Button size="sm" variant="ghost" className="h-7 px-2 md:hidden" onClick={onBack}>←</Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate font-semibold">{contact?.name ?? "…"}</h3>
-            {contact && <ConsentChip c={contact} />}
-          </div>
-          <p className="truncate text-xs text-muted-foreground">
-            {[contact?.phone_e164, contact?.yacht?.vessel_name, showLine ? `via ${line.label}` : null].filter(Boolean).join(" · ")}
-          </p>
-        </div>
+        {/* Right-click the name or number to save / rename the contact or copy the number. */}
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="truncate font-semibold">{contact?.name ?? "…"}</h3>
+                {contact && canEdit && (
+                  <button type="button" onClick={() => setEditing(draftFor(contact))}
+                    title={isUnsaved(contact) ? "Add to contacts" : "Edit contact"}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+                    {isUnsaved(contact) ? <UserPlus className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+                {contact && <ConsentChip c={contact} />}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {[contact?.phone_e164, contact?.yacht?.vessel_name, showLine ? `via ${line.label}` : null].filter(Boolean).join(" · ")}
+              </p>
+            </div>
+          </ContextMenuTrigger>
+          {contact && (
+            <ContextMenuContent>
+              {canEdit && (
+                <ContextMenuItem onSelect={() => setEditing(draftFor(contact))}>
+                  {isUnsaved(contact) ? <UserPlus className="mr-2 h-4 w-4" /> : <Pencil className="mr-2 h-4 w-4" />}
+                  {isUnsaved(contact) ? "Add to contacts…" : "Edit contact…"}
+                </ContextMenuItem>
+              )}
+              {contact.phone_e164 && (
+                <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(contact.phone_e164!).then(() => toast.success("Number copied"))}>
+                  <Copy className="mr-2 h-4 w-4" /> Copy number
+                </ContextMenuItem>
+              )}
+            </ContextMenuContent>
+          )}
+        </ContextMenu>
         {conv && canEdit && (
           <div className="flex items-center gap-1.5">
             <select value={conv.assigned_to ?? ""} onChange={(e) => void setConv({ assigned_to: e.target.value || null })}
@@ -438,6 +467,17 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
           <Chip><UserRound className="h-3 w-3" />{staffName(conv.assigned_to)}</Chip>
         )}
       </header>
+
+      {editing && (
+        <ContactDialog draft={editing} onClose={() => setEditing(null)}
+          onSave={async (d, open) => {
+            const id = await saveContact(line.id, d, open);
+            if (!id) return;
+            setEditing(null);
+            if (id !== contactId && open) onOpen(id);
+            else { void load(); onChanged(); }
+          }} />
+      )}
 
       {/* Messages */}
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-muted/20 px-4 py-4">
@@ -479,7 +519,11 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
                   {m.dir === "out" && m.outMedia && m.outboundId && (
                     <MediaLink src={`media?outbound=${m.outboundId}`} type={m.outMedia.type} mime={m.outMedia.mime} name={m.outMedia.name} />
                   )}
-                  {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                  {m.shared?.length ? (
+                    <SharedContacts cards={m.shared} canEdit={canEdit}
+                      onSave={(c) => setEditing(c)}
+                      onMessage={(c) => void saveContact(line.id, c, true).then((id) => id && onOpen(id))} />
+                  ) : m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p>
                     : !m.hasMedia && !m.outMedia && <p className="italic opacity-70">[{m.type ?? "message"}]</p>}
                   {m.action && (
                     <p className="mt-1 text-[11px] font-medium text-red-500">
@@ -694,9 +738,14 @@ function StartDialog({ lines, initialLineId, onClose, onPick }: {
   const [rows, setRows] = useState<WaContact[] | null>(null);
   const [q, setQ] = useState("");
   const [lineId, setLineId] = useState(initialLineId);
+  /** The "Add a new number" form, when open. */
+  const [adding, setAdding] = useState(false);
   useEffect(() => {
-    void db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("consent_status", "opted_in")
-      .not("phone_e164", "is", null).order("name").then(({ data }: any) => setRows(data ?? []));
+    // Everyone this person can see (line-only staff: the contacts on their number). Opted-in first.
+    void db().from("wa_contacts").select("*, yacht:yachts(vessel_name)")
+      .not("phone_e164", "is", null).neq("consent_status", "opted_out").order("name").limit(2000)
+      .then(({ data }: any) => setRows(((data ?? []) as WaContact[])
+        .sort((a, b) => Number(b.consent_status === "opted_in") - Number(a.consent_status === "opted_in"))));
   }, []);
   const s = q.trim().toLowerCase();
   const list = (rows ?? []).filter((r) => !s || [r.name, r.phone_e164, r.yacht?.vessel_name].some((v) => (v ?? "").toLowerCase().includes(s)));
@@ -706,7 +755,9 @@ function StartDialog({ lines, initialLineId, onClose, onPick }: {
       <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Message a contact</DialogTitle>
-          <DialogDescription>Only contacts who have opted in can be messaged first — and the first message must be an approved template.</DialogDescription>
+          <DialogDescription>
+            Anyone who messaged in the last 24 hours gets a normal reply. Otherwise the first message must be an approved template, sent to someone who has opted in.
+          </DialogDescription>
         </DialogHeader>
         {lines.length > 1 && (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -717,10 +768,15 @@ function StartDialog({ lines, initialLineId, onClose, onPick }: {
             </select>
           </label>
         )}
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search opted-in contacts" autoFocus />
+        <div className="flex gap-2">
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search contacts" autoFocus />
+          <Button variant="outline" className="shrink-0 gap-1" onClick={() => setAdding(true)} disabled={!lineId}>
+            <UserPlus className="h-4 w-4" /> New number
+          </Button>
+        </div>
         <div className="max-h-80 overflow-y-auto">
           {rows === null ? <Loader2 className="mx-auto my-6 h-5 w-5 animate-spin text-muted-foreground" />
-            : list.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No opted-in contacts{s ? " match" : " yet"}.</p>
+            : list.length === 0 ? <p className="py-6 text-center text-xs text-muted-foreground">No contacts{s ? " match" : " yet"} — use New number to add one.</p>
             : list.map((r) => (
               <button key={r.id} onClick={() => lineId && onPick(r.id, lineId)} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted">
                 <span className="min-w-0">
@@ -731,6 +787,144 @@ function StartDialog({ lines, initialLineId, onClose, onPick }: {
               </button>
             ))}
         </div>
+      </DialogContent>
+      {adding && (
+        <ContactDialog draft={{ phone: /^[+ds()-]{7,}$/.test(q.trim()) ? q.trim() : "", name: "", email: "", notes: "" }}
+          onClose={() => setAdding(false)}
+          onSave={async (d) => {
+            const id = await saveContact(lineId, d, true);
+            if (id) { setAdding(false); onPick(id, lineId); }
+          }} allowOpen={false} />
+      )}
+    </Dialog>
+  );
+}
+
+// ─── Saving contacts ─────────────────────────────────────────────────────────
+
+/** The add / edit contact form: an existing contact (contactId) or a number to save. */
+type ContactDraft = { contactId?: string; phone: string; name: string; email: string; notes: string };
+
+/** The note Polaris writes on a contact it made when an unknown number messaged in. */
+const AUTO_NOTE = /^Created when they first messaged /;
+
+/** Made automatically (just the number, or their WhatsApp profile name) and never saved by a person. */
+function isUnsaved(c: Pick<WaContact, "name" | "phone_e164" | "notes">) {
+  return !c.name || c.name === c.phone_e164 || /^[+ds()-]+$/.test(c.name) || AUTO_NOTE.test(c.notes ?? "");
+}
+
+function draftFor(c: WaContact): ContactDraft {
+  return {
+    contactId: c.id, phone: c.phone_e164 ?? "",
+    name: /^[+ds()-]+$/.test(c.name ?? "") ? "" : c.name ?? "",
+    email: c.email ?? "", notes: AUTO_NOTE.test(c.notes ?? "") ? "" : c.notes ?? "",
+  };
+}
+
+function draftFromCard(card: SharedContact): ContactDraft {
+  const p = card.phones?.find((x) => x.wa_id) ?? card.phones?.[0];
+  return {
+    phone: p?.wa_id ? `+${p.wa_id}` : p?.phone ?? "",
+    name: card.name?.formatted_name ?? [card.name?.first_name, card.name?.last_name].filter(Boolean).join(" "),
+    email: "", notes: "",
+  };
+}
+
+/** Saves through the server (line-only staff can't write contacts directly). Returns the contact's id. */
+async function saveContact(lineId: string, d: ContactDraft, open: boolean): Promise<string | null> {
+  if (!d.name.trim()) { toast.error("Give the contact a name."); return null; }
+  try {
+    const r = await waApi<{ contactId: string; existed?: boolean }>("contacts/save", d.contactId
+      ? { lineId, contactId: d.contactId, name: d.name, email: d.email, notes: d.notes }
+      : { lineId, phone: d.phone, name: d.name, open });
+    toast.success(d.contactId ? "Contact saved" : r.existed ? `${d.name} was already in contacts — opened` : `${d.name} added to contacts`);
+    return r.contactId;
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : "Couldn't save the contact");
+    return null;
+  }
+}
+
+/** Contact cards a client shared: who, their number, and Save / Message. */
+function SharedContacts({ cards, canEdit, onSave, onMessage }: {
+  cards: SharedContact[]; canEdit: boolean; onSave: (d: ContactDraft) => void; onMessage: (d: ContactDraft) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {cards.map((card, i) => {
+        const d = draftFromCard(card);
+        return (
+          <div key={i} className="min-w-[220px] rounded-lg border border-border bg-background/60 p-2">
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted"><ContactIcon className="h-4 w-4 text-muted-foreground" /></span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{d.name || "Contact"}</p>
+                <p className="truncate text-xs text-muted-foreground">{(card.phones ?? []).map((p) => p.phone ?? p.wa_id).filter(Boolean).join(", ") || "No number"}</p>
+              </div>
+            </div>
+            {canEdit && d.phone && (
+              <div className="mt-2 flex gap-1.5">
+                <Button size="sm" variant="outline" className="h-7 flex-1 gap-1 text-xs" onClick={() => onSave(d)}>
+                  <UserPlus className="h-3.5 w-3.5" /> Save
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 flex-1 gap-1 text-xs" onClick={() => onMessage(d)}>
+                  <MessageSquarePlus className="h-3.5 w-3.5" /> Message
+                </Button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Add someone to contacts, or edit a contact's name, email and notes. */
+function ContactDialog({ draft, onClose, onSave, allowOpen = true }: {
+  draft: ContactDraft; onClose: () => void; onSave: (d: ContactDraft, open: boolean) => Promise<void>; allowOpen?: boolean;
+}) {
+  const [d, setD] = useState(draft);
+  const [busy, setBusy] = useState(false);
+  const existing = !!draft.contactId;
+  const go = async (open: boolean) => { setBusy(true); try { await onSave(d, open); } finally { setBusy(false); } };
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{existing ? "Edit contact" : "Add to contacts"}</DialogTitle>
+          <DialogDescription>
+            Saving someone doesn't sign them up for messages. To message them first you still need an approved template and their agreement — or they message you.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void go(false); }}>
+          <label className="block space-y-1 text-xs text-muted-foreground">
+            Name
+            <Input value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} autoFocus placeholder="e.g. Gerry Julia" />
+          </label>
+          <label className="block space-y-1 text-xs text-muted-foreground">
+            WhatsApp number
+            <Input value={d.phone} disabled={existing} onChange={(e) => setD({ ...d, phone: e.target.value })} placeholder="+971 50 123 4567" />
+          </label>
+          {existing && (
+            <>
+              <label className="block space-y-1 text-xs text-muted-foreground">
+                Email <span className="opacity-70">(optional)</span>
+                <Input type="email" value={d.email} onChange={(e) => setD({ ...d, email: e.target.value })} />
+              </label>
+              <label className="block space-y-1 text-xs text-muted-foreground">
+                Notes <span className="opacity-70">(optional)</span>
+                <Textarea rows={3} value={d.notes} onChange={(e) => setD({ ...d, notes: e.target.value })} placeholder="e.g. Intermediate + Advanced course, certificate pending" />
+              </label>
+            </>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+            {!existing && allowOpen && (
+              <Button type="button" variant="outline" disabled={busy} onClick={() => void go(true)}>Save &amp; message</Button>
+            )}
+            <Button type="submit" disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}</Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

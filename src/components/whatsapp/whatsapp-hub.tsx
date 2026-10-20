@@ -76,7 +76,8 @@ export function WhatsAppHub() {
           <h1 className="text-2xl font-semibold">WhatsApp</h1>
           <p className="text-sm text-muted-foreground">
             Message clients who've opted in, and reply to them — every message, receipt and consent recorded.
-            {!canEdit && " You have view-only access."}
+            {/* Someone with "Read & send" on a number (Setup → Numbers) can reply there without the Communications permission. */}
+            {!canEdit && !lines.some((l) => l.level === "send") && " You have view-only access."}
           </p>
         </div>
         {/* The inbox on its own, installable like WhatsApp Desktop (see chats-app.tsx). */}
