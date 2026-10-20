@@ -19,6 +19,7 @@ import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { sendGraphEmail } from "@/lib/graph-mail.server";
 import { buildBunkerRequestPdf, bunkerRequestFileName, type BunkerRequestRecord } from "@/lib/orbit2/bunker-request-pdf.server";
 import { fmtDMY } from "@/lib/format-date";
+import { BUNKER_CC } from "@/components/orbit2/orbit2-constants";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -49,8 +50,6 @@ function scheduleLine(date: string | null, time: string | null): string {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** Copied on every bunkering request email (Bunkering Request spec, section 1.4). */
-const BUNKER_CC = ["l.crasta@jlsyachts.com", "r.saycon@jlsyachts.com", "k.stanley@jlsyachts.com"];
 
 function toBase64(bytes: Uint8Array): string {
   let bin = "";
@@ -96,10 +95,19 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
   const access = await requireAccess(request, { module: "orbit", level: "edit" });
   if (!access.ok) return access.response;
 
-  let body: { project_id?: string };
+  let body: { project_id?: string; cc?: unknown };
   try { body = await request.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
   const projectId = body.project_id;
   if (!projectId) return json({ error: "project_id is required" }, 400);
+
+  // Extra people to copy, picked by the sender for this one email.
+  const extraCc = Array.isArray(body.cc)
+    ? [...new Set(body.cc.map((a) => String(a ?? "").trim().toLowerCase()).filter(Boolean))]
+    : [];
+  const badCc = extraCc.filter((a) => !EMAIL.test(a));
+  if (badCc.length) return json({ error: `Not a valid CC address: ${badCc.join(", ")}` }, 400);
+  if (extraCc.length > 20) return json({ error: "Up to 20 CC addresses per email." }, 400);
+  let ccSent: string[] = [];
 
   const sb = admin();
   const { data: project, error } = await sb
@@ -136,9 +144,10 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
       const pdf = await buildBunkerRequestPdf(project as BunkerRequestRecord);
       const { subject, html } = bunkerEmail(project as BunkerRequestRecord, senderName);
       const self = access.claims.email.toLowerCase();
+      const cc = [...new Set([...BUNKER_CC, ...extraCc])].filter((a) => a !== self && a !== to.toLowerCase());
       await sendGraphEmail({
         to: [to],
-        cc: BUNKER_CC.filter((a) => a !== self),
+        cc,
         // Sent from the platform mailbox; the client's reply goes to whoever pressed Send.
         replyTo: self ? [self] : undefined,
         subject,
@@ -146,6 +155,7 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
         attachments: [{ filename: bunkerRequestFileName(project), contentBase64: toBase64(pdf), contentType: "application/pdf" }],
       });
       emailSent = true;
+      ccSent = cc;
     } catch (e) {
       problems.push(`Email: ${e instanceof Error ? e.message : "send failed"}`);
     }
@@ -227,6 +237,7 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
     metadata: {
       action: "client_notified",
       task_id: project.task_id,
+      cc: ccSent.length ? ccSent : null,
       email: emailSent ? to : null,
       whatsapp: whatsappSent ? wa : null,
       team,

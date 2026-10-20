@@ -132,6 +132,8 @@ export const DELIVERY_PORTS = [
 export const CAMLOCK_TYPES = ["Adaptor (Male)", "Coupler (Female)"] as const;
 export const MANIFOLD_POSITIONS = ["FWD", "MID", "AFT"] as const;
 export const FUEL_GRADES = ["HFO", "MDO", "MGO", "LSMGO", "ULSMGO"] as const;
+/** Copied on every bunkering request email (spec section 1.4); the sender can add more per email. */
+export const BUNKER_CC: readonly string[] = ["l.crasta@jlsyachts.com", "r.saycon@jlsyachts.com", "k.stanley@jlsyachts.com"];
 
 // ── Managed Boats ───────────────────────────────────────────────────────────
 export const BOAT_TASK_STATUSES = ["Pending", "Ongoing", "Complete"] as const;

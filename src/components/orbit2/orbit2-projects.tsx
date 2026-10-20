@@ -25,7 +25,7 @@ import { useAuth } from "@/lib/auth";
 import { SignedImage } from "@/components/ui/signed-file";
 import {
   ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, ADMIN_ONLY_STATUSES, isComplete,
-  statusColor, unitLabel, type Orbit2RecordType,
+  statusColor, unitLabel, BUNKER_CC, type Orbit2RecordType,
 } from "./orbit2-constants";
 import {
   type Orbit2Project, type Orbit2Note, type Orbit2File,
@@ -40,6 +40,7 @@ import {
 import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, stamp } from "./orbit2-fields";
 
 const sb = supabase as any;
+const CC_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** A record being edited — everything optional until Submit validates it. */
 type Draft = Partial<Orbit2Project> & { assigned_team: string[] };
@@ -843,6 +844,21 @@ function DetailPanel({
 function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () => Promise<void> | void }) {
   const [busy, setBusy] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  // Extra CCs for this one email, on top of the bunkering team (BUNKER_CC).
+  const [cc, setCc] = useState<string[]>([]);
+  const [ccDraft, setCcDraft] = useState("");
+  useEffect(() => { setCc([]); setCcDraft(""); }, [project.id]);
+
+  /** Turns whatever is typed (one address or several, comma/space separated) into CC chips. */
+  function addCc(raw: string): boolean {
+    const parts = raw.split(/[\s,;]+/).map((p) => p.trim().toLowerCase()).filter(Boolean);
+    if (!parts.length) return true;
+    const bad = parts.filter((p) => !CC_EMAIL.test(p));
+    if (bad.length) { toast.error(`Not an email address: ${bad.join(", ")}`); return false; }
+    setCc((list) => [...new Set([...list, ...parts])].filter((a) => !BUNKER_CC.includes(a)));
+    setCcDraft("");
+    return true;
+  }
   // A bunkering request is acknowledged on arrival, with the request form
   // attached — nobody needs to be assigned yet, but it does need an email.
   const bunkering = project.record_type === "bunkering";
@@ -876,6 +892,7 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
   }
 
   async function send() {
+    if (bunkering && ccDraft.trim() && !addCc(ccDraft)) return;
     setBusy(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -885,7 +902,7 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? ""}`,
         },
-        body: JSON.stringify({ project_id: project.id }),
+        body: JSON.stringify({ project_id: project.id, ...(bunkering ? { cc } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? `Send failed (${res.status})`);
@@ -935,6 +952,44 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
           </button>
         </div>
       </div>
+
+      {bunkering && (
+        <div className="mt-3 border-t border-border/50 pt-3">
+          <div className="mb-1 text-[14px] font-medium text-muted-foreground">CC</div>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5">
+            {BUNKER_CC.map((a) => (
+              <span key={a} title="Always copied on bunkering requests"
+                className="rounded-full bg-muted px-2.5 py-0.5 text-[14px] text-muted-foreground">{a}</span>
+            ))}
+            {cc.map((a) => (
+              <span key={a} className="flex items-center gap-1 rounded-full bg-primary/15 py-0.5 pl-2.5 pr-1 text-[14px] text-primary">
+                {a}
+                <button type="button" onClick={() => setCc((list) => list.filter((x) => x !== a))}
+                  title={`Remove ${a}`} className="rounded-full p-0.5 hover:bg-primary/20">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            <input
+              className="min-w-[12rem] flex-1 bg-transparent px-1 py-0.5 text-base outline-none"
+              type="email" value={ccDraft} placeholder="Add someone to copy — type an email, press Enter"
+              onChange={(e) => setCcDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "," || e.key === ";") { e.preventDefault(); addCc(ccDraft); }
+                if (e.key === "Backspace" && !ccDraft && cc.length) setCc((list) => list.slice(0, -1));
+              }}
+              onBlur={() => { if (ccDraft.trim()) addCc(ccDraft); }}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                if (/[\s,;]/.test(text.trim())) { e.preventDefault(); addCc(`${ccDraft} ${text}`); }
+              }}
+            />
+          </div>
+          <p className="mt-1 text-[14px] text-muted-foreground/80">
+            The grey addresses are always copied. Anyone you add is copied on this email only. Your own address is left off; replies come to you.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
