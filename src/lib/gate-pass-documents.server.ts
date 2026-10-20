@@ -443,7 +443,7 @@ async function pdfText(bytes: ArrayBuffer): Promise<string> {
   const latin1 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode(...b.subarray(i, i + 8192)); return s }
   const src = latin1(raw)
   const inflate = async (b: Uint8Array) =>
-    new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer())
+    new Uint8Array(await new Response(new Blob([b.slice()]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer())
   const unescape = (s: string) => s.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_, c: string) =>
     /^[0-7]+$/.test(c) ? String.fromCharCode(parseInt(c, 8)) : ({ n: '\n', r: '', t: ' ', b: '', f: '' } as Record<string, string>)[c] ?? c)
   const hex = (h: string) => {

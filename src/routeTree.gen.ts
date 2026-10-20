@@ -58,6 +58,7 @@ import { Route as AppItTicketsRouteImport } from './routes/_app.it-tickets'
 import { Route as AppItSolutionsRouteImport } from './routes/_app.it-solutions'
 import { Route as AppInternalServicesRouteImport } from './routes/_app.internal-services'
 import { Route as AppIntegrationsRouteImport } from './routes/_app.integrations'
+import { Route as AppHowToRouteImport } from './routes/_app.how-to'
 import { Route as AppGuidesRouteImport } from './routes/_app.guides'
 import { Route as AppFormsRouteImport } from './routes/_app.forms'
 import { Route as AppFleetTrackingRouteImport } from './routes/_app.fleet-tracking'
@@ -93,6 +94,7 @@ import { Route as AppSeaportIndexRouteImport } from './routes/_app.seaport.index
 import { Route as AppPackagesIndexRouteImport } from './routes/_app.packages.index'
 import { Route as AppOrbitIndexRouteImport } from './routes/_app.orbit.index'
 import { Route as AppItTicketsIndexRouteImport } from './routes/_app.it-tickets.index'
+import { Route as AppHowToIndexRouteImport } from './routes/_app.how-to.index'
 import { Route as AppGuidesIndexRouteImport } from './routes/_app.guides.index'
 import { Route as AppEsignIndexRouteImport } from './routes/_app.esign.index'
 import { Route as AppCrewPlacementIndexRouteImport } from './routes/_app.crew-placement.index'
@@ -131,6 +133,7 @@ import { Route as AppOrbitBoatsRouteImport } from './routes/_app.orbit.boats'
 import { Route as AppOrbitApprovalsRouteImport } from './routes/_app.orbit.approvals'
 import { Route as AppOrbitProjectIdRouteImport } from './routes/_app.orbit.$projectId'
 import { Route as AppItTicketsTicketIdRouteImport } from './routes/_app.it-tickets.$ticketId'
+import { Route as AppHowToGuideIdRouteImport } from './routes/_app.how-to.$guideId'
 import { Route as AppGuidesDepartmentRouteImport } from './routes/_app.guides.$department'
 import { Route as AppEsignDocumentIdRouteImport } from './routes/_app.esign.$documentId'
 import { Route as AppCrewPlacementVacanciesRouteImport } from './routes/_app.crew-placement.vacancies'
@@ -422,6 +425,11 @@ const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AppRoute,
 } as any)
+const AppHowToRoute = AppHowToRouteImport.update({
+  id: '/how-to',
+  path: '/how-to',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppGuidesRoute = AppGuidesRouteImport.update({
   id: '/guides',
   path: '/guides',
@@ -596,6 +604,11 @@ const AppItTicketsIndexRoute = AppItTicketsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppItTicketsRoute,
+} as any)
+const AppHowToIndexRoute = AppHowToIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppHowToRoute,
 } as any)
 const AppGuidesIndexRoute = AppGuidesIndexRouteImport.update({
   id: '/',
@@ -790,6 +803,11 @@ const AppItTicketsTicketIdRoute = AppItTicketsTicketIdRouteImport.update({
   id: '/$ticketId',
   path: '/$ticketId',
   getParentRoute: () => AppItTicketsRoute,
+} as any)
+const AppHowToGuideIdRoute = AppHowToGuideIdRouteImport.update({
+  id: '/$guideId',
+  path: '/$guideId',
+  getParentRoute: () => AppHowToRoute,
 } as any)
 const AppGuidesDepartmentRoute = AppGuidesDepartmentRouteImport.update({
   id: '/$department',
@@ -1068,6 +1086,7 @@ export interface FileRoutesByFullPath {
   '/fleet-tracking': typeof AppFleetTrackingRoute
   '/forms': typeof AppFormsRoute
   '/guides': typeof AppGuidesRouteWithChildren
+  '/how-to': typeof AppHowToRouteWithChildren
   '/integrations': typeof AppIntegrationsRoute
   '/internal-services': typeof AppInternalServicesRoute
   '/it-solutions': typeof AppItSolutionsRoute
@@ -1128,6 +1147,7 @@ export interface FileRoutesByFullPath {
   '/crew-placement/vacancies': typeof AppCrewPlacementVacanciesRoute
   '/esign/$documentId': typeof AppEsignDocumentIdRoute
   '/guides/$department': typeof AppGuidesDepartmentRouteWithChildren
+  '/how-to/$guideId': typeof AppHowToGuideIdRoute
   '/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/orbit/approvals': typeof AppOrbitApprovalsRoute
@@ -1166,6 +1186,7 @@ export interface FileRoutesByFullPath {
   '/crew-placement/': typeof AppCrewPlacementIndexRoute
   '/esign/': typeof AppEsignIndexRoute
   '/guides/': typeof AppGuidesIndexRoute
+  '/how-to/': typeof AppHowToIndexRoute
   '/it-tickets/': typeof AppItTicketsIndexRoute
   '/orbit/': typeof AppOrbitIndexRoute
   '/packages/': typeof AppPackagesIndexRoute
@@ -1280,6 +1301,7 @@ export interface FileRoutesByTo {
   '/crew-immigration/sign-on-off': typeof AppCrewImmigrationSignOnOffRoute
   '/crew-placement/vacancies': typeof AppCrewPlacementVacanciesRoute
   '/esign/$documentId': typeof AppEsignDocumentIdRoute
+  '/how-to/$guideId': typeof AppHowToGuideIdRoute
   '/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/orbit/approvals': typeof AppOrbitApprovalsRoute
@@ -1317,6 +1339,7 @@ export interface FileRoutesByTo {
   '/crew-placement': typeof AppCrewPlacementIndexRoute
   '/esign': typeof AppEsignIndexRoute
   '/guides': typeof AppGuidesIndexRoute
+  '/how-to': typeof AppHowToIndexRoute
   '/it-tickets': typeof AppItTicketsIndexRoute
   '/orbit': typeof AppOrbitIndexRoute
   '/packages': typeof AppPackagesIndexRoute
@@ -1387,6 +1410,7 @@ export interface FileRoutesById {
   '/_app/fleet-tracking': typeof AppFleetTrackingRoute
   '/_app/forms': typeof AppFormsRoute
   '/_app/guides': typeof AppGuidesRouteWithChildren
+  '/_app/how-to': typeof AppHowToRouteWithChildren
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/internal-services': typeof AppInternalServicesRoute
   '/_app/it-solutions': typeof AppItSolutionsRoute
@@ -1447,6 +1471,7 @@ export interface FileRoutesById {
   '/_app/crew-placement/vacancies': typeof AppCrewPlacementVacanciesRoute
   '/_app/esign/$documentId': typeof AppEsignDocumentIdRoute
   '/_app/guides/$department': typeof AppGuidesDepartmentRouteWithChildren
+  '/_app/how-to/$guideId': typeof AppHowToGuideIdRoute
   '/_app/it-tickets/$ticketId': typeof AppItTicketsTicketIdRoute
   '/_app/orbit/$projectId': typeof AppOrbitProjectIdRoute
   '/_app/orbit/approvals': typeof AppOrbitApprovalsRoute
@@ -1485,6 +1510,7 @@ export interface FileRoutesById {
   '/_app/crew-placement/': typeof AppCrewPlacementIndexRoute
   '/_app/esign/': typeof AppEsignIndexRoute
   '/_app/guides/': typeof AppGuidesIndexRoute
+  '/_app/how-to/': typeof AppHowToIndexRoute
   '/_app/it-tickets/': typeof AppItTicketsIndexRoute
   '/_app/orbit/': typeof AppOrbitIndexRoute
   '/_app/packages/': typeof AppPackagesIndexRoute
@@ -1555,6 +1581,7 @@ export interface FileRouteTypes {
     | '/fleet-tracking'
     | '/forms'
     | '/guides'
+    | '/how-to'
     | '/integrations'
     | '/internal-services'
     | '/it-solutions'
@@ -1615,6 +1642,7 @@ export interface FileRouteTypes {
     | '/crew-placement/vacancies'
     | '/esign/$documentId'
     | '/guides/$department'
+    | '/how-to/$guideId'
     | '/it-tickets/$ticketId'
     | '/orbit/$projectId'
     | '/orbit/approvals'
@@ -1653,6 +1681,7 @@ export interface FileRouteTypes {
     | '/crew-placement/'
     | '/esign/'
     | '/guides/'
+    | '/how-to/'
     | '/it-tickets/'
     | '/orbit/'
     | '/packages/'
@@ -1767,6 +1796,7 @@ export interface FileRouteTypes {
     | '/crew-immigration/sign-on-off'
     | '/crew-placement/vacancies'
     | '/esign/$documentId'
+    | '/how-to/$guideId'
     | '/it-tickets/$ticketId'
     | '/orbit/$projectId'
     | '/orbit/approvals'
@@ -1804,6 +1834,7 @@ export interface FileRouteTypes {
     | '/crew-placement'
     | '/esign'
     | '/guides'
+    | '/how-to'
     | '/it-tickets'
     | '/orbit'
     | '/packages'
@@ -1873,6 +1904,7 @@ export interface FileRouteTypes {
     | '/_app/fleet-tracking'
     | '/_app/forms'
     | '/_app/guides'
+    | '/_app/how-to'
     | '/_app/integrations'
     | '/_app/internal-services'
     | '/_app/it-solutions'
@@ -1933,6 +1965,7 @@ export interface FileRouteTypes {
     | '/_app/crew-placement/vacancies'
     | '/_app/esign/$documentId'
     | '/_app/guides/$department'
+    | '/_app/how-to/$guideId'
     | '/_app/it-tickets/$ticketId'
     | '/_app/orbit/$projectId'
     | '/_app/orbit/approvals'
@@ -1971,6 +2004,7 @@ export interface FileRouteTypes {
     | '/_app/crew-placement/'
     | '/_app/esign/'
     | '/_app/guides/'
+    | '/_app/how-to/'
     | '/_app/it-tickets/'
     | '/_app/orbit/'
     | '/_app/packages/'
@@ -2371,6 +2405,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/how-to': {
+      id: '/_app/how-to'
+      path: '/how-to'
+      fullPath: '/how-to'
+      preLoaderRoute: typeof AppHowToRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/guides': {
       id: '/_app/guides'
       path: '/guides'
@@ -2615,6 +2656,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/it-tickets/'
       preLoaderRoute: typeof AppItTicketsIndexRouteImport
       parentRoute: typeof AppItTicketsRoute
+    }
+    '/_app/how-to/': {
+      id: '/_app/how-to/'
+      path: '/'
+      fullPath: '/how-to/'
+      preLoaderRoute: typeof AppHowToIndexRouteImport
+      parentRoute: typeof AppHowToRoute
     }
     '/_app/guides/': {
       id: '/_app/guides/'
@@ -2881,6 +2929,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/it-tickets/$ticketId'
       preLoaderRoute: typeof AppItTicketsTicketIdRouteImport
       parentRoute: typeof AppItTicketsRoute
+    }
+    '/_app/how-to/$guideId': {
+      id: '/_app/how-to/$guideId'
+      path: '/$guideId'
+      fullPath: '/how-to/$guideId'
+      preLoaderRoute: typeof AppHowToGuideIdRouteImport
+      parentRoute: typeof AppHowToRoute
     }
     '/_app/guides/$department': {
       id: '/_app/guides/$department'
@@ -3380,6 +3435,20 @@ const AppGuidesRouteWithChildren = AppGuidesRoute._addFileChildren(
   AppGuidesRouteChildren,
 )
 
+interface AppHowToRouteChildren {
+  AppHowToGuideIdRoute: typeof AppHowToGuideIdRoute
+  AppHowToIndexRoute: typeof AppHowToIndexRoute
+}
+
+const AppHowToRouteChildren: AppHowToRouteChildren = {
+  AppHowToGuideIdRoute: AppHowToGuideIdRoute,
+  AppHowToIndexRoute: AppHowToIndexRoute,
+}
+
+const AppHowToRouteWithChildren = AppHowToRoute._addFileChildren(
+  AppHowToRouteChildren,
+)
+
 interface AppItTicketsRouteChildren {
   AppItTicketsTicketIdRoute: typeof AppItTicketsTicketIdRoute
   AppItTicketsIndexRoute: typeof AppItTicketsIndexRoute
@@ -3542,6 +3611,7 @@ interface AppRouteChildren {
   AppFleetTrackingRoute: typeof AppFleetTrackingRoute
   AppFormsRoute: typeof AppFormsRoute
   AppGuidesRoute: typeof AppGuidesRouteWithChildren
+  AppHowToRoute: typeof AppHowToRouteWithChildren
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppInternalServicesRoute: typeof AppInternalServicesRoute
   AppItSolutionsRoute: typeof AppItSolutionsRoute
@@ -3622,6 +3692,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFleetTrackingRoute: AppFleetTrackingRoute,
   AppFormsRoute: AppFormsRoute,
   AppGuidesRoute: AppGuidesRouteWithChildren,
+  AppHowToRoute: AppHowToRouteWithChildren,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppInternalServicesRoute: AppInternalServicesRoute,
   AppItSolutionsRoute: AppItSolutionsRoute,

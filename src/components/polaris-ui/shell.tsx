@@ -15,6 +15,7 @@ import { ViewAsSwitcher, OnlineUsers } from "@/components/top-bar";
 import { FeedbackWidget } from "@/components/feedback/feedback-widget";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { GlobalSearch } from "./global-search";
+import { HelpButton } from "@/components/how-to/help-button";
 import { useTheme } from "@/lib/theme";
 import { useAccess } from "@/lib/auth/useAccess";
 import { ViewAsBanner } from "@/components/view-as-banner";
@@ -196,6 +197,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Resources",
     items: [
       { label: "Knowledge Base", icon: "book", screen: "route-guides", route: "/guides" },
+      // Step-by-step guides with screenshots (also opened per page from the top-bar "?").
+      { label: "How-to Guides", icon: "help", screen: "route-how-to", route: "/how-to", keywords: ["help", "how to", "guide", "tutorial", "instructions"] },
       { label: "Forms Library", icon: "clipboard-text", screen: "route-forms", route: "/forms" },
       // e-Sign Documents removed — it renders the same AnchorPage as "Anchor"
       // (Services). The /esign route still resolves for existing links.
@@ -230,7 +233,7 @@ export const RESTRICTED_NAV: Partial<Record<PolarisRole, string[]>> = {
   logistics_team: ["vessels", "logistics"],
   // Head of HR: staff contracts and confidential documents live in Anchor, plus
   // placed crew in Crew Placement; no vessel, visa, finance or operations screens.
-  hr: ["anchor", "crew-placement", "route-guides", "route-forms", "route-directory", "route-emergency"],
+  hr: ["anchor", "crew-placement", "route-guides", "route-how-to", "route-forms", "route-directory", "route-emergency"],
 };
 
 /**
@@ -291,14 +294,15 @@ export function activeScreenForPath(pathname: string): string {
   return best?.screen ?? "";
 }
 
-/** Top-bar controls (View-as, presence, feedback, theme, notifications).
+/** Top-bar controls (View-as, presence, help, feedback, theme, notifications).
  *  Wrapped in `dark` so they read on navy. */
-function TopBarControls() {
+function TopBarControls({ activeScreen, activeLabel }: { activeScreen: string; activeLabel?: string }) {
   const { theme, toggle } = useTheme();
   return (
     <div className="dark flex items-center gap-1.5">
       <ViewAsSwitcher />
       <OnlineUsers />
+      <HelpButton activeScreen={activeScreen} pageLabel={activeLabel} />
       <FeedbackWidget />
       <button
         onClick={toggle}
@@ -334,6 +338,7 @@ export function PolarisTopBar({
   onMenuClick,
   showMenu,
   activeLabel,
+  activeScreen = "",
 }: {
   vesselName: string;
   userInitials: string;
@@ -343,6 +348,8 @@ export function PolarisTopBar({
   onMenuClick?: () => void;
   showMenu?: boolean;
   activeLabel?: string;
+  /** Nav screen key of the open page — picks the guides the "?" button shows. */
+  activeScreen?: string;
 }) {
   return (
     <header
@@ -408,7 +415,7 @@ export function PolarisTopBar({
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <GlobalSearch />
-        <TopBarControls />
+        <TopBarControls activeScreen={activeScreen} activeLabel={activeLabel} />
         {/* The avatar opens the profile menu — edit your name and picture, or
             sign out. `userInitials` is the fallback until the profile loads. */}
         <div className="dark">
@@ -915,6 +922,7 @@ export function PolarisShell({
         onMenuClick={() => setOverlay(true)}
         onVesselClick={onVesselClick}
         activeLabel={labelForScreen(active) ?? undefined}
+        activeScreen={active}
       />
       <div className="dark"><ViewAsBanner /></div>
 
