@@ -14,7 +14,7 @@
  * which items are trusted. The permits sync stays off; nothing goes to SharePoint.
  */
 import { requireAdminAccess } from '@/lib/admin/access'
-import { gatePassDocumentsDryRun, gatePassDocumentsImport } from '@/lib/gate-pass-documents.server'
+import { gatePassDocumentProbe, gatePassDocumentsDryRun, gatePassDocumentsImport } from '@/lib/gate-pass-documents.server'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b, null, 2), {
@@ -29,6 +29,7 @@ export async function gatePassDocumentsHandler(request: Request): Promise<Respon
   try {
     if (request.method === 'GET') {
       const q = new URL(request.url).searchParams
+      if (q.get('probe')) return json({ ok: true, probe: await gatePassDocumentProbe(Number(q.get('probe'))) })
       const libraries = q.get('libraries') === '1'
       // folders=Gate Pass|ISSUED GATE PASS — peek inside library folders (paths from the library root).
       const folders = (q.get('folders') ?? '').split('|').map((f) => f.trim()).filter(Boolean).slice(0, 6)

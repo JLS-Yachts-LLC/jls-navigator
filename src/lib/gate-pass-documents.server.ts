@@ -281,6 +281,36 @@ export async function gatePassDocumentsDryRun(opts: { libraries?: boolean; folde
   }
 }
 
+/** Read-only: try one item's attachment download several ways and report what SharePoint says. */
+export async function gatePassDocumentProbe(itemId: number) {
+  const job = await readPermitListForJob(LIST)
+  const host = new URL(job.siteAbsoluteUrl).hostname
+  const token = await getSharePointToken(job.creds.tenantId, job.creds.clientId, job.creds.clientSecret, host)
+  let claims: Record<string, unknown> = {}
+  try { claims = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) } catch { /* opaque */ }
+  const site = job.siteAbsoluteUrl.replace(/\/$/, '')
+  const q = (v: string) => encodeURIComponent(v.replace(/'/g, "''"))
+  const list = await fetch(`${site}/_api/web/lists/getbytitle('${q(LIST)}')/items(${itemId})/AttachmentFiles`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json;odata=nometadata' } })
+  const files = list.ok ? ((await list.json()) as any).value ?? [] : []
+  const f = files[0]
+  const out: any[] = [{ way: 'list', status: list.status, diag: list.headers.get('x-ms-diagnostics'), files: files.map((x: any) => x.FileName) }]
+  if (f) {
+    const ways: Record<string, string> = {
+      byItem: `${site}/_api/web/lists/getbytitle('${q(LIST)}')/items(${itemId})/AttachmentFiles('${q(f.FileName)}')/$value`,
+      byPath: `${site}/_api/web/GetFileByServerRelativePath(decodedurl='${q(f.ServerRelativeUrl)}')/$value`,
+    }
+    for (const [way, url] of Object.entries(ways)) {
+      for (const redirect of ['follow', 'manual'] as const) {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect })
+        const b = new Uint8Array(await r.arrayBuffer())
+        out.push({ way, redirect, url: url.replace(site, ''), status: r.status, location: r.headers.get('location'), diag: r.headers.get('x-ms-diagnostics'), bytes: b.byteLength, head: new TextDecoder().decode(b.slice(0, 40)) })
+      }
+    }
+  }
+  return { appidacr: claims.appidacr, roles: claims.roles, out }
+}
+
 /**
  * Import up to `limit` ready documents. Re-plans each call (so it never acts on a
  * stale read) and is safe to repeat: rows that got a document are no longer
