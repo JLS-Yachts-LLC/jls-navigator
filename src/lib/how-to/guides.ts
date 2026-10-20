@@ -1802,6 +1802,281 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
       },
     ],
   },
+
+  // ══ Communications ════════════════════════════════════════════════════════
+  {
+    id: "whatsapp-inbox",
+    title: "Reply to clients on WhatsApp",
+    summary: "Answer WhatsApp messages from clients, assign conversations and start a new one.",
+    section: "Communications",
+    screens: ["whatsapp"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open the Inbox",
+        text: "Click **WhatsApp**. **Inbox** (with its unread count) shows conversations from clients who have opted in. Choose a number in **All my numbers**, search, or filter with **Open**, **Mine**, **Unassigned** and **Closed**.",
+        image: img750("wa-inbox", "WhatsApp inbox", [
+          { x: 197, y: 133, w: 85, h: 30 },
+          { x: 207, y: 186, w: 244, h: 105 },
+        ]),
+      },
+      {
+        title: "Reply",
+        text: "Click a conversation, type your reply and press **Send** (or Enter). Type **/** or use the lightning button for quick replies; the paperclip attaches a file. **Assign** gives the conversation to a colleague and **Close** files it away.",
+        tip: "Your message goes to the client the moment you press Send or Enter.",
+      },
+      {
+        title: "When the 24-hour window has closed",
+        text: "WhatsApp only allows free-text replies within 24 hours of the client's last message. After that, choose an approved template, fill in its values and click **Send template**.",
+      },
+      {
+        title: "Message someone new",
+        text: "Click the new-message button next to the search box, find the contact (or add them with their number including the country code) and start the conversation.",
+        image: img750("wa-inbox", "New message button", [{ x: 421, y: 220, w: 30, h: 27 }]),
+      },
+    ],
+  },
+  {
+    id: "whatsapp-broadcast",
+    title: "Send a WhatsApp broadcast",
+    summary: "Build a broadcast list of opted-in contacts and send them an approved template message.",
+    section: "Communications",
+    screens: ["whatsapp"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Make sure contacts have opted in",
+        text: "On **Contacts**, add people with **Add contact** and record their consent (the shield icon → **Record consent**, saying how they agreed). Only contacts who have opted in are messaged — opt-outs are respected automatically.",
+      },
+      {
+        title: "Create a list",
+        text: "On **Lists**, click **New list**, give it a name, then **Add members** — tick **Opted in only** and choose the contacts. Each person gets the message privately; it isn't a group chat.",
+        image: img750("wa-lists", "Broadcast lists", [
+          { x: 197, y: 176, w: 214, h: 28 },
+          { x: 1343, y: 177, w: 110, h: 27 },
+        ]),
+      },
+      {
+        title: "Choose an approved template",
+        text: "Broadcasts must use a template Meta has approved. On **Templates**, **New template** creates one (name, message, optional header, footer and buttons) — save it as a draft, then **Submit to Meta** for review.",
+      },
+      {
+        title: "Create the send",
+        text: "On **Sends**, click **New send**. Name it and choose the **List**, the **Template** and any values or files it needs, then **Save draft**. Nothing goes out yet — you see who it will reach first.",
+        image: img750("wa-sends", "Sends", [{ x: 1447, y: 177, w: 89, h: 27 }]),
+      },
+      {
+        title: "Send and check the results",
+        text: "Open the draft and click **Send to N**, then confirm — this can't be recalled. The **Sends** list then shows how many were sent, read, failed or skipped, and **Download list** saves the responses.",
+        image: img750("wa-sends", "Send results", [{ x: 1104, y: 245, w: 277, h: 475 }]),
+      },
+    ],
+  },
+  {
+    id: "reviews",
+    title: "Read and reply to Google reviews",
+    summary: "See Google reviews for each JLS brand and reply to them from Polaris.",
+    section: "Communications",
+    screens: ["reviews"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Reviews",
+        text: "Click **Reviews**. The **Inbox** lists reviews for JLS Yacht Training Institute, JLS Yachts and Superyacht ME. **Summary** shows each brand's average rating and how many need a reply.",
+        image: img750("reviews", "Reviews", [{ x: 197, y: 132, w: 224, h: 32 }]),
+        tip: "Reviews appear once an admin has connected the Google account under Setup — until then you'll see \"Waiting for Google setup\".",
+      },
+      {
+        title: "Find the ones to answer",
+        text: "Filter by brand and stars, sort by newest, oldest or lowest rating, and tick **Needs reply** to see only unanswered reviews.",
+        image: img750("reviews", "Review filters", [{ x: 197, y: 251, w: 463, h: 31 }]),
+      },
+      {
+        title: "Reply",
+        text: "Click **Reply** on a review and write your answer — **Draft with AI** can suggest one. Click **Post reply**, then **Post on Google** to confirm. Replies are public; you can **Edit reply** or **Remove reply** later.",
+      },
+    ],
+  },
+
+  // ══ Reports ═══════════════════════════════════════════════════════════════
+  {
+    id: "visa-reports",
+    title: "Produce and send a visa report",
+    summary: "See every crew member's visa status for one vessel or the fleet, and send the report to the vessel.",
+    section: "Reports",
+    screens: ["visa-reports"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Choose the vessel",
+        text: "Click **Visa Reports** and pick a vessel in **Vessel** (or leave **All vessels (fleet-wide)**). The cards count total crew and active, expiring and expired visas, with lists of who has expired and who expires within 30 days.",
+        image: img750("visa-reports", "Visa Reports", [
+          { x: 177, y: 135, w: 313, h: 35 },
+          { x: 177, y: 183, w: 1378, h: 77 },
+        ]),
+      },
+      {
+        title: "Generate the report",
+        text: "Click **Generate report**. It's added to **Report history** at the bottom of the page.",
+        image: img750("visa-reports", "Generate report", [{ x: 1304, y: 58, w: 125, h: 37 }]),
+      },
+      {
+        title: "Send it to the vessel",
+        text: "Click **Send to vessel**, check the email address and **Confirm & send**. If the vessel has nobody to send to, set its recipients up in **Reports → Automated Reports** first.",
+        image: img750("visa-reports", "Send to vessel", [{ x: 1436, y: 58, w: 119, h: 37 }]),
+      },
+    ],
+  },
+  {
+    id: "soso-reports",
+    title: "Check crew movements (Sign On/Off report)",
+    summary: "See who is on board and the latest sign-ons and sign-offs, for a vessel or the fleet.",
+    section: "Reports",
+    screens: ["soso-reports"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Open the report",
+        text: "Click **Sign On/Off** under Reports and pick a vessel at the top right (or **All vessels**). The cards show **Onboard now**, **Sign-ons (7d)**, **Sign-offs (7d)** and **Upcoming**, with the latest sign-ons and sign-offs listed below.",
+        image: img750("soso-reports", "Sign-On/Off Reports", [
+          { x: 1367, y: 61, w: 189, h: 31 },
+          { x: 177, y: 134, w: 1378, h: 78 },
+        ]),
+        tip: "To record a movement, use Immigration → Sign On / Off. See \"Record a sign on or sign off\".",
+      },
+    ],
+  },
+  {
+    id: "automated-reports",
+    title: "Schedule reports to a vessel",
+    summary: "Opt a vessel in to automatic emailed reports, choose who receives them and when.",
+    section: "Reports",
+    screens: ["vessel-report-automations"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Open Automated Reports",
+        text: "Click **Automated Reports**. **All vessels** shows each vessel that's set up and whether each report — Visa status, Sign On / Sign Off, Statement of account, Crew on board, Document & permit expiries, Weekly / monthly — is on or off. Nothing goes to a vessel that isn't set up and switched on here.",
+        image: img750("report-automations", "Automated Reports", [
+          { x: 197, y: 339, w: 272, h: 32 },
+          { x: 197, y: 426, w: 1338, h: 79 },
+        ]),
+      },
+      {
+        title: "Set up a vessel",
+        text: "Switch to **All vessels** in the filter, find the vessel and click **Set up** (or **Configure** if it's already set up). To opt several at once, tick them and use **Opt in to …**.",
+        image: img750("report-automations", "Configure button", [{ x: 1452, y: 460, w: 74, h: 27 }]),
+      },
+      {
+        title: "Choose recipients and timing",
+        text: "For each report, add the email addresses under **By email — send to** (press Enter after each), an optional **Copy (CC)**, and **When (Dubai time)** — day and time. Tick **By WhatsApp** to send the PDF to the vessel's WhatsApp contacts too.",
+        image: img750("report-automations-config", "Report settings", [{ x: 379, y: 140, w: 812, h: 74 }]),
+      },
+      {
+        title: "Check it, then switch it on",
+        text: "**Preview** and **PDF** show what the report looks like; **Send test to me** emails it to you. When it's right, turn on **Switched off → Sending**. **Client can manage in their portal** lets the captain change recipients themselves.",
+        image: img750("report-automations-config", "Preview, test and switch", [
+          { x: 379, y: 221, w: 270, h: 29 },
+          { x: 975, y: 92, w: 216, h: 40 },
+        ]),
+        tip: "Send now emails the client straight away, after a confirmation. The fleet-wide weekly operations report is set up separately, under Settings → Automations.",
+      },
+    ],
+  },
+  {
+    id: "crew-documents",
+    title: "Check crew documents for expiry",
+    summary: "See which crew documents are valid, expiring within 90 days or expired, by vessel.",
+    section: "Reports",
+    screens: ["documents"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Open Crew Documents",
+        text: "Click **Crew Documents** and pick a vessel at the top right. The cards count documents that are **Valid**, **Expiring** (within 90 days) and **Expired**, and the list shows each crew member's document with its expiry date.",
+        image: img750("crew-documents", "Crew Documents", [
+          { x: 1367, y: 61, w: 189, h: 31 },
+          { x: 177, y: 134, w: 1378, h: 98 },
+        ]),
+        tip: "Documents are added on each crew member's profile (Crew → open the profile).",
+      },
+    ],
+  },
+  {
+    id: "document-links",
+    title: "Track and revoke document links",
+    summary: "See every secure document link sent to clients, who opened it, and revoke one if needed.",
+    section: "Reports",
+    screens: ["route-document-links"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Document Links",
+        text: "Click **Document Links**. Every secure link sent to a client — permits, visas, reports — is listed with the vessel, recipient, sent and expiry dates, how many times it was opened and its status. Search, or filter by **Not opened**, **Opened**, **Expired** or **Revoked**.",
+        image: img750("document-links", "Document Links", [{ x: 1159, y: 69, w: 377, h: 30 }]),
+      },
+      {
+        title: "See who opened it",
+        text: "Click the arrow at the start of a row to see each time the link was viewed or downloaded, with the date and time.",
+        image: img750("document-links", "Expand a row", [{ x: 199, y: 165, w: 24, h: 40 }]),
+      },
+      {
+        title: "Copy or revoke",
+        text: "**Copy** puts the link on your clipboard to resend. **Revoke** stops the link working (you'll be asked to confirm) — use it if a document went to the wrong person. A revoked link can be **Restored**.",
+        image: img750("document-links", "Copy and Revoke", [{ x: 1408, y: 170, w: 112, h: 28 }]),
+      },
+    ],
+  },
+  {
+    id: "spreadsheet-sync",
+    title: "Sync visas from the Crew Visa Tracker",
+    summary: "Bring visa records in line with the SharePoint Crew Visa Tracker spreadsheet.",
+    section: "Reports",
+    screens: ["route-visa-sync"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Run a dry run first",
+        text: "Click **Spreadsheet Sync**, then **Dry run (preview)**. Polaris reads every vessel's sheet in the SharePoint **Crew Visa Tracker** and shows what would change — vessels, rows, matched, updated, created and unchanged, with sample changes — without writing anything.",
+        image: img750("spreadsheet-sync", "Visa Spreadsheet Sync", [
+          { x: 472, y: 167, w: 118, h: 34 },
+          { x: 472, y: 214, w: 616, h: 63 },
+        ]),
+      },
+      {
+        title: "Apply",
+        text: "If the preview looks right, click **Apply to app** and confirm. Leave **Create crew missing from the app** ticked to add crew who are in the spreadsheet but not yet in Polaris.",
+        image: img750("spreadsheet-sync", "Apply to app", [{ x: 597, y: 167, w: 295, h: 34 }]),
+        tip: "On this sync the spreadsheet wins — it overwrites visa statuses and dates in Polaris. Always dry-run first.",
+      },
+    ],
+  },
+  {
+    id: "duplicate-crew",
+    title: "Merge duplicate crew records",
+    summary: "Find the same person recorded twice and merge them into one profile.",
+    section: "Reports",
+    screens: ["route-crew-duplicates"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Duplicate Crew",
+        text: "Click **Duplicate Crew**. **Crew records** lists pairs that look like the same person — similar names on the same vessel, or the same passport number. **SharePoint folders** finds split document folders, and **Missing details** lists crew without a passport number or date of birth.",
+        image: img750("duplicate-crew", "Duplicate Crew & Folders", [{ x: 197, y: 143, w: 430, h: 28 }]),
+      },
+      {
+        title: "Check it's really the same person",
+        text: "Compare the dates of birth and passport numbers — click **Open** to see each full profile. Dates one day apart are usually an old spreadsheet error rather than two people.",
+        image: img750("duplicate-crew", "Warning about dates", [{ x: 211, y: 314, w: 1311, h: 27 }]),
+      },
+      {
+        title: "Keep one and merge",
+        text: "Click **Keep this one** on the record to keep. The dialog shows how many visas, passports, documents and events will move across. Click **Merge records** to move them and remove the empty duplicate.",
+        image: img750("duplicate-crew", "Keep this one", [{ x: 1441, y: 243, w: 81, h: 26 }]),
+        tip: "Merging can't be undone. If the passport numbers genuinely differ, they're probably two different people — leave them.",
+      },
+    ],
+  },
 ];
 
 export function guideById(id: string): HowToGuide | undefined {
