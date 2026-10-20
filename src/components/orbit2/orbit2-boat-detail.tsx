@@ -126,11 +126,10 @@ export function Orbit2BoatDetail({
 
       {/* ── Vessel spec ── */}
       <div className="grid gap-4 rounded-xl border border-border bg-card p-4 sm:grid-cols-[160px_1fr]">
-        <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-muted/30 sm:aspect-square">
-          {boat.image_ref
-            ? <SignedImage stored={boat.image_ref} alt={boat.name} className="h-full w-full object-cover" />
-            : <Ship className="h-8 w-8 text-muted-foreground/40" />}
-        </div>
+        <BoatPhoto boat={boat}
+          onChange={async (ref) => {
+            if (await patchBoat({ image_ref: ref })) toast.success(ref ? "Photo updated" : "Photo removed");
+          }} />
         <div>
           <p className="mb-3 text-[14px] text-muted-foreground">
             {[boat.client_name].filter(Boolean).join(" · ") || "No client recorded"}
@@ -343,6 +342,62 @@ function ComplianceCard({
         <InspectionChecklist boat={boat} regime={regime} inventory={inventory} isAdmin={isAdmin} authorName={authorName} onDocumentAdded={onDocumentAdded} onAssignTeam={onAssignTeam} />
       </div>
       <FileSlot label="Completed checklist / supporting files" files={checklist} onUpload={onUploadChecklist} onRemove={onRemoveChecklist} />
+    </div>
+  );
+}
+
+/** The boat's photo in the spec card — click to replace it (or add one), with a
+ *  remove button when there is one. Only the Orbit 2 boat's image_ref changes; a
+ *  photo inherited from the vessel record stays on that vessel. */
+function BoatPhoto({ boat, onChange }: { boat: Orbit2Boat; onChange: (ref: string | null) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    if (!guardUploadFile(file, { accepts: "Use an image." })) return;
+    if (!/^image\//.test(file.type || "")) { toast.error("Use an image file."); return; }
+    setBusy(true);
+    try {
+      const path = `orbit2/boats/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+      const { error } = await supabase.storage.from(ORBIT2_BUCKET).upload(path, file, { contentType: uploadContentType(file), upsert: false });
+      if (error) throw error;
+      await onChange(storageRef(ORBIT2_BUCKET, path));
+    } catch (e) {
+      toast.error(errorMessage(e, "Upload failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!confirm(`Remove the photo of ${boat.name}?`)) return;
+    setBusy(true);
+    try { await onChange(null); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="group relative aspect-video overflow-hidden rounded-lg bg-muted/30 sm:aspect-square">
+      <label title={boat.image_ref ? "Replace photo" : "Add a photo"}
+        className="flex h-full w-full cursor-pointer items-center justify-center">
+        {boat.image_ref
+          ? <SignedImage stored={boat.image_ref} alt={boat.name} className="h-full w-full object-cover" />
+          : <Ship className="h-8 w-8 text-muted-foreground/40" />}
+        <span className={cn(
+          "absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-[14px] font-medium text-white transition-opacity",
+          busy ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+        )}>
+          {busy ? <Loader2 className="h-5 w-5 animate-spin" />
+            : <><Camera className="h-5 w-5" />{boat.image_ref ? "Replace photo" : "Add photo"}</>}
+        </span>
+        <input type="file" accept="image/*" className="sr-only" disabled={busy}
+          onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ""; }} />
+      </label>
+      {boat.image_ref && !busy && (
+        <button type="button" onClick={() => void remove()} title="Remove photo" aria-label="Remove photo"
+          className="absolute right-1.5 top-1.5 rounded-md bg-black/60 p-1 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100 focus:opacity-100">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
