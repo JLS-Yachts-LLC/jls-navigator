@@ -326,7 +326,9 @@ export async function gatePassDocumentsImport(limit = 150) {
   let imported = 0
   const failed: Array<{ id: string; itemId: string; file: string; reason: string }> = []
 
-  for (const p of batch) {
+  // A few at a time: one by one, each file's download + upload + update made the
+  // import take over an hour.
+  const one = async (p: GatePassDocPlanRow) => {
     const f = p.pick!
     try {
       // Through the item itself: SharePoint refuses an app-only token on the file's
@@ -356,5 +358,6 @@ export async function gatePassDocumentsImport(limit = 150) {
       failed.push({ id: p.id, itemId: p.itemId, file: f.name, reason: e instanceof Error ? e.message : String(e) })
     }
   }
+  for (let i = 0; i < batch.length; i += 6) await Promise.all(batch.slice(i, i + 6).map(one))
   return { imported, failed, attempted: batch.length, remaining: ready.length - batch.length + failed.length }
 }
