@@ -1146,6 +1146,12 @@ export default {
       return permitsDryRunHandler(request)
     }
 
+    // Repair the SharePoint permit items the old push overwrote (admin only).
+    if (url.pathname === '/api/sharepoint/permits-repair') {
+      const { permitsRepairHandler } = await import('./routes/api.sharepoint.permits-repair')
+      return permitsRepairHandler(request)
+    }
+
     // One-off: gate pass documents from the SharePoint list items (admin only).
     if (url.pathname === '/api/sharepoint/gate-pass-documents') {
       const { gatePassDocumentsHandler } = await import('./routes/api.sharepoint.gate-pass-documents')

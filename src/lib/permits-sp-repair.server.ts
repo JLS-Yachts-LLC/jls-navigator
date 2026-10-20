@@ -64,7 +64,12 @@ function describeRow(r: Record<string, any>): string {
 const sigKey = (s: Sig) => `${s.vessel}|${s.holder}|${s.number}`
 
 export async function planPermitRepairs(): Promise<{ actions: PermitRepairAction[]; checkedAt: string }> {
-  const { lists } = await loadPermitListsForRepair()
+  const { actions } = await _plan()
+  return { actions, checkedAt: new Date().toISOString() }
+}
+
+async function _plan(): Promise<{ actions: PermitRepairAction[]; token: string; siteOf: Map<string, string> }> {
+  const { token, lists } = await loadPermitListsForRepair()
 
   // Polaris permits linked to a SharePoint item, keyed by list + item.
   const rows: Record<string, any>[] = []
@@ -155,7 +160,7 @@ export async function planPermitRepairs(): Promise<{ actions: PermitRepairAction
   }
   const order = { restore: 0, delete: 1, person: 2 }
   actions.sort((a, b) => order[a.kind] - order[b.kind] || a.list.localeCompare(b.list) || Number(a.itemId) - Number(b.itemId))
-  return { actions, checkedAt: new Date().toISOString() }
+  return { actions, token, siteOf: new Map(lists.map((l) => [l.listName, l.siteId])) }
 }
 
 /**
@@ -170,13 +175,11 @@ export async function applyPermitRepairs(keys: string[], max = 25): Promise<{
   remaining: string[]
 }> {
   const wanted = new Set(keys)
-  const { actions } = await planPermitRepairs()
+  const { actions, token, siteOf } = await _plan()
   const current = new Map(actions.filter((a) => a.kind !== 'person').map((a) => [a.key, a]))
   const runnable = keys.filter((k) => current.has(k))
   const skipped = [...wanted].filter((k) => !current.has(k)).length
   const batch = runnable.slice(0, max)
-  const { token, lists } = await loadPermitListsForRepair()
-  const siteOf = new Map(lists.map((l) => [l.listName, l.siteId]))
 
   const done: Array<{ key: string; kind: string; list: string; itemId: string }> = []
   const failed: Array<{ key: string; error: string }> = []
