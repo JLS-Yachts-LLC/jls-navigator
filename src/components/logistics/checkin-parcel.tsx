@@ -16,6 +16,10 @@
  * Saving writes the same shipsync_packages row the office boards read (see
  * checkin-commit.ts). With no signal the check-in is parked on the phone and
  * uploaded when it is back online (logistics-offline.ts).
+ *
+ * Once saved, the parcel's receiving label (AWB in the QR, boat, consignee, one per
+ * package) is a tap away on the confirmation, and prints by itself on a phone that has a
+ * Zebra printer chosen and "Print the label when saved" ticked (warehouse-labels.ts).
  */
 import { useEffect, useState } from "react";
 import { ScanLine } from "lucide-react";
@@ -29,6 +33,8 @@ import { createCheckin, updateCheckin, findByAwb, isNetworkError, routeCheckin, 
 import { queueCheckin, sessionDraftId } from "./logistics-offline";
 import { usePersistedFile } from "./persisted-file";
 import { PendingBanner, useCheckinQueue } from "./checkin-pending";
+import { parcelLabels, printLabelSet } from "./warehouse-labels";
+import { getDefaultPrinterId, listPrinters } from "@/lib/printing/printers";
 
 type ShipType = "Local" | "Import" | "Transit";
 const SHIP_TYPES: ShipType[] = ["Local", "Import", "Transit"];
@@ -57,6 +63,16 @@ function saveDraft(f: Form) {
   try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(f)); } catch { /* storage blocked — nothing lost but the safety net */ }
 }
 
+/** "Print the label when saved" — remembered on this phone. */
+const AUTOPRINT_KEY = "logistics-checkin-autoprint";
+const loadAutoPrint = () => { try { return localStorage.getItem(AUTOPRINT_KEY) === "1"; } catch { return false; } };
+
+/** The receiving labels for a check-in, from what was typed. */
+const labelsOf = (p: CheckinPayload) => parcelLabels({
+  awb: p.awb, boat: p.fields.boat_name, consignee: p.fields.package_owner, courier: p.fields.courier,
+  qty: p.fields.num_packages, board: p.shipType ?? (p.fields.local_import as string | undefined), boe: p.fields.boe_no, receivedAt: p.fields.received_at,
+});
+
 export function CheckinParcel({ onBack }: { onBack: () => void }) {
   const [f, setF] = useState<Form>(loadDraft);
   const [photo, setPhoto] = usePersistedFile(`checkin-photo:${sessionDraftId()}`);
@@ -65,6 +81,23 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
   const [scanning, setScanning] = useState(false);
   const [dupe, setDupe] = useState<ShipSyncPackage | null>(null);
   const queue = useCheckinQueue(false);
+  const [autoPrint, setAutoPrint] = useState(loadAutoPrint);
+  // The Zebra printer this phone always uses, if it has one — only then can a label print without a tap.
+  const [printerName, setPrinterName] = useState<string | null>(null);
+  useEffect(() => {
+    const id = getDefaultPrinterId();
+    if (id) void listPrinters().then((ps) => setPrinterName(ps.find((x) => x.id === id)?.name ?? null)).catch(() => {});
+  }, []);
+  const toggleAutoPrint = (on: boolean) => { setAutoPrint(on); try { localStorage.setItem(AUTOPRINT_KEY, on ? "1" : "0"); } catch { /* not remembered */ } };
+
+  /** After a save: print now if this phone does that by itself, and keep "Print label" on the confirmation. */
+  function labelAction(p: CheckinPayload) {
+    const labels = labelsOf(p);
+    const print = () => printLabelSet(() => labels, { source: "receiving", ref: p.awb });
+    const auto = autoPrint && !!printerName;
+    if (auto) print();
+    return { label: auto ? "Print again" : `Print label${labels.length > 1 ? "s" : ""}`, onClick: print };
+  }
   useEffect(() => { saveDraft(f); }, [f]);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
 
@@ -128,7 +161,7 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
         const existing = await findByAwb(p.awb);
         if (existing) { setDupe(existing); return; }
         const status = await createCheckin(p, photo);
-        toast.success(`${p.awb} checked in — ${STATUS_META[status].label}`);
+        toast.success(`${p.awb} checked in — ${STATUS_META[status].label}`, { duration: 15000, action: labelAction(p) });
         reset();
       } catch (e) {
         if (isNetworkError(e)) await saveOffline(p);
@@ -145,8 +178,9 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
     if (!dupe) return;
     setSaving(true);
     try {
-      await updateCheckin(dupe, payload(dupe.id), photo);
-      toast.success(`${f.awb.trim()} updated with this check-in`);
+      const p = payload(dupe.id);
+      await updateCheckin(dupe, p, photo);
+      toast.success(`${f.awb.trim()} updated with this check-in`, { duration: 15000, action: labelAction(p) });
       setDupe(null);
       reset();
     } catch (e) {
@@ -237,6 +271,13 @@ export function CheckinParcel({ onBack }: { onBack: () => void }) {
       <p className="rounded-lg bg-muted/30 px-3 py-2 text-[14px] text-muted-foreground">
         Saves to the <span className="font-semibold text-foreground">{board === "Local" ? "Local" : board === "Transit" ? "Import / Transit" : "Import"}</span> board as <span className="font-semibold text-foreground">Warehouse</span>.
       </p>
+
+      {printerName && (
+        <label className="flex items-center gap-3 rounded-lg border border-border px-3 py-3 text-[15px]">
+          <input type="checkbox" className="h-5 w-5" checked={autoPrint} onChange={(e) => toggleAutoPrint(e.target.checked)} />
+          <span>Print the label on <span className="font-semibold">{printerName}</span> when saved</span>
+        </label>
+      )}
 
       <PhotoField file={photo} onChange={setPhoto} />
 
