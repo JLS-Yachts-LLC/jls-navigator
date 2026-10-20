@@ -12,13 +12,13 @@ import {
   Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
   ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Radar,
   ChevronLeft, ChevronRight, BookMarked, X, Check, Grid3x3, Archive, ArchiveRestore,
-  Navigation, Building2, AlertTriangle, CircleDot, UserCog,
+  Navigation, Building2, AlertTriangle, CircleDot, UserCog, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem,
-  DropdownMenuLabel, DropdownMenuSeparator,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -30,6 +30,7 @@ import { useFleetPermitExpiry, PermitExpiryChips, PermitExpiryField } from "./pe
 import type { CurrentPermit } from "@/lib/permit-expiry";
 import { VesselProvenance, SameNameBadge, VesselConfirmDetails, normVesselName } from "./VesselProvenance";
 import { JLS_QBO_REALM } from "@/lib/qb/realms";
+import { csvCell, downloadText } from "@/lib/portal/inventory";
 
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -470,6 +471,30 @@ export function YachtsPage({
     return rows;
   }, [baseRows, q, searching, statusFilter, movementFilter, sortKey, sortDir, activityMap]);
 
+  // ── Export ───────────────────────────────────────────────────────────────────
+  // CSV (with a BOM, so Excel opens it straight away and keeps Arabic names).
+  // Uses the columns on screen, always with the vessel name and status.
+  function exportCsv(scope: "shown" | "all") {
+    const rows = scope === "shown"
+      ? filtered
+      : [...baseRows].sort((a, b) =>
+          String(a.vessel_name ?? "").localeCompare(String(b.vessel_name ?? ""), undefined, { numeric: true }));
+    const keys: YachtColumnKey[] = [
+      ...(["vessel_name", "status"] as YachtColumnKey[]).filter((k) => !visible.includes(k)),
+      ...visible,
+    ];
+    const cols = keys
+      .map((k) => YACHT_COLUMNS.find((c) => c.key === k))
+      .filter((c): c is (typeof YACHT_COLUMNS)[number] => !!c);
+    const csv = [
+      cols.map((c) => csvCell(c.label)).join(","),
+      ...rows.map((y) => cols.map((c) => csvCell((y as any)[c.key])).join(",")),
+    ].join("\r\n");
+    const name = `${isJls ? "jls-boats" : "yacht-registry"}${archiveView === "archived" ? "-archived" : ""}-${new Date().toISOString().slice(0, 10)}.csv`;
+    downloadText(name, csv, "text/csv;charset=utf-8");
+    toast.success(`Exported ${rows.length} vessel${rows.length === 1 ? "" : "s"}`);
+  }
+
   // Movement counts for the pills (within the current status filter).
   const movementOptions = useMemo(() => {
     const m = new Map<Movement, number>();
@@ -615,6 +640,26 @@ export function YachtsPage({
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Export — every vessel and its status, or just the list on screen */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                <Download className="h-3.5 w-3.5" /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Export for Excel (CSV)</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => exportCsv("all")}>
+                {archiveView === "archived" ? "All archived" : "All"} {isJls ? "boats" : "yachts"} &amp; statuses
+                <span className="ml-auto text-[10px] text-muted-foreground">{baseRows.length}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportCsv("shown")} disabled={filtered.length === 0}>
+                Current list only (filters &amp; sort)
+                <span className="ml-auto text-[10px] text-muted-foreground">{filtered.length}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Views & Columns dropdown */}
           <DropdownMenu>
