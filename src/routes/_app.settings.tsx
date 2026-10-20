@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import {
   Users, Shield, Plus, RotateCcw, Trash2, ChevronDown,
   CheckCircle2, XCircle, Loader2, Lock, Plug, Mail, Pencil, Save, X, Search, ShieldCheck,
-  AlertTriangle,
+  AlertTriangle, FolderOpen, LayoutList, MapPin, ShoppingCart, type LucideIcon,
 } from 'lucide-react'
 import { MfaSetup } from '@/components/auth/MfaSetup'
 import { Button } from '@/components/ui/button'
@@ -1009,16 +1009,23 @@ type IntegrationSetting = {
   config: IntegrationConfig
 }
 
-const INTEGRATIONS: {
+type IntegrationDef = {
   name: string
   key: string
-  logo: string
+  Icon: LucideIcon
+  /** Tailwind classes for the icon tile. */
+  tint: string
+  description: string
   fields: { key: string; label: string; type?: string; placeholder?: string }[]
-}[] = [
+}
+
+const INTEGRATIONS: IntegrationDef[] = [
   {
     name: 'SharePoint',
     key: 'sharepoint',
-    logo: '📁',
+    Icon: FolderOpen,
+    tint: 'bg-sky-500/15 text-sky-400',
+    description: 'Lists, vessel images, Visa tracker & crew documents',
     fields: [
       { key: 'tenant_url', label: 'Tenant URL', placeholder: 'https://jlsyachts.sharepoint.com' },
       { key: 'site_url', label: 'Site URL', placeholder: '/sites/PortOperationsandAgency' },
@@ -1030,7 +1037,9 @@ const INTEGRATIONS: {
   {
     name: 'Monday.com',
     key: 'monday',
-    logo: '📋',
+    Icon: LayoutList,
+    tint: 'bg-rose-500/15 text-rose-400',
+    description: 'Local Shipments & ShipSync import boards',
     fields: [
       { key: 'api_token', label: 'API Token', type: 'password', placeholder: '••••••••' },
       { key: 'board_id', label: 'Board ID (Local Shipments)', placeholder: 'e.g. 1234567890' },
@@ -1041,7 +1050,9 @@ const INTEGRATIONS: {
   {
     name: 'Google Maps',
     key: 'google_maps',
-    logo: '🗺️',
+    Icon: MapPin,
+    tint: 'bg-emerald-500/15 text-emerald-400',
+    description: 'Maps, place search & directions',
     fields: [
       { key: 'api_key', label: 'API Key', placeholder: 'Browser key — enable Maps JavaScript, Places & Directions APIs; restrict by HTTP referrer' },
     ],
@@ -1049,7 +1060,9 @@ const INTEGRATIONS: {
   {
     name: 'Lightspeed (Retail POS)',
     key: 'lightspeed',
-    logo: '🛒',
+    Icon: ShoppingCart,
+    tint: 'bg-amber-500/15 text-amber-400',
+    description: 'Superyacht ME product lookups & sales webhooks',
     fields: [
       { key: 'api_token', label: 'API Token', type: 'password', placeholder: 'Lightspeed X-Series personal token (for product lookups)' },
       { key: 'domain_prefix', label: 'Store Prefix', placeholder: 'superyachtme' },
