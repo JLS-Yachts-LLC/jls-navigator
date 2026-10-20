@@ -92,7 +92,12 @@ export default function AisFleetMap({
 
   return (
     <MapContainer center={[25.2, 55.3]} zoom={8} className="h-full w-full" style={{ background: "#aadaff" }}>
-      <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      {/* CARTO Voyager labels places in English (OSM's own tiles use the local
+          language, so the Gulf showed in Arabic) — same base as the GPS fleet map. */}
+      <TileLayer
+        attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+      />
       <FitBounds yachts={located} once={fitOnce} />
       <FocusController focus={focus} />
       <DeselectOnMapClick onDeselect={() => setSelectedId(null)} />
