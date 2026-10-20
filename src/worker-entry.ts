@@ -1146,6 +1146,12 @@ export default {
       return permitsDryRunHandler(request)
     }
 
+    // One-off: gate pass documents from the SharePoint list items (admin only).
+    if (url.pathname === '/api/sharepoint/gate-pass-documents') {
+      const { gatePassDocumentsHandler } = await import('./routes/api.sharepoint.gate-pass-documents')
+      return gatePassDocumentsHandler(request)
+    }
+
     // Secure document links — public, authorised by the token alone.
     if (url.pathname === '/api/documents/meta') {
       const { documentShareMetaHandler } = await import('./routes/api.documents')

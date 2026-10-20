@@ -1760,6 +1760,84 @@ function _permitItemSig(fields: Record<string, any>, mapping: Record<string, str
   return { vessel: _normVessel(get('vessel_name')), holder: _normHolder(get('holder_name')), number: _isRealPermitNumber(num) ? _normRef(num) : '' }
 }
 
+/**
+ * "Is item <id> of this list a copy of item <id> of another permit list?" Returns
+ * the lists it copies, or null. Until 3 Sept the push wrote one edited permit into
+ * item <id> of all seven lists, so such an item no longer holds its own permit.
+ */
+function _permitCopyChecker(lists: Map<string, PermitListSnapshot>, listName: string, mapping: Record<string, string>) {
+  const otherLists = [...lists.values()].filter((l) => l.listName !== listName).map((l) => ({
+    listName: l.listName,
+    byId: new Map(l.items.filter((i) => !i['@removed']).map((i) => [String(i.id), _permitItemSig(i.fields ?? {}, l.fieldMapping)])),
+  }))
+  return (itemId: string, fields: Record<string, any>): string | null => {
+    const me = _permitItemSig(fields, mapping)
+    const hits = otherLists.filter(({ byId }) => {
+      const o = byId.get(itemId)
+      if (!o) return false
+      const samePermit = (me.holder && me.holder === o.holder) || (me.number && me.number === o.number)
+      return !!samePermit && (!me.vessel || !o.vessel || me.vessel === o.vessel)
+    })
+    return hits.length ? hits.map((h) => `${h.listName} item ${itemId}`).join(', ') : null
+  }
+}
+
+/**
+ * One permit list read for a one-off job (the gate pass document import): its
+ * items, and which of them the sync's own checks would leave alone.
+ *
+ * conflictIds — Polaris rows whose linked item now holds a DIFFERENT permit (the
+ * dry run's "left alone" list). copyItems — items that are a copy of the same item
+ * id of another list. Both come from the code the sync itself uses, so the job
+ * trusts exactly what the sync would trust. Writes nothing.
+ */
+export async function readPermitListForJob(listName: string): Promise<{
+  creds: { tenantId: string; clientId: string; clientSecret: string }
+  siteAbsoluteUrl: string
+  siteId: string
+  graphToken: string
+  items: any[]
+  conflictIds: Map<string, string>
+  copyItems: Map<string, string>
+  fieldMapping: Record<string, string>
+}> {
+  const cfg = await getSpConfig()
+  const sync = (await getSpSyncs()).find((s) => s.syncTarget === 'permits' && s.listName === listName)
+  if (!sync) throw new Error(`No permits sync is configured for "${listName}"`)
+  const siteUrl = sync.sitePath ?? cfg.siteUrl
+  const graphToken = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const lists = await _loadPermitLists(cfg, graphToken)
+  const merged: SpConfig = { ...cfg, siteUrl, listName, fieldMapping: sync.fieldMapping, syncTarget: 'permits' }
+  const dry = await _syncPermits(merged, { dryRun: true, lists })
+  if (!dry.dryRun) throw new Error(`Dry run of "${listName}" failed: ${(dry.samples ?? []).join('; ')}`)
+  const conflictIds = new Map(dry.dryRun.conflictSamples.map((c) => [c.polarisId, c.copyOf ? `${c.reason}; copy of ${c.copyOf}` : c.reason]))
+  const items = (lists.get(listName)?.items ?? []).filter((i) => !i['@removed'])
+  const copyOf = _permitCopyChecker(lists, listName, sync.fieldMapping)
+  const copyItems = new Map<string, string>()
+  for (const i of items) { const c = copyOf(String(i.id), i.fields ?? {}); if (c) copyItems.set(String(i.id), c) }
+  return {
+    creds: { tenantId: cfg.tenantId, clientId: cfg.clientId, clientSecret: cfg.clientSecret },
+    siteAbsoluteUrl: `${new URL(cfg.tenantUrl).origin}${siteUrl}`,
+    siteId: await resolveSpSite(graphToken, cfg.tenantUrl, siteUrl),
+    graphToken,
+    items,
+    conflictIds,
+    copyItems,
+    fieldMapping: sync.fieldMapping,
+  }
+}
+
+/**
+ * Does this item (raw Graph fields) hold a different permit from the Polaris row?
+ * The sync's own identity check, on number and holder — a second guard for jobs
+ * that take something from the item (its attachment) rather than its columns.
+ */
+export function permitItemMismatch(row: Record<string, any>, fields: Record<string, any>, mapping: Record<string, string>): string | null {
+  const next: Record<string, any> = {}
+  for (const [sp, db] of Object.entries(mapping)) if (db === 'holder_name' || db === 'permit_number') next[db] = fields[sp] ?? null
+  return _permitIdentityConflict({ holder_name: row.holder_name, permit_number: row.permit_number }, next)
+}
+
 /** SharePoint items that are someone testing the list, not permits. */
 function _looksLikeTestPermit(rec: Record<string, any>, vesselTitle: string): boolean {
   const vals = [rec.holder_name, rec.permit_number, vesselTitle].map(v => String(v ?? '').trim().toLowerCase())
@@ -1997,20 +2075,7 @@ async function _syncPermits(
   // or Tenders item can be a copy of a DMA Foreign Visitor Permit (Vincent Jaybert ·
   // CAUDWELL MARINE CHEETAH · PRMT202601387 is item 9 of several lists). A copy is
   // never added, linked or used to rewrite a row — it is listed for staff to fix.
-  const otherLists = [...lists.values()].filter((l) => l.listName !== cfg.listName).map((l) => ({
-    listName: l.listName,
-    byId: new Map(l.items.filter((i) => !i['@removed']).map((i) => [String(i.id), _permitItemSig(i.fields ?? {}, l.fieldMapping)])),
-  }))
-  const copyOf = (itemId: string, fields: Record<string, any>): string | null => {
-    const me = _permitItemSig(fields, cfg.fieldMapping)
-    const hits = otherLists.filter(({ byId }) => {
-      const o = byId.get(itemId)
-      if (!o) return false
-      const samePermit = (me.holder && me.holder === o.holder) || (me.number && me.number === o.number)
-      return !!samePermit && (!me.vessel || !o.vessel || me.vessel === o.vessel)
-    })
-    return hits.length ? hits.map((h) => `${h.listName} item ${itemId}`).join(', ') : null
-  }
+  const copyOf = _permitCopyChecker(lists, cfg.listName, cfg.fieldMapping)
 
   for (const item of allItems) {
     if (item['@removed']) continue

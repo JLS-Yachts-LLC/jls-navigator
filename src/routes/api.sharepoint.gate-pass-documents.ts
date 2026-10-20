@@ -1,0 +1,41 @@
+/**
+ * /api/sharepoint/gate-pass-documents — one-off: copy each gate pass's document
+ * from its SharePoint "Gate Pass" list item into Polaris.
+ *
+ *   GET  ?libraries=1  dry run: where the files are, and what an import would do.
+ *                      Writes nothing. libraries=1 also searches the site's
+ *                      document libraries for "gate pass" files.
+ *   POST {limit}       import up to `limit` (default 150, max 250) documents.
+ *                      Repeat until `remaining` is 0, or stop when a call imports
+ *                      nothing (only failures are left).
+ *
+ * Global/org admin, Bearer token. See src/lib/gate-pass-documents.server.ts for
+ * which items are trusted. The permits sync stays off; nothing goes to SharePoint.
+ */
+import { requireAdminAccess } from '@/lib/admin/access'
+import { gatePassDocumentsDryRun, gatePassDocumentsImport } from '@/lib/gate-pass-documents.server'
+
+const json = (b: unknown, s = 200) =>
+  new Response(JSON.stringify(b, null, 2), {
+    status: s,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  })
+
+export async function gatePassDocumentsHandler(request: Request): Promise<Response> {
+  const session = await requireAdminAccess(request, ['global_admin', 'org_admin'])
+  if (!session.ok) return session.response
+
+  try {
+    if (request.method === 'GET') {
+      const libraries = new URL(request.url).searchParams.get('libraries') === '1'
+      return json({ ok: true, dryRun: true, ...(await gatePassDocumentsDryRun({ libraries })) })
+    }
+    if (request.method === 'POST') {
+      const body = await request.json().catch(() => ({})) as { limit?: number }
+      return json({ ok: true, ...(await gatePassDocumentsImport(Number(body.limit) || 150)) })
+    }
+    return json({ ok: false, error: 'Method not allowed' }, 405)
+  } catch (e: any) {
+    return json({ ok: false, error: String(e?.message ?? e).slice(0, 500) }, 500)
+  }
+}
