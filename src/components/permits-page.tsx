@@ -7,7 +7,6 @@ import {
   GATE_PASS_VALIDITY,
   type Permit, type PermitType, type PermitStatus,
   daysUntil, expiryVariant, effectiveExpiry, displayStatus, datesConflict, gatePassValidityOf,
-  requiresQuotationForEmail,
 } from "@/lib/permit-types";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { Button } from "@/components/ui/button";
@@ -594,3 +593,22 @@ function PermitDialog({
     </DialogContent>
   );
 }
+
+
+  /** Open the review window â the email is only sent from there, once checked. */
+  function handleSendEmail(permit: Permit) {
+    if (!user?.email) { toast.error("You must be signed in to send emails"); return; }
+    if (!permit.contact_email) { toast.error("This permit has no contact email address"); return; }
+    // SD-0070: the FMA Cruising Permit renewal reminder must match the manual
+    // process â expiry date stated and a JLS quotation attached â so neither
+    // field can be missing when the review window opens for these types.
+    if (requiresQuotationForEmail(permit.permit_type) && !permit.jls_quotation_number) {
+      toast.error("Add the JLS quotation number for this renewal before sending the reminder");
+      return;
+    }
+    if (requiresQuotationForEmail(permit.permit_type) && !permit.expiry_date) {
+      toast.error("Set the permit's expiry date before sending the renewal reminder");
+      return;
+    }
+    setReviewEmailId(permit.id);
+  }
