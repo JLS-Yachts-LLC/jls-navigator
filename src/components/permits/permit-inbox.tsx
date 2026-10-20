@@ -204,7 +204,7 @@ export function PermitInbox({ onCountChange }: { onCountChange?: (n: number) => 
       )}
 
       <div className="flex gap-1 border-b border-border/60 px-4">
-        {([["review", "To review"], ["filed", "Filed"], ["other", "Not permits / rejected"]] as [View, string][]).map(([v, label]) => (
+        {([["review", "To review"], ["filed", "Filed"], ["other", "Ignored / rejected"]] as [View, string][]).map(([v, label]) => (
           <button key={v} onClick={() => setView(v)}
             className={cn("border-b-2 px-3 py-2 text-sm font-medium transition",
               view === v ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
@@ -221,7 +221,7 @@ export function PermitInbox({ onCountChange }: { onCountChange?: (n: number) => 
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground">
               <Inbox className="h-8 w-8" />
-              {view === "review" ? "Nothing waiting. New permits appear here within 5 minutes of arriving." : "Nothing here."}
+              {view === "review" ? "Nothing waiting. Vessel entry permits appear here within 5 minutes of arriving." : "Nothing here."}
             </div>
           ) : rows.map((r) => {
             const vessel = yachts.find((y) => y.id === (r.yacht_id ?? r.suggested_yacht_id))?.vessel_name;
@@ -345,7 +345,7 @@ function InboxDetail({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
         {(row.status === "not_permit" || row.status === "rejected") && (
           <div className="space-y-3 rounded-md border border-border p-3 text-sm">
             <div className="flex items-center gap-2 font-medium text-muted-foreground">
-              <XCircle className="h-4 w-4" /> {row.status === "rejected" ? "Rejected" : "Not a permit"}
+              <XCircle className="h-4 w-4" /> {row.status === "rejected" ? "Rejected" : "Ignored — not a vessel entry permit"}
             </div>
             {row.reading?.summary && <div className="text-xs text-muted-foreground">Read as: {row.reading.summary}</div>}
             <Button size="sm" variant="outline" onClick={() => act("reread", { action: "reread" }, "Moved to review")} disabled={!!busy}>

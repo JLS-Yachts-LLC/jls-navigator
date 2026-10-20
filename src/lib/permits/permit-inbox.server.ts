@@ -2,11 +2,13 @@
  * Permit Inbox — permits that arrive by email, read and matched to a vessel,
  * waiting for the Agency team to confirm.
  *
- * Faisal receives the GDRFA vessel entry permits (and others), from senders and
+ * Vessel entry permits arrive in Faisal's mailbox and pro@, from senders and
  * authorities that vary — so an Outlook rule on sender or subject can't catch
  * them. Instead Polaris looks at every PDF attached to mail in the watched
  * mailboxes (`permit_inbox_mailboxes`) and lets Claude decide whether it is a
- * permit at all, and if so read it.
+ * vessel entry permit, and if so read it. Only entry permits are wanted from
+ * email (WANTED_KINDS); an upload can be any permit type. The same PDF sent to
+ * both mailboxes is read once (hash dedupe).
  *
  *  • Nothing is written to `permits` here. A permit lands in `permit_inbox` with
  *    the vessel it most likely belongs to; a person confirms it (see
@@ -35,6 +37,8 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024
 const MAX_READS_PER_TICK = 4
 /** Days looked back on a normal tick; the first run of a new mailbox looks back further. */
 const LOOKBACK_DAYS = 3
+/** Which permits arriving by email go to review. Everything else is ignored. */
+const WANTED_KINDS = new Set<PermitKind>(['vessel_entry'])
 const FIRST_RUN_DAYS = 14
 
 // ── Reading a PDF ────────────────────────────────────────────────────────────
@@ -105,6 +109,8 @@ const PROMPT = `This PDF was attached to an email received by a yacht agency in 
 Permits include: GDRFA / ICP vessel entry or exit permits ("Vessel Entry Permit"), cruising permits (mothership or tenders), sanitation certificates, navigation licences, TDRA radio licences, DMA (Dubai Maritime Authority) permits, port gate passes, and Abu Dhabi port/maritime permits. They may be in English, Arabic or both.
 
 A permit here is always about a specific vessel / marine craft, or a person's access to a port (gate pass). Anything about the company itself is NOT a permit.
+
+Be careful with "entry permit": kind = vessel_entry ONLY for a permit letting a VESSEL enter / berth in a UAE port (e.g. the GDRFA / ICP "Vessel Entry Permit", which lists the vessel, its flag, IMO / official number, port and crew). A PERSON's entry permit is a visa — that is not_a_permit.
 
 NOT permits (kind = not_a_permit, is_permit = false): company trade / commercial licences, commercial registers, chamber of commerce certificates, signboard permits, invoices, quotations, receipts, crew lists on their own, passports, visas, insurance certificates, letters (including letters about cancelling a craft's registration), contracts, reports, brochures.
 
@@ -345,7 +351,10 @@ export async function ingestPdf(bytes: Uint8Array, origin: Origin, opts: { force
   let reading: PermitReading | null = null, readError: string | null = null
   try { reading = await readPermitPdf(bytes) } catch (e) { readError = e instanceof Error ? e.message : String(e) }
 
-  if (reading && !reading.is_permit && !opts.forcePermit) {
+  // Only VESSEL ENTRY permits are wanted from the mailboxes (Matt, 20 Oct 2026) —
+  // other permit types are handled elsewhere and would only clutter the queue.
+  // A PDF someone uploads or asks to re-read is taken whatever it is.
+  if (reading && !opts.forcePermit && !(reading.is_permit && WANTED_KINDS.has(reading.kind))) {
     // Not stored: just enough to find it again if this was the wrong call.
     const { data } = await db().from('permit_inbox').insert({
       ...base, subject: null, status: 'not_permit',

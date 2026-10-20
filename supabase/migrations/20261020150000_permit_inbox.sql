@@ -21,7 +21,8 @@ create table if not exists public.permit_inbox_mailboxes (
 );
 
 insert into public.permit_inbox_mailboxes (mailbox, label)
-values ('m.faisal@jlsyachts.com', 'Mohammed Faisal')
+values ('m.faisal@jlsyachts.com', 'Mohammed Faisal'),
+       ('pro@jlsyachts.com', 'PRO mailbox')
 on conflict (mailbox) do nothing;
 
 create table if not exists public.permit_inbox (
