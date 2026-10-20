@@ -5,9 +5,215 @@ import type { Release } from "@/components/changelog-page";
 
 export const GENERATED_RELEASES: Release[] = [
   {
+    "version": "2.78.0",
+    "date": "2026-10-20",
+    "entries": [
+      {
+        "type": "feature",
+        "title": "Orbit 2 Bunkering — new request form with Details, Additional Jobs, Notes and Documents tabs; picking a vessel fills IMO, Flag, Official No., LOA, Draft and Berth; delivery port, camlock, hose, FWD/MID/AFT, fuel grade and L/IG/M³ units as dropdowns; supplier contacts remembered; grid columns per the bunkering spec"
+      },
+      {
+        "type": "feature",
+        "title": "Orbit 2 boat page — the boat photo can now be replaced or removed from the vessel spec card"
+      },
+      {
+        "type": "feature",
+        "title": "The top-bar search now finds pages too — type ShipSync, Anchor, visas, Zebra and so on to jump straight to Logistics, the logistics phone app, the driver app or the label printers"
+      },
+      {
+        "type": "feature",
+        "title": "Provisioning is now a department when inviting staff, giving full access to Superyacht Provisioning and view access to Waypoint Chandlery, ShipSync and Agency"
+      },
+      {
+        "type": "fix",
+        "title": "DMA permits that the old sync copied into the other permit lists are no longer pulled into Polaris as Navigation Licenses, Tenders or Gate Passes, and Sync Centre can preview and remove the copies (Polaris rows backed up first)"
+      },
+      {
+        "type": "feature",
+        "title": "App sign-ups on the Compass Card page show approved, banned or deleted once Crew Care decide in Compass Card"
+      },
+      {
+        "type": "feature",
+        "title": "Compass Card page lists vendor requests and offers already waiting before the Polaris link, and shows each one as approved or rejected once an admin decides"
+      },
+      {
+        "type": "feature",
+        "title": "Permit, visa report and Crew Care trip tables can now be sorted and filtered from each column title, keep their header row in view while scrolling, and show remarks; the visa summary adds an all-vessels total, and trips get a search box and an editable Remarks column"
+      },
+      {
+        "type": "feature",
+        "title": "Permits from the Permit Inbox are now saved the way the Agency team files them — entry permits in the yacht's \"ENTRY PERMITS 2026\" folder, exit permits in \"Entry & Exit Permit\", named like \"Madame Gu - Entry Permit - 23Sep2026.pdf\" and never overwriting an existing file"
+      },
+      {
+        "type": "feature",
+        "title": "Check-in can print a receiving label for each parcel (AWB QR code, boat, consignee, \"Parcel 1 of 3\") — on a phone with a Zebra printer chosen it can print automatically when the parcel is saved"
+      },
+      {
+        "type": "feature",
+        "title": "The Permit Inbox now picks up vessel exit permits too, filed in the yacht's EXIT PERMIT year folder"
+      },
+      {
+        "type": "feature",
+        "title": "Sync Centre can now repair the SharePoint permit lists the old sync polluted — preview first, then delete the copied permits (to the recycle bin) and write Polaris's original back into overwritten items"
+      },
+      {
+        "type": "feature",
+        "title": "The Permit Inbox now also watches pro@jlsyachts.com, and only vessel entry permits are picked up from email — other documents and permit types are ignored"
+      },
+      {
+        "type": "fix",
+        "title": "The Permit Inbox no longer treats company documents (trade licence, commercial register) as permits — only permits for a vessel or a port pass are picked up"
+      },
+      {
+        "type": "feature",
+        "title": "Permit Inbox — permits emailed to Faisal are read automatically, matched to their yacht, and filed into the yacht's SharePoint folder (ENTRY PERMIT year) once the Agency team confirms"
+      },
+      {
+        "type": "feature",
+        "title": "Warehouse labels can print straight to the Zebra label printers — set the printers up under ShipSync → Printers, and a phone can be told to always use the receiving or storage printer"
+      },
+      {
+        "type": "fix",
+        "title": "The vessel Live Tracking map, the GPS fleet map and the wall map now show place names in English (the vessel and GPS maps had stopped loading their map after the map provider began requiring a key)"
+      },
+      {
+        "type": "feature",
+        "title": "Staff profile pictures now come from Microsoft 365 — Manage Users shows each person's photo, with a \"Sync photos from Microsoft\" button and a daily refresh; pictures people uploaded themselves are kept"
+      },
+      {
+        "type": "feature",
+        "title": "Polaris Chats — your WhatsApp conversations in a window of their own, installable as a desktop or phone app, with an alert and sound when a message comes in and the unread count on the app icon (open it from WhatsApp → Open Polaris Chats, or /chats-app)"
+      },
+      {
+        "type": "feature",
+        "title": "Pin your favourite pages to the top of the sidebar — each person has their own Favourites"
+      },
+      {
+        "type": "fix",
+        "title": "The Live Tracking vessel map now shows place names in English instead of the local language"
+      },
+      {
+        "type": "fix",
+        "title": "People picked for Compass Card alerts get them even when their profile is marked inactive"
+      },
+      {
+        "type": "feature",
+        "title": "Gate passes show Expired once their date has passed, a Daily/Weekly/Monthly pass type, an Open link to the document, a warning when the dates contradict each other, and status and pass type filters; Yacht Shipments gets search, status, port and ETA filters"
+      },
+      {
+        "type": "feature",
+        "title": "Compass Card sign-ups, vendor requests and offers to approve now alert the right people in Polaris (new Compass Card page, choose who's notified, optional email)"
+      }
+    ]
+  },
+  {
     "version": "2.77.0",
     "date": "2026-10-19",
     "entries": [
+      {
+        "type": "feature",
+        "title": "The Crew Academy course builder now shows the course outline on the left and edits one lesson at a time, saves as you go, and points to anything that needs fixing on the block itself"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Care Job Cards — captains can request a transfer or driver from the Client Portal and staff can raise one internally; the Crew Care team is alerted in the app straight away, with optional email and Microsoft Teams alerts"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy courses now use the full width of big screens, with the lesson list always visible on the left"
+      },
+      {
+        "type": "fix",
+        "title": "Boats, crew and documents whose names end in a full stop (like \"H.I.H.Q.\") can now get a SharePoint folder"
+      },
+      {
+        "type": "fix",
+        "title": "The Training and Training Institute menu items are now hidden from staff without Training access, and opening a Training page without it shows a clear \"no access\" message instead of an empty page"
+      },
+      {
+        "type": "feature",
+        "title": "Crew Academy for crew now has a left menu with a course catalogue — crew can see what each course covers and ask to enrol; a training manager on board approves (with an optional due date) or declines from the portal's new Requests tab, and waiting requests show in Alerts"
+      },
+      {
+        "type": "fix",
+        "title": "The permits SharePoint check no longer lets an old permit be rewritten into a different person or vessel, never adds permits that were copied into the wrong list, finds more permits staff typed into SharePoint by hand, and lists the SharePoint items that need correcting"
+      },
+      {
+        "type": "fix",
+        "title": "Training Institute data (students, instructors, courses, classes, calendar, documents and crew training records) can now only be seen and changed by staff with Training access; captains still see their own crew's certificates in the portal"
+      },
+      {
+        "type": "fix",
+        "title": "WhatsApp numbers that aren't on the WhatsApp Business app no longer offer contact and chat-history imports that can't work"
+      },
+      {
+        "type": "fix",
+        "title": "The SharePoint sync no longer merges two small-boat registrations with the same boat name into one, and no longer merges two different crew members who share a name but have different dates of birth or passports"
+      },
+      {
+        "type": "feature",
+        "title": "The training room tablet — pair it under Training Institute → Tablet and students sign in to today's courses with their name and mobile, see the course calendar for the next six weeks and scan a QR code to leave a Google review; their sign-ins appear under Training Institute → Attendance"
+      },
+      {
+        "type": "fix",
+        "title": "When Meta refuses Polaris access to a WhatsApp account while adding a number, the message names that account and says to renew the access token"
+      },
+      {
+        "type": "fix",
+        "title": "Adding the Training WhatsApp number now looks in the WhatsApp account it was set up in, and says plainly if Meta refuses access to that account"
+      },
+      {
+        "type": "feature",
+        "title": "Orbit 2 client feedback — Internal Request tab, Service Calendar edit/attach, DD/MMM/YYYY dates, client inventory photos, assigned team and boat names"
+      },
+      {
+        "type": "fix",
+        "title": "When adding a WhatsApp number from WhatsApp Manager fails, the message now lists the WhatsApp accounts and numbers Polaris can see"
+      },
+      {
+        "type": "fix",
+        "title": "Fetching vessel photos from SharePoint no longer links a vessel to another vessel's SharePoint entry when they share an \"N/A\" IMO number or a name appears more than once"
+      },
+      {
+        "type": "fix",
+        "title": "Vessels added in Polaris now reach the SharePoint Yachts list (linked to the existing entry when the name is already there), and the SharePoint sync no longer swaps one vessel's details onto another vessel that shares an \"N/A\" or \"0000\" IMO number"
+      },
+      {
+        "type": "feature",
+        "title": "Staff can open the signed Declaration of Health PDF straight from its Client Request"
+      },
+      {
+        "type": "feature",
+        "title": "Captains can now fill in, sign and send the Abu Dhabi Ports Maritime Declaration of Health from the Client Portal (Arrivals & departures → Health declaration); it shows when it's due, files a signed PDF on the vessel's documents and raises a request to the Abu Dhabi team, and staff see it with due-soon and late flags on the vessel's Documents tab"
+      },
+      {
+        "type": "feature",
+        "title": "The Gate Pass tab in ShipSync can now be edited — click any cell to change it, add new gate passes and remove old ones; the first column is now the Gate Pass Reference Number, with the person's Name beside it"
+      },
+      {
+        "type": "feature",
+        "title": "Procurement and Small Boat Registration now appear in the Services menu"
+      },
+      {
+        "type": "fix",
+        "title": "The permits SharePoint check now shows what Polaris would push as well as pull, and switching permits back on can no longer rewrite an old permit into a different one or add a second copy of a permit staff already typed into SharePoint"
+      },
+      {
+        "type": "fix",
+        "title": "The Port Operations wall shows a renewed permit's new expiry even if the renewal is still marked Pending, instead of showing the old permit as expired"
+      },
+      {
+        "type": "feature",
+        "title": "JLS's own boats and newly registered small boats now get their own SharePoint folder automatically (Yacht and Small Boat), and small boats without a folder link are given one"
+      },
+      {
+        "type": "fix",
+        "title": "New client vessels get their SharePoint folder in Yacht alongside the others (not a duplicate \"Shared Documents\" area), an existing folder with the same name is reused, and the folder links on WIRELESS, DOLCE FAR NIENTE and SHELLY are corrected automatically"
+      },
+      {
+        "type": "fix",
+        "title": "Permits no longer stay \"Pending\" after they're emailed to the client — sending a permit with its document marks it Active, and every permit form now has a Status field"
+      },
       {
         "type": "feature",
         "title": "The Port Operations wall is easier to use on its touchscreen — bigger rows, boat markers and buttons, and a stray pinch or long-press no longer zooms the page or selects text"
