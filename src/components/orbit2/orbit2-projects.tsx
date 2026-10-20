@@ -17,7 +17,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { errorMessage } from "@/lib/error-message";
-import { Loader2, Plus, Search, X, Send, Trash2 } from "lucide-react";
+import { Loader2, Plus, Search, X, Send, Trash2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -842,7 +842,38 @@ function DetailPanel({
  */
 function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () => Promise<void> | void }) {
   const [busy, setBusy] = useState(false);
-  const ready = (project.assigned_team ?? []).length > 0 && (project.email || project.whatsapp);
+  const [previewing, setPreviewing] = useState(false);
+  // A bunkering request is acknowledged on arrival, with the request form
+  // attached — nobody needs to be assigned yet, but it does need an email.
+  const bunkering = project.record_type === "bunkering";
+  const ready = bunkering
+    ? !!project.email
+    : (project.assigned_team ?? []).length > 0 && (project.email || project.whatsapp);
+
+  /** Opens the request form exactly as the client will get it. */
+  async function preview() {
+    // Opened before the fetch so a popup blocker treats it as the click's own window.
+    const win = window.open("", "_blank");
+    setPreviewing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/orbit2/bunker-form?project_id=${encodeURIComponent(project.id)}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `Could not build the form (${res.status})`);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      if (win) win.location.href = url; else window.location.assign(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      win?.close();
+      toast.error(errorMessage(e, "Could not open the form"));
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   async function send() {
     setBusy(true);
@@ -876,20 +907,33 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
     <div className="rounded-lg border border-border bg-muted/15 px-3.5 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[15px] font-semibold">Client notification</div>
+          <div className="text-[15px] font-semibold">{bunkering ? "Bunkering request to client" : "Client notification"}</div>
           <p className="mt-0.5 text-[14px] text-muted-foreground">
             {project.client_notified_at
               ? `Last sent ${stamp(project.client_notified_at)}.`
-              : ready
-                ? "Confirms the request is logged, who is attending, and the schedule."
-                : "Assign a team member and add an email or WhatsApp number first."}
+              : bunkering
+                ? ready
+                  ? "Emails the acknowledgement with the request form attached, for the client to check, mark the manifold on the deck plan, and send back."
+                  : "Add the client's email first — the request form goes by email."
+                : ready
+                  ? "Confirms the request is logged, who is attending, and the schedule."
+                  : "Assign a team member and add an email or WhatsApp number first."}
           </p>
         </div>
-        <button onClick={() => void send()} disabled={busy || !ready}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-primary/50 bg-primary/10 px-3 py-1.5 text-[15px] font-medium text-primary hover:bg-primary/20 disabled:opacity-40">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          {project.client_notified_at ? "Send again" : "Notify client"}
-        </button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          {bunkering && (
+            <button onClick={() => void preview()} disabled={previewing}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[15px] font-medium hover:bg-accent disabled:opacity-40">
+              {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              Preview form
+            </button>
+          )}
+          <button onClick={() => void send()} disabled={busy || !ready}
+            className="flex items-center gap-1.5 rounded-md border border-primary/50 bg-primary/10 px-3 py-1.5 text-[15px] font-medium text-primary hover:bg-primary/20 disabled:opacity-40">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {project.client_notified_at ? "Send again" : bunkering ? "Send request form" : "Notify client"}
+          </button>
+        </div>
       </div>
     </div>
   );

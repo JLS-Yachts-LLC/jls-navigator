@@ -17,6 +17,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { sendGraphEmail } from "@/lib/graph-mail.server";
+import { buildBunkerRequestPdf, bunkerRequestFileName, type BunkerRequestRecord } from "@/lib/orbit2/bunker-request-pdf.server";
+import { fmtDMY } from "@/lib/format-date";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -47,6 +49,49 @@ function scheduleLine(date: string | null, time: string | null): string {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** Copied on every bunkering request email (Bunkering Request spec, section 1.4). */
+const BUNKER_CC = ["l.crasta@jlsyachts.com", "r.saycon@jlsyachts.com", "k.stanley@jlsyachts.com"];
+
+function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/**
+ * The bunkering request acknowledgement, worded as spec section 1.4 gives it.
+ * It goes with the pre-filled request form (deck plan included) for the client
+ * to check, mark the manifold on, and send back.
+ */
+function bunkerEmail(p: BunkerRequestRecord, senderName: string): { subject: string; html: string } {
+  const port = p.delivery_port === "Others" ? (p.delivery_port_other || "Others") : (p.delivery_port || p.location || "—");
+  const qty = p.quantity != null ? `${p.quantity} ${p.quantity_unit === "M3" ? "M³" : p.quantity_unit ?? ""}`.trim() : "—";
+  const rows: [string, string][] = [
+    ["Fuel Grade", p.product_grade || "—"],
+    ["Quantity", qty],
+    ["Delivery Port", port],
+    ["Berth No.", p.berth_no || "—"],
+    ["Camlock Type", p.camlock_type || "—"],
+    ["Camlock Size", p.camlock_size_in != null ? `${p.camlock_size_in} Inches` : "—"],
+    ["Hose Length (M)", p.hose_length_m != null ? String(p.hose_length_m) : "—"],
+  ];
+  const boat = p.client_name || "your vessel";
+  const subject = [p.task_id, "BUNKERING REQUEST", p.client_name || "—", p.schedule_date ? fmtDMY(p.schedule_date) : "Date TBC"].join(" - ");
+  const html = `
+    <div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5">
+      <p>Hi ${esc(p.requestor_name || "Captain")},</p>
+      <p>Thank you for your inquiry. This email acknowledges receipt of your Bunkering Request
+         (Task ID: <strong>${esc(p.task_id)}</strong>) for ${esc(boat)}.</p>
+      <p>Here are the details of your request:</p>
+      <ul>${rows.map(([k, v]) => `<li><strong>${esc(k)}:</strong> ${esc(v)}</li>`).join("")}</ul>
+      <p>Please review the attached PDF to verify that all information is correct. Additionally,
+         please mark an (X) on the diagram in the attached PDF to indicate your bunker manifold location.</p>
+      <p>To proceed with your request, please reply to this email with your confirmation and attach the completed PDF.</p>
+      <p>Thank you,<br/>${esc(senderName)}</p>
+    </div>`;
+  return { subject, html };
+}
+
 export async function orbit2NotifyHandler(request: Request): Promise<Response> {
   const access = await requireAccess(request, { module: "orbit", level: "edit" });
   if (!access.ok) return access.response;
@@ -64,10 +109,13 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
     .maybeSingle();
   if (error || !project) return json({ error: "Record not found" }, 404);
 
+  const bunkering = project.record_type === "bunkering";
   const team: string[] = project.assigned_team ?? [];
-  if (team.length === 0) return json({ error: "Assign a team member before notifying the client." }, 400);
+  // A bunkering request is acknowledged before anyone is assigned to it.
+  if (team.length === 0 && !bunkering) return json({ error: "Assign a team member before notifying the client." }, 400);
 
-  const who = team.length === 1 ? team[0] : `${team.slice(0, -1).join(", ")} and ${team[team.length - 1]}`;
+  const who = team.length === 0 ? "to be confirmed"
+    : team.length === 1 ? team[0] : `${team.slice(0, -1).join(", ")} and ${team[team.length - 1]}`;
   const when = scheduleLine(project.schedule_date, project.schedule_time);
   const where = project.location || "to be confirmed";
   const what = project.record_type === "bunkering"
@@ -80,7 +128,28 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
 
   // ── Email ──
   const to = (project.email ?? "").trim();
-  if (to && EMAIL.test(to)) {
+  if (to && EMAIL.test(to) && bunkering) {
+    try {
+      const { data: me } = await sb.from("user_profiles").select("display_name")
+        .eq("user_id", access.claims.userId).maybeSingle();
+      const senderName = (me as { display_name?: string } | null)?.display_name || "Our Port & Agency Team";
+      const pdf = await buildBunkerRequestPdf(project as BunkerRequestRecord);
+      const { subject, html } = bunkerEmail(project as BunkerRequestRecord, senderName);
+      const self = access.claims.email.toLowerCase();
+      await sendGraphEmail({
+        to: [to],
+        cc: BUNKER_CC.filter((a) => a !== self),
+        // Sent from the platform mailbox; the client's reply goes to whoever pressed Send.
+        replyTo: self ? [self] : undefined,
+        subject,
+        html,
+        attachments: [{ filename: bunkerRequestFileName(project), contentBase64: toBase64(pdf), contentType: "application/pdf" }],
+      });
+      emailSent = true;
+    } catch (e) {
+      problems.push(`Email: ${e instanceof Error ? e.message : "send failed"}`);
+    }
+  } else if (to && EMAIL.test(to)) {
     const html = `
       <p>Dear ${esc(project.requestor_name || project.client_name || "Sir/Madam")},</p>
       <p>Your request has been logged with reference
@@ -170,5 +239,31 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
     whatsapp: whatsappSent,
     // Partial success still reports what did not go, so nobody assumes both did.
     warning: problems.length ? problems.join(" ") : undefined,
+  });
+}
+
+/**
+ * GET /api/orbit2/bunker-form?project_id=… — the request form exactly as the
+ * client will receive it, so the team can check it (or send it some other way,
+ * e.g. WhatsApp) before pressing Send.
+ */
+export async function orbit2BunkerFormHandler(request: Request): Promise<Response> {
+  const access = await requireAccess(request, { module: "orbit", level: "view" });
+  if (!access.ok) return access.response;
+
+  const projectId = new URL(request.url).searchParams.get("project_id");
+  if (!projectId) return json({ error: "project_id is required" }, 400);
+
+  const { data: project, error } = await admin()
+    .from("orbit2_projects").select("*").eq("id", projectId).eq("record_type", "bunkering").maybeSingle();
+  if (error || !project) return json({ error: "Bunkering record not found" }, 404);
+
+  const pdf = await buildBunkerRequestPdf(project as BunkerRequestRecord);
+  return new Response(pdf as BodyInit, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${bunkerRequestFileName(project).replace(/"/g, "")}"`,
+      "Cache-Control": "no-store",
+    },
   });
 }
