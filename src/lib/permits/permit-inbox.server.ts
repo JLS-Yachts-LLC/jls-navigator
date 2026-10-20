@@ -104,7 +104,9 @@ const PROMPT = `This PDF was attached to an email received by a yacht agency in 
 
 Permits include: GDRFA / ICP vessel entry or exit permits ("Vessel Entry Permit"), cruising permits (mothership or tenders), sanitation certificates, navigation licences, TDRA radio licences, DMA (Dubai Maritime Authority) permits, port gate passes, and Abu Dhabi port/maritime permits. They may be in English, Arabic or both.
 
-NOT permits (kind = not_a_permit, is_permit = false): invoices, quotations, receipts, crew lists on their own, passports, visas, insurance certificates, letters, contracts, brochures.
+A permit here is always about a specific vessel / marine craft, or a person's access to a port (gate pass). Anything about the company itself is NOT a permit.
+
+NOT permits (kind = not_a_permit, is_permit = false): company trade / commercial licences, commercial registers, chamber of commerce certificates, signboard permits, invoices, quotations, receipts, crew lists on their own, passports, visas, insurance certificates, letters (including letters about cancelling a craft's registration), contracts, reports, brochures.
 
 Dates on UAE documents are written day/month/year — 28/10/2025 is 28 October 2025. Write them as YYYY-MM-DD.
 Use null for anything not on the document. Never guess a number or a date.`
