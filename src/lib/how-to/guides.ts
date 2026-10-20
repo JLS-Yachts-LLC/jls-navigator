@@ -25,6 +25,8 @@ export interface GuideImage {
   src: string;
   alt: string;
   highlights?: GuideBox[];
+  /** Pixel height when it isn't SHOT_H (the browser window height changed between captures). */
+  h?: number;
 }
 
 export interface GuideStep {
@@ -57,6 +59,8 @@ const img = (name: string, alt: string, highlights?: GuideBox[]): GuideImage => 
   alt,
   highlights,
 });
+/** Screenshots captured at 1568×750 (Services batch 2 onwards). */
+const img750 = (name: string, alt: string, highlights?: GuideBox[]): GuideImage => ({ ...img(name, alt, highlights), h: 750 });
 
 export const HOW_TO_GUIDES: HowToGuide[] = [
   // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -1080,6 +1084,306 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
       },
     ],
   },
+
+  // ── Provisioning ──────────────────────────────────────────────────────────
+  {
+    id: "provisioning-orders",
+    title: "Log and track a provisioning order",
+    summary: "Record food, beverage, interior, floral and event requests for a yacht and follow them to delivery.",
+    section: "Services",
+    screens: ["route-provisioning"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Provisioning",
+        text: "Click **Provisioning**. **Superyacht Provisioning** lists every order. The strip under the title counts orders by status — **Requested**, **Sourcing**, **Confirmed**, **Delivered** — click one to filter.",
+        image: img750("provisioning-list", "Superyacht Provisioning", [{ x: 197, y: 120, w: 314, h: 20 }]),
+      },
+      {
+        title: "Click Add Order",
+        text: "Click **Add Order** (top right, or in the middle of the page when the list is empty).",
+        image: img750("provisioning-list", "Add Order button", [{ x: 1438, y: 70, w: 98, h: 29 }]),
+      },
+      {
+        title: "Fill in the order",
+        text: "Only **Description** is required. Add the **Vessel**, **Category** (food, beverage, interior, floral, special, event), who **Requested** it, the **Status**, **Delivery Date**, **Amount (AED)** and any notes. Click **Add Order**.",
+        image: img750("provisioning-add", "Add Order form", [
+          { x: 529, y: 224, w: 511, h: 45 },
+          { x: 957, y: 534, w: 83, h: 30 },
+        ]),
+      },
+      {
+        title: "Update, find and export",
+        text: "Click the pencil on an order to change its status as it moves from Requested to Delivered, then **Save Changes**. Search, filter by **All Status** / **All Category**, sort by delivery date, or **Export** the list to Excel.",
+        image: img750("provisioning-list", "Search, filters and export", [{ x: 730, y: 70, w: 702, h: 29 }]),
+      },
+    ],
+  },
+
+  // ── Waypoint Chandlery ────────────────────────────────────────────────────
+  {
+    id: "waypoint-suppliers",
+    title: "Manage chandlery suppliers",
+    summary: "Add and update Waypoint's suppliers, and keep them in step with Lightspeed and QuickBooks.",
+    section: "Services",
+    screens: ["route-waypoint"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Waypoint Chandlery",
+        text: "Click **Waypoint Chandlery**. **Suppliers** lists every supplier with category, contact, email, country and status (**Active**, **Preferred**, **Inactive**). Search or filter by status and category.",
+        image: img750("waypoint-list", "Suppliers list", [{ x: 414, y: 70, w: 621, h: 29 }]),
+      },
+      {
+        title: "Add a supplier",
+        text: "Click **Add Supplier**. Only **Supplier Name** is required; add the category, contact name, email, phone, country, status and notes, then click **Add Supplier**.",
+        image: img750("waypoint-add", "Add Supplier form", [
+          { x: 529, y: 224, w: 251, h: 45 },
+          { x: 945, y: 534, w: 95, h: 30 },
+        ]),
+      },
+      {
+        title: "Edit or remove",
+        text: "Use the pencil on a row to edit a supplier (for example to mark them Preferred), or the bin to remove them. **Export** downloads the list.",
+        image: img750("waypoint-list", "Row actions", [{ x: 1462, y: 200, w: 52, h: 26 }]),
+      },
+      {
+        title: "Lightspeed and QuickBooks",
+        text: "**Sync from Lightspeed** brings the supplier list across from the Lightspeed till system straight away. **SKU → QuickBooks** opens a panel for creating QuickBooks items from Lightspeed products.",
+        image: img750("waypoint-list", "Sync buttons", [{ x: 1042, y: 70, w: 297, h: 29 }]),
+        tip: "Sync from Lightspeed runs as soon as you click it — no confirmation.",
+      },
+    ],
+  },
+
+  // ── Yacht Shipments ───────────────────────────────────────────────────────
+  {
+    id: "yacht-shipments",
+    title: "Track yacht shipments",
+    summary: "Follow yachts being shipped in and out — from new lead to complete — on the shipments board.",
+    section: "Services",
+    screens: ["route-yacht-shipments"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Yacht Shipments",
+        text: "Click **Yacht Shipments**. Choose **Import**, **Export** or **Tracking** (live positions). The board groups shipments by status: **New Lead**, **In Progress**, **On Hold**, **Complete**, **Cancelled**.",
+        image: img750("yacht-shipments", "Yacht Shipments board", [
+          { x: 197, y: 124, w: 174, h: 30 },
+          { x: 210, y: 210, w: 178, h: 23 },
+        ]),
+      },
+      {
+        title: "Filter the board",
+        text: "Search by yacht, and filter by status, arrival port and ETA (next 30 days, this month, passed, no ETA). On Export the filters use departure port and loading date.",
+        image: img750("yacht-shipments", "Search and filters", [{ x: 384, y: 124, w: 585, h: 30 }]),
+      },
+      {
+        title: "Add a shipment",
+        text: "Under the right status group, click **Add yacht name**, type the yacht's name or model and press **Add**. Then fill in its row — LOA, ETA, port of loading, arrival port, customs option, remarks and quotation.",
+        image: img750("yacht-shipments", "Add yacht name", [{ x: 230, y: 506, w: 110, h: 21 }]),
+      },
+      {
+        title: "Update a shipment",
+        text: "Click any cell to change it. Click the **Status** pill to move the shipment to another group, e.g. from New Lead to In Progress.",
+        image: img750("yacht-shipments", "Status column", [{ x: 489, y: 240, w: 105, h: 260 }]),
+        tip: "Changes save as soon as you press Enter or click away, and the bin deletes a row without asking — take care.",
+      },
+    ],
+  },
+
+  // ── Training ──────────────────────────────────────────────────────────────
+  {
+    id: "training-documents",
+    title: "Find and add training documents",
+    summary: "Browse, upload and share the Training Institute's document library.",
+    section: "Services",
+    screens: ["training"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Training",
+        text: "Click **Training**. **Training documents** shows the folders — permits and licences, assessments, instructors, inspections, quotations and student files. Pick a vessel at the top right to see one vessel's documents.",
+        image: img750("training-documents", "Training documents", [{ x: 1367, y: 61, w: 189, h: 31 }]),
+      },
+      {
+        title: "Search or open a folder",
+        text: "Type in **Search documents by name…**, or click a folder to open it. The path above the list takes you back up.",
+        image: img750("training-documents", "Search documents", [{ x: 1098, y: 189, w: 210, h: 30 }]),
+      },
+      {
+        title: "Add documents and folders",
+        text: "Click **Add document** and choose files — they upload straight away (you can also drag files onto the list). **Add folder** makes a new empty folder or uploads a whole folder from your computer.",
+        image: img750("training-documents", "Add document and Add folder", [{ x: 1314, y: 189, w: 228, h: 30 }]),
+      },
+      {
+        title: "Share, rename or move",
+        text: "Use the **⋯** menu on a document or folder (or right-click it) to **Share with guests…**, **Rename**, **Move to folder…**, **Download**, **Duplicate** or **Remove** it.",
+      },
+    ],
+  },
+  {
+    id: "training-institute",
+    title: "Run the Training Institute",
+    summary: "Manage instructors, students, courses and classes, and record certifications.",
+    section: "Services",
+    screens: ["route-training"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Open Training Institute",
+        text: "Click **Training Institute**. The tabs cover **Instructors**, **Students**, **Courses**, **Classes**, **Calendar**, **Attendance**, **Tablet** (the training-room sign-in tablet), **Records** and **Certifications**.",
+        image: img750("institute-instructors", "JLS Training Institute", [{ x: 197, y: 124, w: 728, h: 34 }]),
+      },
+      {
+        title: "Keep instructors' documents in date",
+        text: "**Instructors** shows each instructor's Emirates ID, passport, labour card, residence visa, driving licence and seaman's card expiry dates. Dates in red have expired or are about to.",
+        image: img750("institute-instructors", "Instructor expiry dates", [{ x: 360, y: 228, w: 640, h: 96 }]),
+      },
+      {
+        title: "Enrol a student",
+        text: "On **Students**, click **Add** at the bottom of the list, type the student's name and press **Add**. Then fill in their row — mobile, email, birthday, payment status and amount, class, instructor and **Enrollment Status**. The paperclip attaches their files.",
+        image: img750("institute-students", "Students", [
+          { x: 197, y: 183, w: 237, h: 30 },
+          { x: 870, y: 228, w: 108, h: 492 },
+        ]),
+        tip: "These boards save as you type, and the bin deletes a row without asking. Sync from Monday pulls the latest from Monday.com.",
+      },
+      {
+        title: "Set up classes",
+        text: "On **Classes**, add a class the same way and set its instructor, **Status** (In Progress, On Hold, Pending Approval, Complete), course, start and end dates and students. **Calendar** holds events; **Attendance** shows who signed in on the tablet.",
+        image: img750("institute-classes", "Classes", [{ x: 489, y: 228, w: 112, h: 492 }]),
+      },
+      {
+        title: "Record a certification",
+        text: "On **Certifications** (or **Records** for training records), click **Add Certification**. Choose the crew member, the certificate, its type (STCW, Medical, Safety, Flag State, Other), issuing body, issue and expiry dates, and attach the certificate file. Polaris warns when certificates are expiring.",
+        image: img750("institute-certifications", "Certifications", [
+          { x: 1405, y: 69, w: 131, h: 30 },
+          { x: 393, y: 183, w: 946, h: 91 },
+        ]),
+      },
+    ],
+  },
+  {
+    id: "crew-academy",
+    title: "Publish a Crew Academy course",
+    summary: "Build an online course for yacht crew, publish it and offer it to vessels.",
+    section: "Services",
+    screens: ["route-academy-admin"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Open Crew Academy",
+        text: "Click **Crew Academy**. **JLS courses** lists every course with its category, version, which vessels it's offered to and whether it's **Draft** or **Published**. **Shared with JLS** shows vessels' own courses and crew training records shared with us.",
+        image: img750("academy-library", "Course library", [{ x: 465, y: 152, w: 179, h: 30 }]),
+      },
+      {
+        title: "Create or open a course",
+        text: "Click **New course**, type its title and the editor opens. Or click an existing course to edit it.",
+        image: img750("academy-library", "New course button", [{ x: 1163, y: 72, w: 104, h: 30 }]),
+      },
+      {
+        title: "Build the lessons",
+        text: "The outline on the left holds sections and lessons — **Add lesson**, or use the **⋯** menus to rename, move or delete. In a lesson, **Add block** inserts text, video, PDF, picture, a quiz, an acknowledgement or exercises. **Course details & files** sets the summary, minutes to complete, pass mark and refresher period.",
+        image: img750("academy-editor", "Course editor", [
+          { x: 187, y: 112, w: 226, h: 26 },
+          { x: 638, y: 388, w: 702, h: 41 },
+        ]),
+        tip: "The editor saves on its own — the top bar shows Saved. Preview shows the course as crew will see it.",
+      },
+      {
+        title: "Publish",
+        text: "Click **Publish** (or **Publish new version** for a course already out) and confirm. If anything still needs fixing, the button lists it first.",
+        image: img750("academy-editor", "Publish button", [{ x: 1371, y: 62, w: 139, h: 28 }]),
+      },
+      {
+        title: "Offer it to vessels",
+        text: "Open the **⋯** menu (top right) → **Vessels**, then tick **Every vessel** or choose particular vessels, and **Save**. Each vessel then enrols its own crew from the Client Portal.",
+        image: img750("academy-editor", "More menu", [{ x: 1515, y: 62, w: 28, h: 28 }]),
+      },
+    ],
+  },
+
+  // ── Yacht IT Solutions ────────────────────────────────────────────────────
+  {
+    id: "yacht-it-tickets",
+    title: "Raise and handle an IT ticket",
+    summary: "Log an IT issue in the Service Desk, reply to the requester and resolve it.",
+    section: "Services",
+    screens: ["yacht-it"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open the Service Desk",
+        text: "Click **Yacht IT Solutions**. **Service Desk** lists every ticket. The strip counts **Open**, **In Progress**, **Waiting**, **Resolved** and **Closed** tickets, and the dropdowns filter by queue, priority, category and vessel.",
+        image: img750("yacht-it-desk", "Service Desk", [
+          { x: 197, y: 160, w: 407, h: 20 },
+          { x: 1042, y: 157, w: 494, h: 27 },
+        ]),
+      },
+      {
+        title: "Click New Ticket",
+        text: "Click **New Ticket**. **Check email** pulls in any replies sent to the IT support mailbox.",
+        image: img750("yacht-it-desk", "New Ticket button", [{ x: 1438, y: 104, w: 98, h: 30 }]),
+      },
+      {
+        title: "Describe the issue",
+        text: "Enter a **Subject** (required) and a **Description**. Choose the **Vessel**, **Queue**, **Category** and **Priority**, assign it if you know who'll take it, and add who it's for and their email so they get updates. Click **Create Ticket** — the requester gets an acknowledgement email.",
+        image: img750("yacht-it-new-ticket", "New Ticket form", [
+          { x: 529, y: 189, w: 511, h: 45 },
+          { x: 947, y: 568, w: 93, h: 31 },
+        ]),
+      },
+      {
+        title: "Work the ticket",
+        text: "Click a ticket to open it. Change **Status**, **Priority**, **Assigned to** and the other fields on the right — they save immediately. Write to the requester under **Reply** (**Send reply**), or keep a note for the team under **Internal note**.",
+      },
+      {
+        title: "Resolve it",
+        text: "Use **Send & complete** to send your last reply and mark the ticket **Resolved** in one go, or set Status to Resolved. The requester is emailed either way. Fill in **Resolution** and **Save details** for the record.",
+      },
+    ],
+  },
+
+  // ── Anchor ────────────────────────────────────────────────────────────────
+  {
+    id: "anchor-send-document",
+    title: "Send a document for signature (Anchor)",
+    summary: "Upload a PDF, send it for e-signature and follow it until it's signed.",
+    section: "Services",
+    screens: ["anchor"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Anchor",
+        text: "Click **Anchor**. **Documents** lists everything sent for signature, with the signer, status, and sent and signed dates. The strip filters by **Sent**, **Viewed**, **Signed**, **Voided** and more.",
+        image: img750("anchor-documents", "Anchor documents", [{ x: 197, y: 156, w: 246, h: 18 }]),
+      },
+      {
+        title: "Click New Document",
+        text: "Click **New Document**. (To start from a ready-made document, use the **Templates** tab and click **Use** on a template instead.)",
+        image: img750("anchor-documents", "New Document button", [{ x: 1416, y: 104, w: 120, h: 30 }]),
+      },
+      {
+        title: "Fill in the details",
+        text: "Enter the **Document title**, **Signer name** and **Signer email** (all required), an optional message, and choose the **Document (PDF)**. Under **Signature placement** pick the page and corner where the signature goes.",
+        image: img750("anchor-new-document", "New Document form", [
+          { x: 568, y: 210, w: 432, h: 100 },
+          { x: 568, y: 417, w: 432, h: 38 },
+        ]),
+      },
+      {
+        title: "Save as draft or send",
+        text: "**Save draft** keeps it without sending. **Send for signature** emails the signer a secure link straight away (if a company signatory has to approve first, it waits for them).",
+        image: img750("anchor-new-document", "Save draft and Send for signature", [{ x: 758, y: 545, w: 243, h: 32 }]),
+      },
+      {
+        title: "Track it",
+        text: "Click the document's Ref or title to see its **Audit trail** — sent, viewed and signed. From there you can **Copy link**, **Resend**, **Void** it, and download the original or signed PDF. **Resend** on the list emails the signer again.",
+        image: img750("anchor-documents", "Resend button", [{ x: 1444, y: 238, w: 78, h: 27 }]),
+      },
+    ],
+  },
 ];
 
 export function guideById(id: string): HowToGuide | undefined {
@@ -1099,6 +1403,7 @@ const PATH_SCREENS: [prefix: string, screen: string][] = [
   ["/wall-displays", "route-wall-displays"],
   // The Crew Care nav item opens /crew-cab/jobs; its other tabs (Trips, …) live beside it.
   ["/crew-cab", "route-crew-cab"],
+  ["/it-tickets", "yacht-it"],
 ];
 
 /** The help screen for the current page: the active nav screen, else a path match. */

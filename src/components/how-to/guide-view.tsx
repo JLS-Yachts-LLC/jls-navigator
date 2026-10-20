@@ -23,6 +23,7 @@ export function RichText({ text }: { text: string }) {
 }
 
 function Shot({ image, onClick, big }: { image: GuideImage; onClick?: () => void; big?: boolean }) {
+  const H = image.h ?? SHOT_H;
   return (
     <div
       onClick={onClick}
@@ -31,7 +32,7 @@ function Shot({ image, onClick, big }: { image: GuideImage; onClick?: () => void
       style={{
         position: "relative",
         width: "100%",
-        aspectRatio: `${SHOT_W} / ${SHOT_H}`,
+        aspectRatio: `${SHOT_W} / ${H}`,
         borderRadius: big ? 6 : "var(--pds-radius-md)",
         overflow: "hidden",
         border: "1px solid var(--pds-border-gold)",
@@ -48,9 +49,9 @@ function Shot({ image, onClick, big }: { image: GuideImage; onClick?: () => void
           style={{
             position: "absolute",
             left: `calc(${(h.x / SHOT_W) * 100}% - 3px)`,
-            top: `calc(${(h.y / SHOT_H) * 100}% - 3px)`,
+            top: `calc(${(h.y / H) * 100}% - 3px)`,
             width: `calc(${(h.w / SHOT_W) * 100}% + 6px)`,
-            height: `calc(${(h.h / SHOT_H) * 100}% + 6px)`,
+            height: `calc(${(h.h / H) * 100}% + 6px)`,
             border: "2px solid var(--pds-gold-light)",
             borderRadius: 6,
             boxShadow: "0 0 0 2px rgba(7,17,42,0.55), 0 0 14px rgba(233,204,114,0.55)",

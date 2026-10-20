@@ -138,9 +138,11 @@ async function drawGuide(w: Writer, doc: PDFDocument, f: Fonts, g: HowToGuide, l
 }
 
 async function drawStep(w: Writer, doc: PDFDocument, f: Fonts, s: GuideStep, n: number, loadImage: ImageLoader, cache: Map<string, PDFImage>) {
-  const imgH = s.image ? (CW * SHOT_H) / SHOT_W : 0;
-  // Keep the step heading with at least its first lines (and its image when small enough).
-  w.ensure(60 + Math.min(imgH, 120));
+  const imgH = s.image ? (CW * (s.image.h ?? SHOT_H)) / SHOT_W : 0;
+  // Keep the heading, its text, bullets and screenshot together on one page.
+  const textH =
+    (w.lines(s.text, 10.5, CW - 28).length + (s.bullets ?? []).reduce((n, b) => n + w.lines(b, 10.5, CW - 42).length, 0)) * 15.2;
+  w.ensure(Math.min(38 + textH + imgH + 14, A4.h - M * 2 - 20));
   w.y -= 6;
   // Number badge + title
   w.page.drawCircle({ x: M + 10, y: w.y - 9, size: 10, color: GOLD });
