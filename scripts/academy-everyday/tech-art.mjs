@@ -76,7 +76,7 @@ function ipconfig() {
   return svg(W, TALL, b, null);
 }
 export const IPCONFIG_SPOTS = {
-  gateway: Array.from({ length: 10 }, (_, i) => spot(200 + i * 80, 160 + 9 * 52 - 10, 32)),
+  gateway: Array.from({ length: 10 }, (_, i) => spot(200 + i * 80, 160 + 9 * 52 - 10, 42)),
 };
 
 // ── C4-1 Three ways to the internet ─────────────────────────────────────────
