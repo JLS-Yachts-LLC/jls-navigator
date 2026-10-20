@@ -4,7 +4,8 @@
  *
  *   GET  ?libraries=1  dry run: where the files are, and what an import would do.
  *                      Writes nothing. libraries=1 also searches the site's
- *                      document libraries for "gate pass" files.
+ *                      document libraries for "gate pass" files;
+ *                      folders=A|B lists what is inside those library folders.
  *   POST {limit}       import up to `limit` (default 150, max 250) documents.
  *                      Repeat until `remaining` is 0, or stop when a call imports
  *                      nothing (only failures are left).
@@ -27,8 +28,11 @@ export async function gatePassDocumentsHandler(request: Request): Promise<Respon
 
   try {
     if (request.method === 'GET') {
-      const libraries = new URL(request.url).searchParams.get('libraries') === '1'
-      return json({ ok: true, dryRun: true, ...(await gatePassDocumentsDryRun({ libraries })) })
+      const q = new URL(request.url).searchParams
+      const libraries = q.get('libraries') === '1'
+      // folders=Gate Pass|ISSUED GATE PASS — peek inside library folders (paths from the library root).
+      const folders = (q.get('folders') ?? '').split('|').map((f) => f.trim()).filter(Boolean).slice(0, 6)
+      return json({ ok: true, dryRun: true, ...(await gatePassDocumentsDryRun({ libraries, folders })) })
     }
     if (request.method === 'POST') {
       const body = await request.json().catch(() => ({})) as { limit?: number }

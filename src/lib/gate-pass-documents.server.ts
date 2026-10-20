@@ -64,7 +64,7 @@ async function readAttachments(siteAbsoluteUrl: string, creds: { tenantId: strin
     `${site}/_api/web/lists/getbytitle('${encodeURIComponent(LIST)}')/items?$select=Id,Attachments,AttachmentFiles&$expand=AttachmentFiles&$top=1000`
   while (next) {
     const res: Response = await fetch(next, { headers: { Authorization: `Bearer ${spToken}`, Accept: 'application/json;odata=nometadata' } })
-    if (!res.ok) throw new Error(`SharePoint attachments: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`)
+    if (!res.ok) throw new Error(`SharePoint attachments: HTTP ${res.status} ${res.headers.get('x-ms-diagnostics') ?? ''} ${(await res.text()).slice(0, 200)}`)
     const body = await res.json() as Record<string, any>
     for (const it of (body.value ?? []) as Array<Record<string, any>>) {
       const files = ((it.AttachmentFiles ?? []) as Array<Record<string, any>>)
@@ -184,15 +184,50 @@ async function surveyLibraries(siteId: string, graphToken: string) {
   return out
 }
 
+/** What is inside a few library folders: files by type, and each subfolder's size — read-only. */
+async function surveyFolders(siteId: string, graphToken: string, paths: string[]) {
+  const h = { headers: { Authorization: `Bearer ${graphToken}` } }
+  const list = async (path: string) => {
+    let all: any[] = []
+    let next: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${path.split('/').map(encodeURIComponent).join('/')}:/children?$top=999&$select=name,folder,file,size,lastModifiedDateTime`
+    while (next && all.length < 5000) {
+      const body = await (await fetch(next, h)).json() as Record<string, any>
+      if (!body.value) return { error: JSON.stringify(body.error ?? body).slice(0, 200), items: all }
+      all = all.concat(body.value); next = body['@odata.nextLink'] ?? null
+    }
+    return { items: all }
+  }
+  const out: any[] = []
+  for (const path of paths) {
+    const { items, error } = await list(path) as { items: any[]; error?: string }
+    const files = items.filter((i) => i.file)
+    const folders = items.filter((i) => i.folder)
+    const byExt: Record<string, number> = {}
+    for (const f of files) byExt[ext(f.name)] = (byExt[ext(f.name)] ?? 0) + 1
+    const inside: any[] = []
+    for (const f of folders.slice(0, 4)) {
+      const sub = await list(`${path}/${f.name}`) as { items: any[] }
+      inside.push({ folder: f.name, children: f.folder?.childCount, samples: sub.items.slice(0, 8).map((i) => `${i.folder ? '[folder] ' : ''}${i.name}`) })
+    }
+    out.push({
+      path, error, files: files.length, byExt, folders: folders.length,
+      folderNames: folders.slice(0, 40).map((f) => `${f.name} (${f.folder?.childCount ?? '?'})`),
+      fileSamples: files.slice(0, 15).map((f) => f.name), inside,
+    })
+  }
+  return out
+}
+
 const sample = (plan: GatePassDocPlanRow[], outcome: Outcome, n = 15) =>
   plan.filter((p) => p.outcome === outcome).slice(0, n).map(({ pick, ...p }) => ({ ...p, pick: pick?.name }))
 
 /** Read-only: where the documents are, and what an import would do. */
-export async function gatePassDocumentsDryRun(opts: { libraries?: boolean } = {}) {
+export async function gatePassDocumentsDryRun(opts: { libraries?: boolean; folders?: string[] } = {}) {
   const { job, plan, summary } = await buildPlan()
   return {
     summary,
     libraries: opts.libraries ? await surveyLibraries(job.siteId, job.graphToken) : undefined,
+    folders: opts.folders?.length ? await surveyFolders(job.siteId, job.graphToken, opts.folders) : undefined,
     samples: {
       ready: sample(plan, 'ready', 20),
       conflict: sample(plan, 'conflict', 40),
