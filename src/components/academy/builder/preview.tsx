@@ -5,11 +5,11 @@ import { findBlock, forLearner, gradeBlock, isGraded, type BlockProgress, type C
 import { useBackend } from "./shared";
 
 // ── Preview (local marking, nothing saved) ───────────────────────────────────
-export function Preview({ title, content, passMark, onExit, mediaUrl, from, banner, toolbar }: {
+export function Preview({ title, content, passMark, onExit, mediaUrl, from, banner, toolbar, exitLabel }: {
   title: string; content: CourseContent; passMark: number; onExit: () => void; toolbar?: React.ReactNode;
   /** Defaults to the creator's backend. */
   mediaUrl?: (mediaId: string) => Promise<string | null>;
-  from?: string; banner?: React.ReactNode;
+  from?: string; banner?: React.ReactNode; exitLabel?: string;
 }) {
   const backend = useBackend();
   const progress = useRef<Map<string, BlockProgress>>(new Map());
@@ -50,7 +50,7 @@ export function Preview({ title, content, passMark, onExit, mediaUrl, from, bann
 
   return (
     <CoursePlayer title={title} from={from ?? backend.owner} content={learnerCopy} passMark={passMark} initialProgress={[]} api={api}
-      onExit={onExit} exitLabel={banner ? "Back" : "Back to editing"} toolbar={toolbar}
+      onExit={onExit} exitLabel={exitLabel ?? (banner ? "Back" : "Back to editing")} toolbar={toolbar}
       banner={banner ?? <div className="mt-4 rounded-xl border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
         Preview of your draft, as crew will see it. Nothing here is recorded.
       </div>} />

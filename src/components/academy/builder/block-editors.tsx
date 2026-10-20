@@ -113,6 +113,9 @@ export function AutoTextarea({ value, onChange, minRows = 3, className, inputRef
 // ── Reading: markdown with a toolbar and a live preview ──────────────────────
 type Fmt = "bold" | "italic" | "heading" | "bullets" | "numbers" | "link";
 function format(value: string, start: number, end: number, kind: Fmt): { value: string; start: number; end: number } {
+  // Spaces at the edges of a selection stay outside the markers ("**word **" isn't bold in markdown).
+  while (start < end && /\s/.test(value[start])) start++;
+  while (end > start && /\s/.test(value[end - 1])) end--;
   const sel = value.slice(start, end);
   const wrap = (mark: string, fallback: string) => {
     const text = sel || fallback;
@@ -164,7 +167,7 @@ function ReadingEditor({ value, onChange }: { value: string; onChange: (v: strin
           {preview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />} {preview ? "Hide preview" : "Show preview"}
         </button>
       </div>
-      <div className={cn("grid min-w-0 gap-3", preview && "2xl:grid-cols-2")}>
+      <div className={cn("grid min-w-0 gap-3", preview && "@2xl:grid-cols-2")}>
         <AutoTextarea inputRef={ta} value={value} onChange={onChange} minRows={6}
           className={cn(inputCls, "min-h-[140px] font-mono text-[13px] leading-relaxed")}
           onKeyDown={(e) => {

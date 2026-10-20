@@ -96,7 +96,12 @@ export function AcademySection() {
   if (error) return <SectionEmpty icon={GraduationCap} message={error} />;
   if (!data) return <SectionLoading />;
   if (editingCourse) {
-    return <CourseEditor id={editingCourse} backend={backend} onBack={() => { setEditingCourse(null); void load(); }} />;
+    // The portal's phone header is sticky too: keep the creator's header below it.
+    return (
+      <div className="-mx-4 -mt-5 [--builder-top:57px] sm:-mx-8 sm:[--builder-top:0px]">
+        <CourseEditor id={editingCourse} backend={backend} onBack={() => { setEditingCourse(null); void load(); }} />
+      </div>
+    );
   }
 
   const active = data.learners.filter((l) => l.active);

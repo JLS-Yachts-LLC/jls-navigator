@@ -213,7 +213,7 @@ export function Menu({ button, children, width = 240, align = "end" }: {
     const w = Math.min(width, vw - 16);
     const left = Math.max(8, Math.min(vw - w - 8, align === "end" ? r.right - w : r.left));
     const below = vh - r.bottom - 8, above = r.top - 8;
-    setPos(below >= 260 || below >= above
+    setPos(below >= 440 || below >= above
       ? { left, top: r.bottom + 4, maxHeight: Math.max(160, below - 4) }
       : { left, bottom: vh - r.top + 4, maxHeight: Math.max(160, above - 4) });
   }, [open, width, align]);
@@ -229,12 +229,10 @@ export function Menu({ button, children, width = 240, align = "end" }: {
     document.addEventListener("pointerdown", down, true);
     document.addEventListener("keydown", key, true);
     window.addEventListener("scroll", away, true);
-    window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("pointerdown", down, true);
       document.removeEventListener("keydown", key, true);
       window.removeEventListener("scroll", away, true);
-      window.removeEventListener("resize", close);
     };
   }, [open]);
 
