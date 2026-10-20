@@ -7,6 +7,7 @@ import {
   GATE_PASS_VALIDITY,
   type Permit, type PermitType, type PermitStatus,
   daysUntil, expiryVariant, effectiveExpiry, displayStatus, datesConflict, gatePassValidityOf,
+  requiresQuotationForEmail,
 } from "@/lib/permit-types";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { Button } from "@/components/ui/button";
@@ -57,7 +58,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
   useEffect(() => { void load(); void loadYachts(); }, [permitType]);
 
-  /** Open the review window — the email is only sent from there, once checked. */
+  /** Open the review window â the email is only sent from there, once checked. */
   function handleSendEmail(permit: Permit) {
     if (!user?.email) { toast.error("You must be signed in to send emails"); return; }
     if (!permit.contact_email) { toast.error("This permit has no contact email address"); return; }
@@ -66,7 +67,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
   async function load() {
     setLoading(true);
-    // PostgREST caps a response at 1000 rows — page through (Gate Pass alone
+    // PostgREST caps a response at 1000 rows â page through (Gate Pass alone
     // exceeds 1000) so the full list for this permit type loads.
     const PAGE = 1000;
     const all: Permit[] = [];
@@ -105,7 +106,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
     setDeleteTarget(null);
   }
 
-  // Which bucket a row falls in — the same rule drives the stat cards and the filter.
+  // Which bucket a row falls in â the same rule drives the stat cards and the filter.
   function bucketOf(r: Permit): "expired" | "expiring" | "active" | "pending" | "cancelled" {
     const status = displayStatus(r);
     if (status === "expired" || status === "cancelled") return status;
@@ -141,7 +142,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
 
   const isGatePass = permitType === "gate_pass";
 
-  const yachtName = (id: string | null) => yachts.find((y) => y.id === id)?.vessel_name ?? "—";
+  const yachtName = (id: string | null) => yachts.find((y) => y.id === id)?.vessel_name ?? "â";
 
   return (
     <div className="flex h-full flex-col">
@@ -153,14 +154,14 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
         <div className="flex items-center gap-2.5">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search permits…" className="h-9 w-60 pl-8 text-sm bg-background/50 border-border/60 placeholder:text-muted-foreground/40" />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search permitsâ¦" className="h-9 w-60 pl-8 text-sm bg-background/50 border-border/60 placeholder:text-muted-foreground/40" />
           </div>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
             <SelectTrigger className="h-9 w-40 text-sm" aria-label="Status"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="expiring">Expiring ≤ 30d</SelectItem>
+              <SelectItem value="expiring">Expiring â¤ 30d</SelectItem>
               <SelectItem value="expired">Expired</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -261,13 +262,13 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
       <div className="grid grid-cols-4 gap-3 px-6 py-4">
         <Stat label="Total" value={stats.total} icon={FileCheck2} accent="text-primary" />
         <Stat label="Active" value={stats.active} icon={CheckCircle2} accent="text-success" />
-        <Stat label="Expiring ≤ 30d" value={stats.expiring} icon={Clock} accent="text-warning" />
+        <Stat label="Expiring â¤ 30d" value={stats.expiring} icon={Clock} accent="text-warning" />
         <Stat label="Expired" value={stats.expired} icon={AlertTriangle} accent="text-destructive" />
       </div>
 
       <div className="flex-1 overflow-auto px-6 pb-6">
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loadingâ¦</div>
         ) : filtered.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
             <FileCheck2 className="h-10 w-10 text-muted-foreground/60" />
@@ -315,21 +316,21 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                   const pass = isGatePass ? gatePassValidityOf(r.issue_date, r.expiry_date) : null;
                   return (
                     <tr key={r.id}>
-                      <td className="font-medium tabular-nums text-foreground/90">{r.permit_number ?? <span className="text-muted-foreground/50">—</span>}</td>
+                      <td className="font-medium tabular-nums text-foreground/90">{r.permit_number ?? <span className="text-muted-foreground/50">â</span>}</td>
                       <td className="font-medium">{yachtName(r.yacht_id)}</td>
-                      <td className="text-foreground/75">{r.holder_name ?? <span className="text-muted-foreground/50">—</span>}</td>
-                      <td className="text-foreground/75">{r.issuing_authority ?? <span className="text-muted-foreground/50">—</span>}</td>
-                      {meta.showDmaPhase && <td className="text-foreground/75">{r.dma_phase ?? <span className="text-muted-foreground/50">—</span>}</td>}
+                      <td className="text-foreground/75">{r.holder_name ?? <span className="text-muted-foreground/50">â</span>}</td>
+                      <td className="text-foreground/75">{r.issuing_authority ?? <span className="text-muted-foreground/50">â</span>}</td>
+                      {meta.showDmaPhase && <td className="text-foreground/75">{r.dma_phase ?? <span className="text-muted-foreground/50">â</span>}</td>}
                       {isGatePass && (
                         <td className="text-foreground/75">
-                          {pass ? GATE_PASS_VALIDITY.find((v) => v.value === pass)?.label : <span className="text-muted-foreground/50" title="No expiry date recorded, so the pass type isn't known">—</span>}
+                          {pass ? GATE_PASS_VALIDITY.find((v) => v.value === pass)?.label : <span className="text-muted-foreground/50" title="No expiry date recorded, so the pass type isn't known">â</span>}
                         </td>
                       )}
-                      <td className="tabular-nums text-foreground/60">{r.issue_date ?? "—"}</td>
+                      <td className="tabular-nums text-foreground/60">{r.issue_date ?? "â"}</td>
                       <td className="tabular-nums">
                         <div className="flex items-center gap-2">
                           <span className={conflict ? "text-destructive" : days !== null && days < 0 ? "text-destructive" : days !== null && days <= 30 ? "text-warning" : "text-foreground/75"}>
-                            {r.expiry_date ?? <span className="text-muted-foreground/50">—</span>}
+                            {r.expiry_date ?? <span className="text-muted-foreground/50">â</span>}
                           </span>
                           {conflict ? (
                             <span className="pill pill-danger" title="The expiry date is before the issue date, so one of them is wrong. Check the permit and correct it.">
@@ -358,20 +359,20 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                             <Paperclip className="h-3.5 w-3.5" /> Open
                           </SignedAnchor>
                         ) : (
-                          <span className="text-[11px] text-muted-foreground/40" title="No document attached in Polaris">—</span>
+                          <span className="text-[11px] text-muted-foreground/40" title="No document attached in Polaris">â</span>
                         )}
                       </td>
                       {/* Email send / sent indicator */}
                       <td>
                         {r.contact_email ? (
                           r.email_sent_at ? (
-                            // Already sent — clicking resends (e.g. an extended entry permit, SD-0065),
+                            // Already sent â clicking resends (e.g. an extended entry permit, SD-0065),
                             // through the same review window as a first send.
                             <button
                               type="button"
                               className="group flex items-center gap-1 rounded px-1 py-0.5 text-emerald-400/80 hover:bg-primary/10 hover:text-primary"
                               onClick={() => handleSendEmail(r)}
-                              title={`Sent ${new Date(r.email_sent_at).toLocaleString("en-GB")} by ${r.email_sent_by ?? "unknown"} — click to resend to ${r.contact_email}`}
+                              title={`Sent ${new Date(r.email_sent_at).toLocaleString("en-GB")} by ${r.email_sent_by ?? "unknown"} â click to resend to ${r.contact_email}`}
                             >
                               <MailCheck className="h-3.5 w-3.5 group-hover:hidden" />
                               <RotateCw className="hidden h-3.5 w-3.5 group-hover:block" />
@@ -390,7 +391,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                             </Button>
                           )
                         ) : (
-                          <span className="text-[11px] text-muted-foreground/30">—</span>
+                          <span className="text-[11px] text-muted-foreground/30">â</span>
                         )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
@@ -524,7 +525,7 @@ function PermitDialog({
   return (
     <DialogContent className="max-w-2xl">
       <DialogHeader>
-        <DialogTitle>{editing ? "Edit permit" : "New permit"} · {meta.label}</DialogTitle>
+        <DialogTitle>{editing ? "Edit permit" : "New permit"} Â· {meta.label}</DialogTitle>
       </DialogHeader>
       <form onSubmit={save} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -532,7 +533,7 @@ function PermitDialog({
           <Select value={form.yacht_id ?? "__none"} onValueChange={(v) => set("yacht_id", v === "__none" ? null : v)}>
             <SelectTrigger><SelectValue placeholder="Select yacht" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none">— None —</SelectItem>
+              <SelectItem value="__none">â None â</SelectItem>
               {yachts.map((y) => <SelectItem key={y.id} value={y.id}>{y.vessel_name}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -572,7 +573,7 @@ function PermitDialog({
             <Select value={form.dma_phase ?? "__none"} onValueChange={(v) => set("dma_phase", v === "__none" ? null : v)}>
               <SelectTrigger><SelectValue placeholder="Select phase" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none">— None —</SelectItem>
+                <SelectItem value="__none">â None â</SelectItem>
                 {DMA_PHASES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -580,14 +581,14 @@ function PermitDialog({
         )}
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Document URL</Label>
-          <Input value={form.document_url ?? ""} onChange={(e) => set("document_url", e.target.value)} placeholder="https://…" />
+          <Input value={form.document_url ?? ""} onChange={(e) => set("document_url", e.target.value)} placeholder="https://â¦" />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label>Notes</Label>
           <Textarea rows={3} value={form.notes ?? ""} onChange={(e) => set("notes", e.target.value)} />
         </div>
         <DialogFooter className="sm:col-span-2">
-          <Button type="submit" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create permit"}</Button>
+          <Button type="submit" disabled={busy}>{busy ? "Savingâ¦" : editing ? "Save changes" : "Create permit"}</Button>
         </DialogFooter>
       </form>
     </DialogContent>
