@@ -314,6 +314,10 @@ async function _planDmaCopies(): Promise<{ actions: DmaCopyAction[]; token: stri
       if (!it) { base.list = null; base.itemId = null; spNote = ' (its SharePoint item is already gone)' }
       else if (permitItemSignature(it.item.fields ?? {}, it.list.fieldMapping).number !== n) {
         base.list = null; base.itemId = null; spNote = ' (its SharePoint item now holds something else — left alone)'
+      } else if (it.item.fields?.Attachments === true) {
+        // The old push overwrote columns but never attachments: an item with a file is
+        // that list's own permit with the DMA permit written over it. Repair, not delete.
+        base.list = null; base.itemId = null; spNote = ' (its SharePoint item has an attachment — the original permit, left for Repair in SharePoint)'
       }
     }
     actions.push({
@@ -341,6 +345,8 @@ async function _planDmaCopies(): Promise<{ actions: DmaCopyAction[]; token: stri
     if (handledItems.has(k) || linkedKeys.has(k)) continue
     const n = permitItemSignature(item.fields ?? {}, list.fieldMapping).number
     if (!isPrmt(n) || !spDma.has(n) || !real.has(n)) continue
+    // An item with a file is an overwritten original (see above), never a copy to delete.
+    if (item.fields?.Attachments === true) continue
     const f = item.fields ?? {}
     const col = (db: string) => Object.entries(list.fieldMapping).find(([, d]) => d === db)?.[0]
     const holds = [f[col('holder_name') ?? ''], f[col('permit_number') ?? ''], f[col('vessel_name') ?? '']].filter(Boolean).join(' · ')
@@ -348,6 +354,31 @@ async function _planDmaCopies(): Promise<{ actions: DmaCopyAction[]; token: stri
       key: `remove|-|${k}|${n}`, kind: 'remove', polarisId: null, list: list.listName, itemId: String(item.id),
       holds: `${list.listName}: ${holds}`, real: describeRealRow(real.get(n)![0]), why: 'a copy of a DMA permit; not in Polaris',
     })
+  }
+
+  // 3. A second item with the same PRMT number in the DMA list itself (the old push
+  // re-POSTed DMA permits into their own list too). Removed only when another DMA item
+  // with that number is linked to the DMA permit in Polaris, and nothing links to it.
+  if (dma) {
+    const linkedDmaItem = new Map<string, string>()
+    for (const [n, rs] of real) for (const r of rs) {
+      if (r.sharepoint_list_name === dma.listName && r.sharepoint_item_id) linkedDmaItem.set(n, String(r.sharepoint_item_id))
+    }
+    const dmaItemIds = new Set(dma.items.map((i: any) => String(i.id)))
+    for (const i of dma.items) {
+      const n = permitItemSignature(i.fields ?? {}, dma.fieldMapping).number
+      const keep = linkedDmaItem.get(n)
+      const k = `${dma.listName}#${i.id}`
+      if (!isPrmt(n) || !keep || keep === String(i.id) || !dmaItemIds.has(keep) || linkedKeys.has(k)) continue
+      if (i.fields?.Attachments === true) continue
+      const f = i.fields ?? {}
+      const col = (db: string) => Object.entries(dma.fieldMapping).find(([, d]) => d === db)?.[0]
+      const holds = [f[col('holder_name') ?? ''], f[col('permit_number') ?? ''], f[col('vessel_name') ?? '']].filter(Boolean).join(' · ')
+      actions.push({
+        key: `remove|-|${k}|${n}`, kind: 'remove', polarisId: null, list: dma.listName, itemId: String(i.id),
+        holds: `${dma.listName}: ${holds}`, real: describeRealRow(real.get(n)![0]), why: `a second DMA list item for this permit; the DMA permit is linked to item ${keep}`,
+      })
+    }
   }
 
   actions.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'remove' ? -1 : 1) || String(a.list).localeCompare(String(b.list)) || Number(a.itemId) - Number(b.itemId))
