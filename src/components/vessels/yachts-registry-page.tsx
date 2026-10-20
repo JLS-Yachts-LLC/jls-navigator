@@ -828,10 +828,6 @@ export function YachtsPage({
       {/* Stat strip — clickable to filter */}
       <div className="grid grid-cols-4 gap-3 px-5 py-3">
         <StatCard
-          label="Total Vessels" value={stats.total} icon={Ship} accent="text-primary"
-          active={statusFilter === "all"} onClick={() => setStatusFilter("all")}
-        />
-        <StatCard
           label="In Country" value={stats.inCountry} icon={MapPin} accent="text-success"
           active={statusFilter === "in country"} onClick={() => toggleStatFilter("in country")}
         />
@@ -842,6 +838,10 @@ export function YachtsPage({
         <StatCard
           label="Change Agency" value={stats.changeAgency} icon={RefreshCcw} accent="text-warning"
           active={statusFilter === "change agency"} onClick={() => toggleStatFilter("change agency")}
+        />
+        <StatCard
+          label="Total Vessels" value={stats.total} icon={Ship} accent="text-primary"
+          active={statusFilter === "all"} onClick={() => setStatusFilter("all")}
         />
       </div>
 
