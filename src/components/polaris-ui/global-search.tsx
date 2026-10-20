@@ -4,15 +4,21 @@
  * boats, projects, service requests, defects) and ShipSync (packages, delivery
  * notes). Selecting a result deep-links to the matching detail page / hub tab.
  *
+ * It also finds PAGES by name — the sidebar entries this person can see, plus the
+ * names people actually use for them (typing "ShipSync" finds Logistics, the logistics
+ * phone app and the driver app). Pages need no lookup, so they show instantly, first.
+ *
  * Areas are declared in SOURCES below, and each one is isolated: if a lookup
  * fails the others still return, and the palette names the area it could not
  * reach instead of quietly showing fewer results.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { PERMIT_META, type PermitType } from "@/lib/permit-types";
 import { TIcon } from "./primitives";
+import { useVisibleNav, type NavGroup } from "./shell";
+import { usePolarisRole } from "@/lib/use-polaris-role";
 
 type Result = {
   key: string;
@@ -21,7 +27,47 @@ type Result = {
   title: string;
   subtitle: string;
   to: string;
+  search?: Record<string, string>;
 };
+
+/** A page the search can open: a sidebar entry, or one of the apps reached from it. */
+type Page = { label: string; icon: string; subtitle: string; keywords: string[]; to: string; search?: Record<string, string> };
+
+const MAX_PAGES = 6;
+
+/** The pages this person can open — exactly what their sidebar shows, plus the phone apps and screens inside them. */
+function pagesFor(groups: NavGroup[]): Page[] {
+  const pages: Page[] = [];
+  for (const g of groups) for (const i of g.items) {
+    pages.push({
+      label: i.label, icon: i.icon, subtitle: g.label, keywords: i.keywords ?? [],
+      ...(i.route ? { to: i.route } : { to: "/polaris-redesign", search: { screen: i.screen } }),
+    });
+    if (i.screen === "logistics") {
+      pages.push(
+        { label: "Logistics mobile app", icon: "device-mobile", subtitle: "ShipSync on the phone — check-in, warehouse, deliveries", keywords: ["ShipSync app", "logistics app", "phone app", "warehouse app", "check-in", "scan"], to: "/logistics-app" },
+        { label: "Driver app", icon: "steering-wheel", subtitle: "ShipSync drivers — their deliveries", keywords: ["ShipSync driver", "driver", "deliveries"], to: "/shipsync/driver" },
+        { label: "Label printers", icon: "printer", subtitle: "ShipSync → Printers — Zebra printers and the print connector", keywords: ["ShipSync printers", "Zebra", "labels", "printer"], to: "/shipsync", search: { tab: "printers" } },
+      );
+    }
+  }
+  return pages;
+}
+
+/** Pages whose name (or another name for them) contains the term — name matches first. */
+function matchPages(pages: Page[], q: string): Result[] {
+  const t = q.trim().toLowerCase();
+  const scored: { p: Page; score: number }[] = [];
+  for (const p of pages) {
+    const label = p.label.toLowerCase();
+    const score = label.startsWith(t) ? 0 : label.includes(t) ? 1 : p.keywords.some((k) => k.toLowerCase().includes(t)) ? 2 : -1;
+    if (score >= 0) scored.push({ p, score });
+  }
+  return scored
+    .sort((a, b) => a.score - b.score)
+    .slice(0, MAX_PAGES)
+    .map(({ p }) => ({ key: `page-${p.label}`, group: "Pages", icon: p.icon, title: p.label, subtitle: p.subtitle, to: p.to, search: p.search }));
+}
 
 /**
  * One searchable area: how to look it up, and how to render a hit. Kept as a list
@@ -238,6 +284,10 @@ export function GlobalSearch() {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
+  const nav = useVisibleNav(usePolarisRole());
+  const pages = useMemo(() => pagesFor(nav), [nav]);
+  // Pages first (instant), then records as they come back. Keyboard and list both use this.
+  const hits = useMemo(() => (q.trim().length < MIN_CHARS ? [] : [...matchPages(pages, q), ...results]), [pages, q, results]);
 
   // Ctrl/⌘+K opens, Esc closes.
   useEffect(() => {
@@ -274,14 +324,14 @@ export function GlobalSearch() {
 
   const pick = useCallback((r: Result) => {
     setOpen(false);
-    navigate({ to: r.to as any });
+    navigate({ to: r.to as any, search: r.search as any });
   }, [navigate]);
 
   const onInputKey = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { setOpen(false); return; }
-    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, results.length - 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, hits.length - 1)); }
     if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
-    if (e.key === "Enter" && results[active]) { e.preventDefault(); pick(results[active]); }
+    if (e.key === "Enter" && hits[active]) { e.preventDefault(); pick(hits[active]); }
   };
 
   // Group rows for rendering while keeping the flat index for keyboard nav.
@@ -383,14 +433,14 @@ export function GlobalSearch() {
               )}
               {q.trim().length < MIN_CHARS ? (
                 <div style={{ padding: "22px 16px", fontSize: 13, color: "var(--pds-text-secondary)" }}>
-                  Type at least {MIN_CHARS} characters — searches vessel and boat names, crew names, passport and permit numbers, project and package references…
+                  Type at least {MIN_CHARS} characters — finds pages (ShipSync, Anchor, Immigration…), vessel and boat names, crew names, passport and permit numbers, project and package references…
                 </div>
-              ) : !loading && results.length === 0 ? (
+              ) : !loading && hits.length === 0 ? (
                 <div style={{ padding: "22px 16px", fontSize: 13, color: "var(--pds-text-secondary)" }}>
                   No matches for “{q.trim()}”.
                 </div>
               ) : (
-                results.map((r, i) => {
+                hits.map((r, i) => {
                   const showHeader = r.group !== lastGroup;
                   lastGroup = r.group;
                   return (

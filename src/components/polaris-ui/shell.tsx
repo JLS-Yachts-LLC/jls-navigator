@@ -54,6 +54,8 @@ export interface NavItem {
   adminOnly?: boolean;
   /** feature_flags key (Dev Settings): hidden while the flag is on Dev, except to dev access. */
   flag?: string;
+  /** Other names people search for this page by (top-bar search), e.g. ShipSync for Logistics. */
+  keywords?: string[];
 }
 export interface NavGroup {
   label: string;
@@ -108,9 +110,10 @@ export const NAV_GROUPS: NavGroup[] = [
         module: "crew_immigration",
         icon: "id-badge",
         screen: "immigration",
+        keywords: ["visa", "visas", "sign on", "sign off"],
         roles: ["global_admin", "crew_immigration"],
       },
-      { label: "Logistics", module: "shipsync", icon: "truck", screen: "logistics" },
+      { label: "Logistics", module: "shipsync", icon: "truck", screen: "logistics", keywords: ["ShipSync", "parcels", "packages", "warehouse", "deliveries", "dispatch", "drivers", "import", "export", "gate pass", "EDAS"] },
       { label: "Crew Care", module: "transport", icon: "car", screen: "route-crew-cab", route: "/crew-cab/jobs" },
       // Compass Card sign-ups, vendor requests and offers, sent from compasscard.online.
       { label: "Compass Card", module: "compass_card", icon: "credit-card", screen: "route-compass-card", route: "/compass-card" },
@@ -125,7 +128,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Crew Academy — online courses JLS publishes for vessels' crew (Client Portal module).
       { label: "Crew Academy", module: "academy", icon: "books", screen: "route-academy-admin", route: "/academy-admin", flag: "crew-academy" },
       { label: "Yacht IT Solutions", module: "yacht_it", icon: "cpu", screen: "yacht-it" },
-      { label: "Anchor", icon: "signature", screen: "anchor" },
+      { label: "Anchor", icon: "signature", screen: "anchor", keywords: ["e-sign", "esign", "signature", "contracts", "documents"] },
       { label: "Crew Placement", module: "crew_placement", icon: "user-star", screen: "crew-placement", roles: ["global_admin", "crew_immigration"] },
       { label: "Finance", module: "finance", icon: "report-money", screen: "finance", roles: ["global_admin"] },
       { label: "Port Calls", module: "agency", icon: "anchor", screen: "port-calls" },
@@ -429,6 +432,24 @@ export function PolarisTopBar({
   );
 }
 
+/**
+ * The sidebar groups this person sees: role, module grants, admin-only items and Dev-stage
+ * feature flags all applied. The top-bar search offers pages from the same list, so it never
+ * suggests a page the menu would hide.
+ */
+export function useVisibleNav(role: PolarisRole): NavGroup[] {
+  const { claims } = useAccess();
+  const extra = useExtraScreens(claims?.userId);
+  const { allowed: usageAdmin } = useIsUsageAdmin();
+  const { map: flags } = useFlagMap();
+  const devAccess = useDevAccess();
+  const shown = (i: NavItem) =>
+    (!i.adminOnly || usageAdmin) && (!i.flag || (flags.get(i.flag)?.stage ?? "dev") !== "dev" || devAccess);
+  return visibleGroups(role, claims, extra)
+    .map((g) => ({ ...g, items: g.items.filter(shown) }))
+    .filter((g) => g.items.length > 0);
+}
+
 // ── Side nav (desktop) / overlay body (mobile) ───────────────────────────────
 function NavList({
   role,
@@ -444,12 +465,6 @@ function NavList({
 }) {
   const badges = useFeatureBadges();
   const { claims } = useAccess();
-  const extra = useExtraScreens(claims?.userId);
-  const { allowed: usageAdmin } = useIsUsageAdmin();
-  const { map: flags } = useFlagMap();
-  const devAccess = useDevAccess();
-  const shown = (i: NavItem) =>
-    (!i.adminOnly || usageAdmin) && (!i.flag || (flags.get(i.flag)?.stage ?? "dev") !== "dev" || devAccess);
   // Sections the person has folded away — saved to their account, so it's the
   // same layout on any device. A folded section holding the open screen is highlighted.
   const [closedList, setClosedList] = useUserPreference<string[]>("nav.closedGroups", [], { key: NAV_CLOSED_KEY, parse: JSON.parse });
@@ -464,9 +479,7 @@ function NavList({
 
   // The normal sidebar's groups — Favourites are drawn from these same items, so
   // a pin never shows something this menu would hide.
-  const groups = visibleGroups(role, claims, extra)
-    .map((g) => ({ ...g, items: g.items.filter(shown) }))
-    .filter((g) => g.items.length > 0);
+  const groups = useVisibleNav(role);
   const allItems = groups.flatMap((g) => g.items);
   // Pins belong to the signed-in person (even while viewing as someone else);
   // what shows is still limited to what this menu shows.
