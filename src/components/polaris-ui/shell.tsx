@@ -5,8 +5,9 @@
  * shows the fixed side nav. Role-based nav visibility per the redesign spec.
  */
 import { ProfileMenu, ProfileAvatar } from "@/components/profile/profile-menu";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useUserPreference } from "@/lib/user-preferences";
+import { useAuth } from "@/lib/auth";
 import { TIcon } from "./primitives";
 import { PolarisMark } from "@/components/brand/PolarisMark";
 import { useFeatureBadges, BADGE_META } from "@/lib/feature-badges";
@@ -23,6 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useIsUsageAdmin } from "@/lib/usage-admin";
 import { useFlagMap } from "@/lib/release-flags";
 import { useDevAccess } from "@/lib/dev-access";
+import { dropFavourite, moveFavourite, resolveFavourites, toggleFavourite, useSidebarFavourites } from "@/lib/sidebar-favourites";
 
 export type PolarisRole =
   | "global_admin"
@@ -459,6 +461,192 @@ function NavList({
       return [...next];
     });
   }
+
+  // The normal sidebar's groups — Favourites are drawn from these same items, so
+  // a pin never shows something this menu would hide.
+  const groups = visibleGroups(role, claims, extra)
+    .map((g) => ({ ...g, items: g.items.filter(shown) }))
+    .filter((g) => g.items.length > 0);
+  const allItems = groups.flatMap((g) => g.items);
+  // Pins belong to the signed-in person (even while viewing as someone else);
+  // what shows is still limited to what this menu shows.
+  const fav = useSidebarFavourites(useAuth().user?.id);
+  const favItems = resolveFavourites(fav.keys, allItems);
+  const favSet = new Set(fav.keys);
+  const favShown = new Set(favItems.map((i) => i.screen));
+  const [hintSeen, setHintSeen] = useUserPreference<boolean>("nav.favouritesHintSeen", false);
+  const touch = useNoHover();
+
+  function togglePin(screen: string) {
+    if (!favSet.has(screen)) setHintSeen(true);
+    void fav.save(toggleFavourite(fav.keys, screen));
+  }
+
+  // Right-click / long-press menu.
+  const [menu, setMenu] = useState<{ screen: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    window.addEventListener("wheel", close, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("wheel", close);
+    };
+  }, [menu]);
+  function openMenu(screen: string, x: number, y: number, el: Element) {
+    // Keyboard context-menu key reports 0,0 — anchor to the item instead.
+    if (x === 0 && y === 0) {
+      const r = el.getBoundingClientRect();
+      x = r.left + 24;
+      y = r.bottom;
+    }
+    setMenu({ screen, x: Math.min(x, window.innerWidth - 210), y: Math.min(y, window.innerHeight - 150) });
+  }
+
+  // Long-press on touch screens (iOS has no contextmenu event for it).
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const longPressed = useRef(false);
+  const cancelPress = () => { if (press.current) clearTimeout(press.current.timer); press.current = null; };
+
+  // Drag to reorder Favourites.
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<{ screen: string; where: "before" | "after" } | null>(null);
+
+  function renderItem(item: NavItem, inFav: boolean) {
+    const on = item.screen === active;
+    const pinned = favSet.has(item.screen);
+    const dropHere = inFav && drag && over?.screen === item.screen && drag !== item.screen ? over.where : null;
+    return (
+      <div
+        key={item.screen}
+        className="pds-nav-row"
+        data-collapsed={collapsed || undefined}
+        draggable={inFav && !touch ? true : undefined}
+        onDragStart={inFav ? (e) => { setDrag(item.screen); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.screen); } : undefined}
+        onDragEnd={inFav ? () => { setDrag(null); setOver(null); } : undefined}
+        onDragOver={inFav && drag ? (e) => {
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          const where = e.clientY < r.top + r.height / 2 ? "before" : "after";
+          if (over?.screen !== item.screen || over.where !== where) setOver({ screen: item.screen, where });
+        } : undefined}
+        onDrop={inFav && drag ? (e) => {
+          e.preventDefault();
+          if (over) void fav.save(dropFavourite(fav.keys, drag, over.screen, over.where));
+          setDrag(null);
+          setOver(null);
+        } : undefined}
+        onContextMenu={(e) => { e.preventDefault(); openMenu(item.screen, e.clientX, e.clientY, e.currentTarget); }}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          const el = e.currentTarget;
+          longPressed.current = false;
+          cancelPress();
+          press.current = {
+            x: t.clientX, y: t.clientY,
+            timer: setTimeout(() => { longPressed.current = true; openMenu(item.screen, t.clientX, t.clientY, el); }, 500),
+          };
+        }}
+        onTouchMove={(e) => {
+          const t = e.touches[0];
+          if (press.current && Math.hypot(t.clientX - press.current.x, t.clientY - press.current.y) > 10) cancelPress();
+        }}
+        onTouchEnd={cancelPress}
+        onTouchCancel={cancelPress}
+        style={{ position: "relative", opacity: inFav && drag === item.screen ? 0.45 : 1 }}
+      >
+        {dropHere && (
+          <span style={{
+            position: "absolute", left: 6, right: 6, height: 2, borderRadius: 2, background: "var(--pds-gold)",
+            top: dropHere === "before" ? -1 : undefined, bottom: dropHere === "after" ? -1 : undefined, zIndex: 1,
+          }} />
+        )}
+        <button
+          onClick={(e) => {
+            // A long-press opened the menu — don't also navigate.
+            if (longPressed.current) { longPressed.current = false; e.preventDefault(); return; }
+            onNavigate(item.screen);
+          }}
+          title={collapsed ? item.label : undefined}
+          // Colour, padding and the gold hover rail live in tokens.css
+          // (.pds-nav-item) — inline styles can't react to :hover.
+          className="pds-nav-item"
+          data-active={on || undefined}
+          data-collapsed={collapsed || undefined}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: collapsed ? "center" : "flex-start",
+            gap: collapsed ? 0 : 10,
+            minHeight: 44,
+            borderRadius: "var(--pds-radius-md)",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "left",
+            fontSize: "var(--pds-fs-nav)",
+            fontWeight: on ? 600 : 500,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+          }}
+        >
+          <span style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <TIcon
+              name={item.icon}
+              size={18}
+              // No inline colour unless active, so the hover rule in tokens.css can turn it gold.
+              color={on ? "var(--pds-gold)" : undefined}
+            />
+            {/* Collapsed rail: a tiny dot in the icon's corner marks a badged feature. */}
+            {collapsed && badges[item.screen] && (
+              <span style={{
+                position: "absolute", top: -2, right: -3, width: 7, height: 7, borderRadius: "50%",
+                background: BADGE_META[badges[item.screen]].color, border: "1px solid var(--pds-surface-1, #0d1520)",
+              }} />
+            )}
+          </span>
+          {!collapsed && item.label}
+          {!collapsed && badges[item.screen] && (
+            <span className="pds-nav-badge" style={{
+              marginLeft: "auto",
+              fontSize: 9, fontWeight: 700, lineHeight: 1, letterSpacing: "0.04em",
+              padding: "2px 5px", borderRadius: 5, textTransform: "uppercase",
+              background: BADGE_META[badges[item.screen]].bg,
+              color: BADGE_META[badges[item.screen]].color,
+              border: `1px solid ${BADGE_META[badges[item.screen]].border}`,
+            }}>
+              {BADGE_META[badges[item.screen]].label}
+            </span>
+          )}
+        </button>
+        {/* Pin / unpin — appears on hover (tokens.css .pds-nav-pin). */}
+        {!collapsed && (
+          <button
+            type="button"
+            className="pds-nav-pin"
+            data-pinned={pinned || undefined}
+            onClick={(e) => { e.stopPropagation(); togglePin(item.screen); }}
+            title={pinned ? "Remove from Favourites" : "Pin to Favourites"}
+            aria-label={pinned ? `Remove ${item.label} from Favourites` : `Pin ${item.label} to Favourites`}
+          >
+            <TIcon name={pinned ? "pinned-filled" : "pin"} size={15} />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const menuItem = menu ? allItems.find((i) => i.screen === menu.screen) : undefined;
+  const menuPinned = !!menu && favSet.has(menu.screen);
+  const menuIdx = menu ? favItems.findIndex((i) => i.screen === menu.screen) : -1;
+  const showHint = fav.loaded && favItems.length === 0 && !hintSeen && !collapsed;
+
   return (
     <nav
       style={{
@@ -468,10 +656,29 @@ function NavList({
         padding: collapsed ? "12px 8px" : "16px 12px",
       }}
     >
-      {visibleGroups(role, claims, extra)
-        .map((g) => ({ ...g, items: g.items.filter(shown) }))
-        .filter((g) => g.items.length > 0)
-        .map((g) => {
+      {showHint && (
+        <div>
+          <div style={{ ...groupHeaderStyle, display: "flex", alignItems: "center", cursor: "default" }}>
+            <span style={{ flex: 1 }}>Favourites</span>
+            <button
+              type="button"
+              onClick={() => setHintSeen(true)}
+              title="Hide this tip"
+              aria-label="Hide the Favourites tip"
+              style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0, display: "flex" }}
+            >
+              <TIcon name="x" size={12} color="var(--pds-text-hint)" />
+            </button>
+          </div>
+          <p style={{ margin: 0, padding: "0 8px", fontSize: 12, lineHeight: 1.4, color: "var(--pds-text-hint)" }}>
+            {touch ? "Press and hold any page below to pin it here." : <>Hover any page and click <TIcon name="pin" size={12} /> to pin it here.</>}
+          </p>
+        </div>
+      )}
+      {[
+        ...(favItems.length > 0 ? [{ label: "Favourites", items: favItems, fav: true }] : []),
+        ...groups.map((g) => ({ ...g, fav: false })),
+      ].map((g) => {
         const holdsActive = g.items.some((i) => i.screen === active);
         // The icon-only rail always shows every icon. A folded section holding
         // the open screen is highlighted instead, so you can see where you are.
@@ -488,20 +695,8 @@ function NavList({
               aria-expanded={!folded}
               title={here ? `You're in ${g.label} — click to show it` : folded ? `Show ${g.label}` : `Hide ${g.label}`}
               style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
+                ...groupHeaderStyle,
                 color: here ? "var(--pds-gold-light)" : "var(--pds-text-hint)",
-                padding: "0 8px 6px",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-                textAlign: "left",
               }}
             >
               {here && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--pds-gold)" }} />}
@@ -512,71 +707,78 @@ function NavList({
               <TIcon name={folded ? "chevron-right" : "chevron-down"} size={12} color={here ? "var(--pds-gold)" : "var(--pds-text-hint)"} />
             </button>
           )}
-          {!folded && g.items.map((item) => {
-            const on = item.screen === active;
-            return (
-              <button
-                key={item.screen}
-                onClick={() => onNavigate(item.screen)}
-                title={collapsed ? item.label : undefined}
-                // Colour, padding and the gold hover rail live in tokens.css
-                // (.pds-nav-item) — inline styles can't react to :hover.
-                className="pds-nav-item"
-                data-active={on || undefined}
-                data-collapsed={collapsed || undefined}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: collapsed ? "center" : "flex-start",
-                  gap: collapsed ? 0 : 10,
-                  minHeight: 44,
-                  borderRadius: "var(--pds-radius-md)",
-                  border: "none",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  fontSize: "var(--pds-fs-nav)",
-                  fontWeight: on ? 600 : 500,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                }}
-              >
-                <span style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                  <TIcon
-                    name={item.icon}
-                    size={18}
-                    // No inline colour unless active, so the hover rule in tokens.css can turn it gold.
-                    color={on ? "var(--pds-gold)" : undefined}
-                  />
-                  {/* Collapsed rail: a tiny dot in the icon's corner marks a badged feature. */}
-                  {collapsed && badges[item.screen] && (
-                    <span style={{
-                      position: "absolute", top: -2, right: -3, width: 7, height: 7, borderRadius: "50%",
-                      background: BADGE_META[badges[item.screen]].color, border: "1px solid var(--pds-surface-1, #0d1520)",
-                    }} />
-                  )}
-                </span>
-                {!collapsed && item.label}
-                {!collapsed && badges[item.screen] && (
-                  <span style={{
-                    marginLeft: "auto",
-                    fontSize: 9, fontWeight: 700, lineHeight: 1, letterSpacing: "0.04em",
-                    padding: "2px 5px", borderRadius: 5, textTransform: "uppercase",
-                    background: BADGE_META[badges[item.screen]].bg,
-                    color: BADGE_META[badges[item.screen]].color,
-                    border: `1px solid ${BADGE_META[badges[item.screen]].border}`,
-                  }}>
-                    {BADGE_META[badges[item.screen]].label}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {!folded && g.items.map((item) => renderItem(item, g.fav))}
         </div>
         );
       })}
+      {menu && menuItem && (
+        <div
+          role="menu"
+          aria-label={menuItem.label}
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed", left: menu.x, top: menu.y, zIndex: 1300, minWidth: 200,
+            background: "var(--pds-surface-1)", border: "1px solid var(--pds-border-gold)",
+            borderRadius: "var(--pds-radius-md)", boxShadow: "0 10px 28px rgba(0,0,0,0.5)", padding: 4,
+          }}
+        >
+          <div style={{ padding: "6px 10px 4px", fontSize: 11, color: "var(--pds-text-hint)" }}>{menuItem.label}</div>
+          {[
+            { icon: menuPinned ? "pinned-off" : "pin", label: menuPinned ? "Remove from Favourites" : "Pin to Favourites", disabled: false, run: () => togglePin(menu.screen) },
+            ...(menuIdx >= 0 && favItems.length > 1
+              ? [
+                  { icon: "arrow-up", label: "Move up", disabled: menuIdx === 0, run: () => void fav.save(moveFavourite(fav.keys, menu.screen, -1, favShown)) },
+                  { icon: "arrow-down", label: "Move down", disabled: menuIdx === favItems.length - 1, run: () => void fav.save(moveFavourite(fav.keys, menu.screen, 1, favShown)) },
+                ]
+              : []),
+          ].map((m, i) => (
+            <button
+              key={m.label}
+              type="button"
+              role="menuitem"
+              className="pds-nav-menu-item"
+              disabled={m.disabled}
+              autoFocus={i === 0}
+              onClick={() => { m.run(); setMenu(null); }}
+            >
+              <TIcon name={m.icon} size={15} />
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
     </nav>
   );
+}
+
+const groupHeaderStyle: CSSProperties = {
+  width: "100%",
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  fontSize: 10,
+  fontWeight: 600,
+  letterSpacing: "0.1em",
+  textTransform: "uppercase",
+  color: "var(--pds-text-hint)",
+  padding: "0 8px 6px",
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  textAlign: "left",
+};
+
+/** True on touch-only screens (no hover) — pins are added by press-and-hold there. */
+function useNoHover(): boolean {
+  const [noHover, setNoHover] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: none)");
+    const update = () => setNoHover(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return noHover;
 }
 
 const NAV_PIN_KEY = "polaris.nav.pinned";

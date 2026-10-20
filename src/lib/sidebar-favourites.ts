@@ -84,5 +84,5 @@ export function useSidebarFavourites(userId: string | null | undefined) {
     [qc, userId],
   );
 
-  return { keys, save };
+  return { keys, save, loaded: data !== undefined };
 }
