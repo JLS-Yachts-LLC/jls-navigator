@@ -3,12 +3,12 @@
  *
  * Called by compasscard.online (the crew app API, admin portal and vendor portal)
  * when a crew member signs up, a vendor asks to join or is approved / rejected,
- * and an offer is submitted or approved / rejected. Signed with the shared secret
+ * and an offer is submitted or approved / rejected. Signed with Compass Card's private key
  * (see lib/compass-card/events.server for the format); anything unsigned, stale
  * or badly signed is refused. Each event is stored once, the bell rings from the
  * database, and email goes out now if it's switched on.
  */
-import { loadWebhookSecret, verifySignature, shapeEvent, storeEvent } from '@/lib/compass-card/events.server'
+import { loadPublicKey, verifySignature, shapeEvent, storeEvent } from '@/lib/compass-card/events.server'
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 
@@ -21,9 +21,9 @@ export async function compassCardEventHandler(request: Request, ctx?: { waitUnti
   const raw = await request.text()
   if (raw.length > MAX_BODY) return json({ ok: false, error: 'Too large' }, 413)
 
-  const secret = await loadWebhookSecret()
-  if (!secret) return json({ ok: false, error: 'Not configured' }, 503)
-  const bad = await verifySignature(secret, raw, request.headers.get('x-compass-timestamp'), request.headers.get('x-compass-signature'))
+  const publicKey = await loadPublicKey()
+  if (!publicKey) return json({ ok: false, error: 'Not configured' }, 503)
+  const bad = await verifySignature(publicKey, raw, request.headers.get('x-compass-timestamp'), request.headers.get('x-compass-signature'))
   if (bad) return json({ ok: false, error: bad }, 401)
 
   let body: unknown

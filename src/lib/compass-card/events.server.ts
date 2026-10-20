@@ -7,10 +7,11 @@
  *   { "id": "vendor_signup:42", "type": "vendor_signup", "occurred_at": "2026-10-20T09:15:00Z",
  *     "data": { ...fields for that type... } }
  *
- * signed with the shared secret in compass_card_integration.webhook_secret:
+ * signed with Compass Card's RSA private key (generated on its own server, never
+ * copied anywhere). Polaris holds only the public key (compass_card_integration.public_key):
  *
  *   X-Compass-Timestamp: <unix seconds>
- *   X-Compass-Signature: hex(HMAC-SHA256(secret, "<timestamp>.<raw body>"))
+ *   X-Compass-Signature: base64(RSASSA-PKCS1-v1_5 SHA-256 signature of "<timestamp>.<raw body>")
  *
  * Only the fields listed below are kept (no passport, ID or card numbers ever),
  * and the title / summary the team reads are built here, not taken from the sender.
@@ -41,32 +42,28 @@ export const TEAM_FOR: Record<CompassEventType, 'signups' | 'partners'> = {
 
 // ── Signature ────────────────────────────────────────────────────────────────
 
-async function hmacHex(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))
-  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('')
+const fromBase64 = (b64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+
+/** The PEM public key Compass Card's events are checked against, or null when not set up. */
+export async function loadPublicKey(): Promise<string | null> {
+  const { data } = await db().from('compass_card_integration').select('public_key').eq('id', 1).maybeSingle()
+  return (data?.public_key as string | null) || null
 }
 
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
-}
-
-export async function loadWebhookSecret(): Promise<string | null> {
-  const { data } = await db().from('compass_card_integration').select('webhook_secret').eq('id', 1).maybeSingle()
-  return (data?.webhook_secret as string | null) || null
-}
-
-/** True when the timestamp is fresh and the signature matches the raw body. */
-export async function verifySignature(secret: string, rawBody: string, timestamp: string | null, signature: string | null): Promise<string | null> {
+/** Null when the timestamp is fresh and the signature matches the raw body; otherwise why not. */
+export async function verifySignature(publicKeyPem: string, rawBody: string, timestamp: string | null, signature: string | null): Promise<string | null> {
   if (!timestamp || !signature) return 'Missing signature headers'
   const ts = Number(timestamp)
   if (!Number.isFinite(ts)) return 'Bad timestamp'
   if (Math.abs(Date.now() / 1000 - ts) > MAX_SKEW_S) return 'Timestamp too old or too far ahead'
-  const expected = await hmacHex(secret, `${timestamp}.${rawBody}`)
-  return safeEqual(expected, signature.trim().toLowerCase()) ? null : 'Bad signature'
+  try {
+    const der = fromBase64(publicKeyPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''))
+    const key = await crypto.subtle.importKey('spki', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'])
+    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromBase64(signature.trim()), new TextEncoder().encode(`${timestamp}.${rawBody}`))
+    return ok ? null : 'Bad signature'
+  } catch {
+    return 'Bad signature'
+  }
 }
 
 // ── Shaping ──────────────────────────────────────────────────────────────────
