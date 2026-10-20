@@ -12,14 +12,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  AlertTriangle, CheckCircle2, ExternalLink, FileText, FolderOpen, Inbox, Loader2, Mail, RefreshCw, Upload, XCircle,
+  AlertTriangle, CheckCircle2, ExternalLink, FileText, FolderOpen, Inbox, Loader2, Mail, RefreshCw, Send, Upload, XCircle,
 } from "lucide-react";
 
 /**
  * Permit Inbox — permits Polaris found in the watched mailboxes (Faisal's), read
  * and matched to a vessel. The Agency team checks the match and the details,
  * then Confirm creates/updates the permit and copies the PDF into the vessel's
- * SharePoint folder ("ENTRY PERMIT {year}" for entry permits).
+ * SharePoint folder ("ENTRY PERMIT {year}" for entry permits). "Confirm, file &
+ * send to yacht" also emails it to the vessel (secure link, through the shared
+ * permit sender, which logs every attempt to the vessel's activity log and the
+ * audit log); a filed permit can be sent from the Filed tab as well.
  *
  * Reads come straight from permit_inbox (Agency-only RLS); every action goes
  * through POST /api/permits/inbox.
@@ -88,6 +91,55 @@ const fmtDate = (d: string | null) =>
   d ? new Date(`${d}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
 const typeLabel = (t: string | null, phase: string | null) =>
   !t ? "Permit (type not recognised)" : t === "exit_entry" && phase ? `${phase} permit` : (PERMIT_META[t as PermitType]?.label ?? t);
+
+type EmailOutcome =
+  | { ok: true; to: string[]; delivery: "secure_link" | "portal"; secureLink: boolean }
+  | { ok: false; error: string; blocked: boolean };
+
+/** Tell the sender whether the email went, and how the document travelled. */
+function reportEmail(email: EmailOutcome, filed: boolean) {
+  if (email.ok) {
+    toast.success(`Sent to ${email.to.join(", ")}`, {
+      description: email.delivery === "portal"
+        ? "The permit is waiting in the client's portal — no link was emailed, as they asked."
+        : "The permit went as a secure link, and it's logged against the vessel.",
+    });
+  } else {
+    toast.error(`${filed ? "Filed, but not sent" : "Not sent"}: ${email.error}`, { duration: email.blocked ? 15000 : 12000 });
+  }
+}
+
+/** The yacht's address(es): whoever its permits last went to, else the vessel record. */
+function useYachtRecipients(yachtId: string | null) {
+  const [to, setTo] = useState("");
+  const [source, setSource] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!yachtId) { setTo(""); setSource(null); return; }
+    let alive = true;
+    setLoading(true);
+    void api<{ to: string[]; source: string | null }>({ action: "recipients", yachtId })
+      .then((r) => { if (alive) { setTo(r.to.join(", ")); setSource(r.source); } })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [yachtId]);
+  return { to, setTo, source, loading };
+}
+
+function RecipientsField({ value, onChange, source, loading }: { value: string; onChange: (v: string) => void; source: string | null; loading: boolean }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Yacht email</Label>
+      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={loading ? "Looking up…" : "captain@yacht.com"} />
+      <div className="text-xs text-muted-foreground">
+        {loading ? "Looking up the vessel's email…"
+          : source ? `From the ${source}. Separate several addresses with commas.`
+          : "No email on file for this vessel — add one to send the permit."}
+      </div>
+    </div>
+  );
+}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -339,6 +391,7 @@ function InboxDetail({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
                 </Button>
               </div>
             )}
+            {row.permit_id && <FiledSend row={row} />}
           </div>
         )}
 
@@ -372,8 +425,9 @@ function ConfirmForm({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
   const [folders, setFolders] = useState<{ folder: string | null; subfolders: string[]; suggested: string } | null>(null);
   const [subfolder, setSubfolder] = useState("");
   const [foldersError, setFoldersError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState<"file" | "send" | null>(null);
   const [busy, setBusy] = useState(false);
+  const recipients = useYachtRecipients(yachtId || null);
   const year = new Date(row.received_at ?? row.created_at).getFullYear();
 
   const yachtOptions = useMemo(() => yachts.map((y) => ({ value: y.id, label: y.vessel_name, sub: y.archive ? "archived" : undefined })), [yachts]);
@@ -406,26 +460,29 @@ function ConfirmForm({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
   const existing = vesselPermits.find((p) => p.id === existingId);
   const expiryMoves = existing?.expiry_date && expiryDate && existing.expiry_date !== expiryDate;
 
-  async function confirm() {
+  async function confirm(send = false) {
     if (!yachtId) { toast.error("Choose the vessel"); return; }
     if (!permitType) { toast.error("Choose the permit type"); return; }
-    setSaving(true);
+    if (send && !recipients.to.trim()) { toast.error("Add the yacht's email address"); return; }
+    setSaving(send ? "send" : "file");
     try {
-      const res = await api<{ updated: boolean; sharepoint: { ok: boolean; error?: string } | null }>({
+      const res = await api<{ updated: boolean; sharepoint: { ok: boolean; error?: string } | null; email: EmailOutcome | null }>({
         action: "confirm", id: row.id, yachtId, permitType,
         dmaPhase: PHASED.has(permitType) ? phase || null : null,
         permitNumber, issueDate: issueDate || null, expiryDate: expiryDate || null, issuingAuthority: authority,
         existingPermitId: existingId || null,
         subfolder: subfolder || null, fileToSharePoint: toSharePoint,
+        ...(send ? { sendTo: recipients.to } : {}),
       });
       toast.success(`${res.updated ? "Permit updated" : "Permit added"} for ${vesselName}`);
       if (res.sharepoint && !res.sharepoint.ok) toast.warning(`Saved, but not copied to SharePoint: ${res.sharepoint.error}`, { duration: 12000 });
       else if (res.sharepoint?.ok) toast.success(`Filed in SharePoint › ${vesselName} › ${subfolder}`);
+      if (res.email) reportEmail(res.email, true);
       await onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not file the permit");
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
@@ -565,13 +622,78 @@ function ConfirmForm({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
         </div>
       )}
 
+      {/* Send to yacht */}
+      {yachtId && (
+        <RecipientsField value={recipients.to} onChange={recipients.setTo} source={recipients.source} loading={recipients.loading} />
+      )}
+
       <div className="flex flex-wrap gap-2 pt-1">
-        <Button onClick={confirm} disabled={saving || !yachtId || !permitType}>
-          {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />} Confirm &amp; file
+        <Button onClick={() => confirm(false)} disabled={!!saving || !yachtId || !permitType}>
+          {saving === "file" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />} Confirm &amp; file
         </Button>
-        <Button variant="outline" onClick={() => reject("not_permit")} disabled={busy || saving}>Not a permit</Button>
-        <Button variant="ghost" onClick={() => reject("rejected")} disabled={busy || saving}>Reject</Button>
+        <Button onClick={() => confirm(true)} disabled={!!saving || !yachtId || !permitType || !recipients.to.trim()}
+          title={recipients.to.trim() ? `File it, then email it to ${recipients.to}` : "Add the yacht's email address first"}>
+          {saving === "send" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="mr-1.5 h-4 w-4" />} Confirm, file &amp; send to yacht
+        </Button>
+        <Button variant="outline" onClick={() => reject("not_permit")} disabled={busy || !!saving}>Not a permit</Button>
+        <Button variant="ghost" onClick={() => reject("rejected")} disabled={busy || !!saving}>Reject</Button>
       </div>
+    </div>
+  );
+}
+
+/** On a filed permit: when it last went to the yacht, and a way to send it (again). */
+function FiledSend({ row }: { row: InboxRow }) {
+  const recipients = useYachtRecipients(row.yacht_id);
+  const [sent, setSent] = useState<{ email_sent_at: string | null; email_sent_to: string | null } | null>(null);
+  const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const loadSent = useCallback(async () => {
+    const { data } = await (supabase as any).from("permits").select("email_sent_at, email_sent_to").eq("id", row.permit_id).maybeSingle();
+    setSent(data ?? null);
+  }, [row.permit_id]);
+  useEffect(() => { void loadSent(); }, [loadSent]);
+
+  async function send() {
+    if (!recipients.to.trim()) { toast.error("Add the yacht's email address"); return; }
+    setSending(true);
+    try {
+      const { email } = await api<{ email: EmailOutcome }>({ action: "send", id: row.id, sendTo: recipients.to });
+      reportEmail(email, false);
+      setOpen(false);
+      await loadSent();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Send failed", { duration: 12000 });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 border-t border-border/60 pt-3">
+      {sent?.email_sent_at ? (
+        <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Send className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Sent to {sent.email_sent_to ?? "the yacht"} · {fmt(sent.email_sent_at)}
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground">Not sent to the yacht yet.</div>
+      )}
+      {open ? (
+        <>
+          <RecipientsField value={recipients.to} onChange={recipients.setTo} source={recipients.source} loading={recipients.loading} />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={send} disabled={sending || !recipients.to.trim()}>
+              {sending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="mr-1.5 h-4 w-4" />} Send to yacht
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)} disabled={sending}>Cancel</Button>
+          </div>
+        </>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+          <Send className="mr-1.5 h-4 w-4" /> {sent?.email_sent_at ? "Send again" : "Send to yacht"}
+        </Button>
+      )}
     </div>
   );
 }

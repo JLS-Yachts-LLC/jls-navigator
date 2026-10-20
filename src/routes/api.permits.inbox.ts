@@ -7,15 +7,21 @@
  *                                                       the vessel's SharePoint subfolders + the suggested one
  *   { action: 'match', id, yachtId, permitType, dmaPhase }
  *                                                       the permit an item would update for this vessel
- *   { action: 'confirm', ...ConfirmInput }              create/update the permit, file the PDF in SharePoint
+ *   { action: 'recipients', yachtId }                   who the vessel's permits usually go to
+ *   { action: 'confirm', ...ConfirmInput, sendTo? }     create/update the permit, file the PDF in SharePoint,
+ *                                                       and (with sendTo) email it to the yacht
+ *   { action: 'send', id, sendTo }                      email an already-filed permit to the yacht
  *   { action: 'refile', id }                            retry the SharePoint copy
  *   { action: 'reject', id, as: 'rejected' | 'not_permit' }
  *   { action: 'reread', id }                            read the PDF again (also "this IS a permit")
  *
  * All writes to permit_inbox go through here (service role); staff only read it.
+ * Emails go through the shared permit sender, which logs every attempt (sent,
+ * blocked or failed) to yacht_activity_log and audit_log.
  */
 import { requireAdminAccess } from '@/lib/admin/access'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { sendPermitToClient, parseEmailList, PermitSendError } from '@/lib/permits/send-permit.server'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -33,6 +39,25 @@ export async function permitInboxHandler(request: Request): Promise<Response> {
   try { body = await request.json() } catch { return json({ error: 'Invalid request body' }, 400) }
   const inbox = await import('@/lib/permits/permit-inbox.server')
   const sb = supabaseAdmin as any
+  const actor = {
+    id: session.user.id, email: session.user.email, role: session.user.role,
+    ip: request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for'),
+    userAgent: request.headers.get('user-agent'),
+  }
+  // Email a filed permit to the yacht. A failure here never undoes the filing —
+  // the permit is saved either way, and the answer says whether the email went.
+  const sendToYacht = async (permitId: string, to: string[]) => {
+    try {
+      const r = await sendPermitToClient({ permitId, to, actor, via: 'Permit Inbox' })
+      return { ok: true as const, to: r.to, delivery: r.delivery, secureLink: r.secureLink, linkExpiresAt: r.linkExpiresAt }
+    } catch (e) {
+      return {
+        ok: false as const,
+        error: e instanceof Error ? e.message : String(e),
+        blocked: e instanceof PermitSendError && e.blocked,
+      }
+    }
+  }
 
   try {
     switch (body?.action) {
@@ -77,9 +102,29 @@ export async function permitInboxHandler(request: Request): Promise<Response> {
         return json({ existingPermitId: existing })
       }
 
+      case 'recipients': {
+        const yachtId = s(body.yachtId)
+        if (!yachtId) return json({ to: [], source: null })
+        // Whoever the vessel's permits last went to, else the vessel record's email.
+        const { data: prev } = await sb.from('permits').select('contact_email, email_sent_to')
+          .eq('yacht_id', yachtId)
+          .order('email_sent_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false }).limit(20)
+        for (const p of prev ?? []) {
+          const to = parseEmailList(p.email_sent_to || p.contact_email)
+          if (to.length) return json({ to, source: 'previous permit' })
+        }
+        const { data: y } = await sb.from('yachts').select('email_address').eq('id', yachtId).maybeSingle()
+        const to = parseEmailList(y?.email_address)
+        return json({ to, source: to.length ? 'vessel record' : null })
+      }
+
       case 'confirm': {
         const id = s(body.id), yachtId = s(body.yachtId), permitType = s(body.permitType)
         if (!id || !yachtId || !permitType) return json({ error: 'Choose the vessel and permit type' }, 400)
+        // Check the recipients before filing, so a typo doesn't leave it half done.
+        const sendTo = body.sendTo == null ? null : parseEmailList(body.sendTo)
+        if (sendTo && !sendTo.length) return json({ error: "Add the yacht's email address to send it" }, 400)
         const result = await inbox.confirmInboxPermit({
           id, yachtId, permitType,
           dmaPhase: s(body.dmaPhase),
@@ -91,7 +136,17 @@ export async function permitInboxHandler(request: Request): Promise<Response> {
           subfolder: s(body.subfolder),
           fileToSharePoint: body.fileToSharePoint !== false,
         }, session.user.id)
-        return json(result)
+        const email = sendTo ? await sendToYacht(result.permitId, sendTo) : null
+        return json({ ...result, email })
+      }
+
+      case 'send': {
+        const sendTo = parseEmailList(body.sendTo)
+        if (!sendTo.length) return json({ error: "Add the yacht's email address to send it" }, 400)
+        const { data: row } = await sb.from('permit_inbox').select('status, permit_id').eq('id', String(body.id ?? '')).maybeSingle()
+        if (!row || row.status !== 'filed' || !row.permit_id) return json({ error: 'Only a filed permit can be sent' }, 400)
+        const email = await sendToYacht(row.permit_id, sendTo)
+        return email.ok ? json({ email }) : json({ error: email.error, email }, email.blocked ? 409 : 502)
       }
 
       case 'refile':
