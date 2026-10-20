@@ -411,3 +411,89 @@ export async function applyDmaCopyCleanup(keys: string[], max = 40): Promise<{
   }
   return { done, failed, skipped, remaining: runnable.slice(max), backup }
 }
+
+// ─── PRMT census (read-only) ──────────────────────────────────────────────────
+//
+// Every SharePoint item and every Polaris permit carrying a DMA "PRMT…" number,
+// grouped by number, so the clean-up can be planned per permit: which item in the
+// DMA list is the real one, and every copy elsewhere with what its Polaris row holds
+// (document, notes, emails). Reads only.
+
+export type PrmtCensusEntry = {
+  number: string
+  items: Array<{
+    list: string
+    itemId: string
+    holder: string
+    vessel: string
+    issue: string
+    expiry: string
+    attachments: boolean
+    created: string | null
+    modified: string | null
+    /** The Polaris permit linked to this item, if any. */
+    polaris: { id: string; type: string; document: string | null; notes: boolean; emailed: boolean; createdBy: boolean } | null
+  }>
+  /** Polaris permits with this number that no current SharePoint item is linked to. */
+  unlinked: Array<{ id: string; type: string; list: string | null; itemId: string | null; document: string | null; emailed: boolean; createdBy: boolean }>
+}
+
+export async function prmtCensus(): Promise<{ numbers: PrmtCensusEntry[]; checkedAt: string }> {
+  const { lists } = await loadPermitListsForRepair()
+  const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const isPrmt = (n: string) => /^prmt\d{6,}$/.test(n)
+
+  const rows: Record<string, any>[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await (supabaseAdmin as any).from('permits')
+      .select('id, permit_type, permit_number, document_url, notes, email_sent_at, created_by, sharepoint_list_name, sharepoint_item_id')
+      .ilike('permit_number', '%prmt%').order('id').range(from, from + 999)
+    if (error) throw new Error(`read permits → ${error.message}`)
+    rows.push(...(data ?? []))
+    if (!data || data.length < 1000) break
+  }
+  const rowByItem = new Map<string, Record<string, any>>()
+  for (const r of rows) if (r.sharepoint_list_name && r.sharepoint_item_id) rowByItem.set(`${r.sharepoint_list_name}#${r.sharepoint_item_id}`, r)
+
+  const out = new Map<string, PrmtCensusEntry>()
+  const entry = (n: string) => out.get(n) ?? out.set(n, { number: n.toUpperCase(), items: [], unlinked: [] }).get(n)!
+  const seen = new Set<string>()
+  const day = (v: unknown) => String(v ?? '').slice(0, 10)
+  for (const l of lists) {
+    const col = (db: string) => fieldOf(l.fieldMapping, db)
+    for (const i of l.items) {
+      const f = i.fields ?? {}
+      const n = permitItemSignature(f, l.fieldMapping).number
+      if (!isPrmt(n)) continue
+      const k = `${l.listName}#${i.id}`
+      const r = rowByItem.get(k)
+      if (r) seen.add(String(r.id))
+      entry(n).items.push({
+        list: l.listName,
+        itemId: String(i.id),
+        holder: String(f[col('holder_name') ?? ''] ?? ''),
+        vessel: String(f[col('vessel_name') ?? ''] ?? ''),
+        issue: day(f[col('issue_date') ?? '']),
+        expiry: day(f[col('expiry_date') ?? '']),
+        attachments: f.Attachments === true,
+        created: i.createdDateTime ?? null,
+        modified: i.lastModifiedDateTime ?? null,
+        polaris: r ? {
+          id: String(r.id), type: String(r.permit_type), document: r.document_url ?? null,
+          notes: !!String(r.notes ?? '').trim(), emailed: !!r.email_sent_at, createdBy: !!r.created_by,
+        } : null,
+      })
+    }
+  }
+  for (const r of rows) {
+    const n = norm(r.permit_number)
+    if (!isPrmt(n) || seen.has(String(r.id))) continue
+    entry(n).unlinked.push({
+      id: String(r.id), type: String(r.permit_type), list: r.sharepoint_list_name ?? null, itemId: r.sharepoint_item_id ? String(r.sharepoint_item_id) : null,
+      document: r.document_url ?? null, emailed: !!r.email_sent_at, createdBy: !!r.created_by,
+    })
+  }
+  const numbers = [...out.values()].sort((a, b) => a.number.localeCompare(b.number))
+  for (const e of numbers) e.items.sort((a, b) => a.list.localeCompare(b.list) || Number(a.itemId) - Number(b.itemId))
+  return { numbers, checkedAt: new Date().toISOString() }
+}

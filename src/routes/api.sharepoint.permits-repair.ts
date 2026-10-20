@@ -8,11 +8,13 @@
  *                               returns `remaining` keys for the caller to send again.
  *   ?job=dma-copies           → the same, for DMA permits the old push copied into the
  *                               other lists (Polaris rows backed up, then removed).
+ *   GET ?job=prmt-census      → every SharePoint item and Polaris permit carrying a DMA
+ *                               "PRMT…" number, grouped by number. Reads only.
  *
  * See permits-sp-repair.server.ts for the rules. Admin only.
  */
 import { requireAdminAccess } from '@/lib/admin/access'
-import { applyDmaCopyCleanup, applyPermitRepairs, planDmaCopyCleanup, planPermitRepairs } from '@/lib/permits-sp-repair.server'
+import { applyDmaCopyCleanup, applyPermitRepairs, planDmaCopyCleanup, planPermitRepairs, prmtCensus } from '@/lib/permits-sp-repair.server'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -22,9 +24,14 @@ export async function permitsRepairHandler(request: Request): Promise<Response> 
   if (!session.ok) return session.response
 
   // ?job=dma-copies — the DMA permits the old push copied into every other list.
-  const dmaCopies = new URL(request.url).searchParams.get('job') === 'dma-copies'
+  const job = new URL(request.url).searchParams.get('job')
+  const dmaCopies = job === 'dma-copies'
 
   try {
+    if (job === 'prmt-census') {
+      if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+      return json({ ok: true, ...(await prmtCensus()) })
+    }
     if (request.method === 'GET') return json({ ok: true, ...(dmaCopies ? await planDmaCopyCleanup() : await planPermitRepairs()) })
     if (request.method === 'POST') {
       const body = await request.json().catch(() => ({})) as { keys?: unknown }
