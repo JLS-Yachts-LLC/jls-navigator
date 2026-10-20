@@ -32,8 +32,9 @@ export async function compassCardEventHandler(request: Request, ctx?: { waitUnti
   if (typeof shaped === 'string') return json({ ok: false, error: shaped }, 400)
 
   try {
-    const r = await storeEvent(shaped)
-    if (r.result === 'created') {
+    const imported = (body as { backfill?: unknown }).backfill === true
+    const r = await storeEvent(shaped, imported)
+    if (r.result === 'created' && !imported) {
       const send = import('@/lib/compass-card/alerts.server')
         .then((m) => m.sendCompassCardAlerts())
         .catch((e) => console.error('[compass-card-alerts] error:', e instanceof Error ? e.message : String(e)))

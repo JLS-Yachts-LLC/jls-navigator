@@ -61,7 +61,12 @@ const FIELD_LABEL: Record<string, string> = {
 };
 
 const staffName = (s: Staff | undefined) => s?.display_name || s?.email || "Unknown";
-const fmtWhen = (iso: string) => new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dubai", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const fmtWhen = (iso: string) => {
+  const d = new Date(iso);
+  // Older items (the imported backlog) show their year.
+  const year = d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" as const } : {};
+  return d.toLocaleString("en-GB", { timeZone: "Asia/Dubai", day: "numeric", month: "short", ...year, hour: "2-digit", minute: "2-digit" });
+};
 
 export function CompassCardPage({ initialEventId }: { initialEventId?: string }) {
   const { session } = useAuth();
@@ -78,7 +83,7 @@ export function CompassCardPage({ initialEventId }: { initialEventId?: string })
   const load = useCallback(async () => {
     const [e, s] = await Promise.all([
       db.from("compass_card_events").select("id, event_type, team, occurred_at, received_at, title, summary, status, person_name, person_email, admin_url, data, alert_result")
-        .order("received_at", { ascending: false }).limit(500),
+        .order("occurred_at", { ascending: false }).limit(1000),
       // Not filtered on user_profiles.active: it is false for many staff in daily use.
       db.from("user_profiles").select("user_id, display_name, email, department").order("display_name"),
     ]);
@@ -98,7 +103,7 @@ export function CompassCardPage({ initialEventId }: { initialEventId?: string })
 
   const week = useMemo(() => {
     const since = Date.now() - 7 * 86_400_000;
-    const recent = events.filter((e) => Date.parse(e.received_at) >= since);
+    const recent = events.filter((e) => Date.parse(e.occurred_at) >= since);
     return {
       signups: recent.filter((e) => e.event_type === "user_signup").length,
       vendors: recent.filter((e) => e.event_type === "vendor_signup").length,

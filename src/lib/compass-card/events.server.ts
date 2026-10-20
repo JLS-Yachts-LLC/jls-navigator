@@ -182,12 +182,31 @@ export function shapeEvent(body: any): ShapedEvent | string {
   }
 }
 
-/** Store the event once. Returns 'created', or 'duplicate' when that id was already received. */
-export async function storeEvent(e: ShapedEvent): Promise<{ result: 'created' | 'duplicate'; id?: string }> {
+/**
+ * Store the event once. Returns 'created', or 'duplicate' when that id was already received.
+ * `imported` (the signed body's "backfill": true) is for items that were already waiting in
+ * Compass Card before the integration: stored as already alerted, so no bell and no email.
+ */
+export async function storeEvent(e: ShapedEvent, imported = false): Promise<{ result: 'created' | 'duplicate'; id?: string }> {
+  const row = imported
+    ? { ...e, alert_claimed_at: new Date().toISOString(), alert_result: 'Imported: was already waiting in Compass Card, no alert sent' }
+    : e
   const { data, error } = await db().from('compass_card_events')
-    .upsert(e, { onConflict: 'event_id', ignoreDuplicates: true })
+    .upsert(row, { onConflict: 'event_id', ignoreDuplicates: true })
     .select('id')
   if (error) throw new Error(error.message)
-  const row = (data ?? [])[0]
-  return row ? { result: 'created', id: row.id } : { result: 'duplicate' }
+  const stored = (data ?? [])[0]
+
+  // A decision also updates the request it decides, so a vendor request or offer
+  // doesn't still read "pending" on the page once it has been approved / rejected.
+  if (stored && e.status && (e.event_type === 'vendor_status' || e.event_type === 'offer_status')) {
+    const recordId = e.event_type === 'vendor_status' ? e.data.vendor_id : e.data.offer_id
+    if (recordId) {
+      const original = e.event_type === 'vendor_status' ? 'vendor_signup' : 'offer_submitted'
+      await db().from('compass_card_events').update({ status: e.status })
+        .eq('event_type', original)
+        .or(`event_id.eq.${original}:${recordId},event_id.like.${original}:${recordId}:%`)
+    }
+  }
+  return stored ? { result: 'created', id: stored.id } : { result: 'duplicate' }
 }
