@@ -7,8 +7,10 @@ import { buildCourse } from "../academy-cyber/course.mjs";
 import { AV } from "./av-course.mjs";
 // @ts-ignore
 import { M365, CREWIT } from "./office-courses.mjs";
+// @ts-ignore
+import { GUESTWIFI, PRINTING, PHONES } from "./services-courses.mjs";
 
-export const COURSES = [AV, M365, CREWIT];
+export const COURSES = [AV, M365, CREWIT, GUESTWIFI, PRINTING, PHONES];
 let failed = false;
 for (const c of COURSES) {
   const ids = Object.fromEntries((c.files as string[]).map((f) => [f, randomUUID()]));

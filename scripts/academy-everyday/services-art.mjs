@@ -134,8 +134,8 @@ function satphone() {
   for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) b += rect(245 + c * 42, 480 + r * 54, 34, 40, 6, "#3a404b");
   b += txt(305, 790, "Satellite phone", { size: 22, weight: 600, fill: C.white, anchor: "middle" });
   b += rect(470, 260, 440, 520, 18, C.panel, C.gold, 2) + txt(500, 310, "Satphone", { size: 30, weight: 700, fill: C.white });
-  ["For ship's business and emergencies", "Works when Starlink, VSAT and 4G don't", "Expensive per minute — not for personal calls", "Antenna up, outside, with a clear sky", "Kept charged where everyone knows", "Dialling instructions on its label"].forEach((t, i) => {
-    b += g(500, 340 + i * 68, 0.38, icon.tick()) + txt(550, 368 + i * 68, t, { size: 21, fill: C.text });
+  ["For ship's business and emergencies", "Works when Starlink, VSAT and 4G don't", "Costly per minute — not for personal calls", "Antenna up, outside, with a clear sky", "Kept charged where everyone knows", "Dialling instructions on its label"].forEach((t, i) => {
+    b += g(500, 340 + i * 68, 0.38, icon.tick()) + txt(545, 368 + i * 68, t, { size: 19, fill: C.text });
   });
   // GMDSS
   b += rect(980, 260, 540, 520, 18, "#3a1414", C.red, 3) + txt(1010, 310, "GMDSS radio equipment", { size: 30, weight: 700, fill: "#ffb3ae" });
