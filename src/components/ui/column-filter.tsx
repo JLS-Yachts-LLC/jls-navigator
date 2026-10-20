@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * for this on every tracker, so one hook serves them all:
  *
  *   const cf = useColumnFilters(rows, [{ key: "holder", label: "Holder", value: (r) => r.holder_name }, …]);
- *   <th><cf.Header k="holder" /></th>   …   cf.rows.map(…)
+ *   <th>{cf.header("holder")}</th>   …   cf.rows.map(…)
  */
 export interface FilterColumn<T> {
   key: string;
@@ -92,33 +92,48 @@ export function useColumnFilters<T>(rows: T[], columns: FilterColumn<T>[]) {
   const activeCount = Object.values(filters).filter((v) => v.length).length;
   function clearAll() { setFilters({}); setSort(null); }
 
-  function Header({ k, children, align }: { k: string; children?: ReactNode; align?: "left" | "right" }) {
+  /** The header cell content for column `k` (put it inside your own <th>). */
+  function header(k: string, children?: ReactNode) {
     const c = byKey.get(k);
-    const label = children ?? c?.label ?? k;
-    const selected = filters[k] ?? [];
-    const dir = sort?.key === k ? sort.dir : null;
     return (
-      <span className={cn("inline-flex items-center gap-1", align === "right" && "justify-end")}>
-        <button
-          type="button"
-          onClick={() => cycleSort(k)}
-          className={cn("inline-flex items-center gap-1 uppercase tracking-[inherit] hover:text-foreground", dir && "text-foreground")}
-          title="Sort"
-        >
-          {label}
-          {dir === "asc" ? <ArrowUp className="h-3 w-3" /> : dir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-30" />}
-        </button>
-        <ValuePicker
-          label={c?.label ?? k}
-          selected={selected}
-          options={() => options(k)}
-          onChange={(v) => setFilter(k, v)}
-        />
-      </span>
+      <ColumnHeader
+        label={children ?? c?.label ?? k}
+        name={c?.label ?? k}
+        dir={sort?.key === k ? sort.dir : null}
+        selected={filters[k] ?? []}
+        onSort={() => cycleSort(k)}
+        options={() => options(k)}
+        onChange={(v) => setFilter(k, v)}
+      />
     );
   }
 
-  return { rows: out, Header, activeCount, sorted: !!sort, clearAll };
+  return { rows: out, header, activeCount, sorted: !!sort, clearAll };
+}
+
+function ColumnHeader({ label, name, dir, selected, onSort, options, onChange }: {
+  label: ReactNode;
+  name: string;
+  dir: "asc" | "desc" | null;
+  selected: string[];
+  onSort: () => void;
+  options: () => { value: string; count: number }[];
+  onChange: (vals: string[]) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onSort}
+        className={cn("inline-flex items-center gap-1 uppercase tracking-[inherit] hover:text-foreground", dir && "text-foreground")}
+        title="Sort"
+      >
+        {label}
+        {dir === "asc" ? <ArrowUp className="h-3 w-3" /> : dir === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+      </button>
+      <ValuePicker label={name} selected={selected} options={options} onChange={onChange} />
+    </span>
+  );
 }
 
 function ValuePicker({ label, selected, options, onChange }: {

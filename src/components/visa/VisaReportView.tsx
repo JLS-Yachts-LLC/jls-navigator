@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { downloadVisaExport, emailVisaExport } from '@/lib/visa/export-client'
 import { triggerBlobDownload } from '@/lib/visa/documentExport'
+import { useColumnFilters, type FilterColumn } from '@/components/ui/column-filter'
 
 // A visa row as loaded by VisaDashboard (subset we need here).
 type Row = {
@@ -22,6 +23,7 @@ type Row = {
   sign_off_date: string | null
   submitted_at: string | null
   created_at: string
+  application_notes?: string | null
   yachts?: { vessel_name: string } | null
 }
 
@@ -33,7 +35,10 @@ const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { 
 const name = (r: Row) => `${r.given_name ?? ''} ${r.surname ?? ''}`.trim() || '—'
 const effDate = (r: Row) => r.submitted_at ?? r.visa_issuance_date ?? r.created_at
 
-const CSV_HEADERS = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Sign On', 'Sign Off', 'Status']
+const CSV_HEADERS = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Sign On', 'Sign Off', 'Status', 'Notes']
+const notes = (r: Row) => (r.application_notes ?? '').replace(/\s+/g, ' ').trim()
+// Solid background: a sticky header cell over a translucent one lets rows show through.
+const TH = 'sticky top-0 z-10 bg-card px-3 py-2.5 font-semibold text-muted-foreground/80 whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]'
 const fileSafe = (s: string) => s.replace(/[^a-zA-Z0-9.\-]/g, '-')
 const pause = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -92,14 +97,32 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
     const lines = [CSV_HEADERS.join(','), ...rows.map(r => [
       r.yachts?.vessel_name ?? vesselName(r.yacht_id), r.given_name ?? '', r.surname ?? '', r.nationality ?? '',
       r.passport_number ?? '', r.visa_number ?? '', fmt(r.visa_issuance_date), fmt(r.visa_expiry),
-      fmt(r.sign_on_date), fmt(r.sign_off_date), STATUS_LABEL[r.status] ?? r.status,
+      fmt(r.sign_on_date), fmt(r.sign_off_date), STATUS_LABEL[r.status] ?? r.status, notes(r),
     ].map(x => esc(String(x))).join(','))]
     return new Blob([lines.join('\r\n')], { type: 'text/csv' })
   }
 
+  // Visa Detail: Excel-style sort and value filter on every column header.
+  const detailColumns = useMemo<FilterColumn<Row>[]>(() => [
+    { key: 'vessel', label: 'Vessel', value: r => r.yachts?.vessel_name ?? vesselName(r.yacht_id) },
+    { key: 'given', label: 'Given Name', value: r => r.given_name },
+    { key: 'surname', label: 'Surname', value: r => r.surname },
+    { key: 'nationality', label: 'Nationality', value: r => r.nationality },
+    { key: 'passport', label: 'Passport No.', value: r => r.passport_number },
+    { key: 'visa', label: 'Visa Ref', value: r => r.visa_number },
+    { key: 'issued', label: 'Visa Issuance', value: r => r.visa_issuance_date?.slice(0, 7), sortValue: r => r.visa_issuance_date },
+    { key: 'expiry', label: 'Visa Expiry', value: r => r.visa_expiry?.slice(0, 7), sortValue: r => r.visa_expiry },
+    { key: 'signon', label: 'Sign On', value: r => r.sign_on_date?.slice(0, 7), sortValue: r => r.sign_on_date },
+    { key: 'signoff', label: 'Sign Off', value: r => r.sign_off_date?.slice(0, 7), sortValue: r => r.sign_off_date },
+    { key: 'status', label: 'Status', value: r => STATUS_LABEL[r.status] ?? r.status },
+    { key: 'notes', label: 'Notes', value: r => notes(r).slice(0, 80) },
+  ], [vessels]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cf = useColumnFilters(filtered, detailColumns)
+
   function exportCsv() {
     const label = picked.length === 1 ? vesselName(picked[0]) : picked.length ? `${picked.length}-vessels` : 'All'
-    triggerBlobDownload(csvBlob(filtered), fileSafe(`Visa-Report-${label}.csv`))
+    // On Visa Detail the file carries exactly the rows on screen, column filters and sort included.
+    triggerBlobDownload(csvBlob(tab === 'visa' ? cf.rows : filtered), fileSafe(`Visa-Report-${label}.csv`))
   }
 
   /** One vessel's file, carrying exactly the records on screen for it. The server
@@ -203,7 +226,9 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
         </select>
         <label className="flex items-center gap-1.5 text-muted-foreground">From <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2" /></label>
         <label className="flex items-center gap-1.5 text-muted-foreground">To <input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2" /></label>
-        <span className="ml-auto font-medium text-muted-foreground">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
+        <span className="ml-auto font-medium text-muted-foreground">
+          {tab === 'visa' && cf.rows.length !== filtered.length ? `${cf.rows.length} of ${filtered.length}` : filtered.length} record{filtered.length !== 1 ? 's' : ''}
+        </span>
         <button onClick={exportCsv} disabled={!filtered.length} className="h-8 rounded-md border border-border px-3 font-medium hover:bg-accent/40 disabled:opacity-50">⬇ Export CSV</button>
         {/* One file per picked vessel. Needs a pick: with nothing picked it would
             be a file for every vessel in the fleet. */}
@@ -235,16 +260,17 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
                 </div>
               ))}
             </div>
-            <div className="overflow-hidden rounded-xl border border-border">
+            {/* No overflow-hidden wrapper: it would stop the header row sticking. */}
+            <div className="rounded-xl border border-border">
               <table className="w-full text-xs">
-                <thead className="border-b border-border bg-muted/30">
+                <thead>
                   <tr>
-                    <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground/80">Vessel</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-muted-foreground/80">Total</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-emerald-400/80">Approved</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-slate-400/80">Cancelled</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-red-400/80">Rejected/Denied</th>
-                    <th className="px-4 py-2.5 text-left font-semibold text-muted-foreground/80">Export</th>
+                    <th className={cn(TH, 'px-4 text-left')}>Vessel</th>
+                    <th className={cn(TH, 'text-center')}>Total</th>
+                    <th className={cn(TH, 'text-center text-emerald-400/80')}>Approved</th>
+                    <th className={cn(TH, 'text-center text-slate-400/80')}>Cancelled</th>
+                    <th className={cn(TH, 'text-center text-red-400/80')}>Rejected/Denied</th>
+                    <th className={cn(TH, 'px-4 text-left')}>Export</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -269,21 +295,37 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
                     </tr>
                   ))}
                 </tbody>
+                {summary.length > 1 && (
+                  // The consolidated line: every vessel in the report added together.
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/20 font-semibold">
+                      <td className="px-4 py-2.5">{picked.length ? `All ${summary.length} vessels shown` : 'All vessels'}</td>
+                      <td className="px-3 py-2.5 text-center font-bold">{totals.total}</td>
+                      <td className="px-3 py-2.5 text-center text-emerald-400">{totals.approved}</td>
+                      <td className="px-3 py-2.5 text-center text-slate-400">{totals.cancelled}</td>
+                      <td className="px-3 py-2.5 text-center text-red-400">{totals.rejected}</td>
+                      <td className="px-4 py-2 text-[10.5px] font-normal text-muted-foreground">Export CSV (top right) = every record</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border">
+          <div className="rounded-xl border border-border">
             <table className="w-full text-xs">
-              <thead className="border-b border-border bg-muted/30">
-                <tr>{['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Sign On', 'Sign Off', 'Status'].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left font-semibold text-muted-foreground/80 whitespace-nowrap">{h}</th>
+              <thead>
+                <tr>{detailColumns.map(c => (
+                  <th key={c.key} className={cn(TH, 'text-left')}>{cf.header(c.key)}</th>
                 ))}</tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={11} className="py-10 text-center text-muted-foreground/50">No records match the filters</td></tr>
-                ) : filtered.map((r, i) => (
+                {cf.rows.length === 0 ? (
+                  <tr><td colSpan={12} className="py-10 text-center text-muted-foreground/50">
+                    No records match the filters
+                    {cf.activeCount > 0 && <> · <button onClick={cf.clearAll} className="text-primary hover:underline">Clear column filters</button></>}
+                  </td></tr>
+                ) : cf.rows.map((r, i) => (
                   <tr key={r.id} className={cn('border-b border-border/40', i % 2 ? 'bg-muted/10' : '')}>
                     <td className="px-3 py-2 font-medium">{r.yachts?.vessel_name ?? vesselName(r.yacht_id)}</td>
                     <td className="px-3 py-2">{r.given_name ?? '—'}</td>
@@ -296,6 +338,7 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.sign_on_date)}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.sign_off_date)}</td>
                     <td className="px-3 py-2">{STATUS_LABEL[r.status] ?? r.status}</td>
+                    <td className="max-w-[18rem] truncate px-3 py-2 text-muted-foreground" title={r.application_notes ?? undefined}>{notes(r) || '—'}</td>
                   </tr>
                 ))}
               </tbody>

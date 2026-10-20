@@ -162,7 +162,7 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
     ];
   }, [yachts]);
   const cf = useColumnFilters(filtered, columns);
-  const H = cf.Header;
+  const H = cf.header;
 
   return (
     <div className="flex h-full flex-col">
@@ -313,17 +313,17 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
             <table className="data-table sticky-head">
               <thead>
                 <tr>
-                  <th><H k="number" /></th>
-                  <th><H k="yacht" /></th>
-                  <th><H k="holder" /></th>
-                  <th><H k="authority" /></th>
-                  {meta.showDmaPhase && <th><H k="phase" /></th>}
-                  {isGatePass && <th><H k="pass" /></th>}
-                  <th><H k="issued" /></th>
-                  <th><H k="expiry" /></th>
-                  <th><H k="status" /></th>
-                  <th><H k="remarks" /></th>
-                  <th><H k="document" /></th>
+                  <th>{H("number")}</th>
+                  <th>{H("yacht")}</th>
+                  <th>{H("holder")}</th>
+                  <th>{H("authority")}</th>
+                  {meta.showDmaPhase && <th>{H("phase")}</th>}
+                  {isGatePass && <th>{H("pass")}</th>}
+                  <th>{H("issued")}</th>
+                  <th>{H("expiry")}</th>
+                  <th>{H("status")}</th>
+                  <th>{H("remarks")}</th>
+                  <th>{H("document")}</th>
                   <th>Email</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>

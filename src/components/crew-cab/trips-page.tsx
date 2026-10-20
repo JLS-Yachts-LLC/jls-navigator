@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 import { useGoogleMaps, type GMaps } from "@/lib/google-maps";
 import { GoogleRouteMap } from "@/components/maps/google-route-map";
 
@@ -695,6 +696,24 @@ function BoardRow({
         )}
       </BoardCell>
 
+      {/* Remarks / notes — the same notes field as the full form */}
+      <BoardCell editing={isActive("notes")} onClick={() => onActivate("notes")} className="min-w-[180px]">
+        {isActive("notes") ? (
+          <input
+            autoFocus
+            defaultValue={trip.notes ?? ""}
+            placeholder="Remarks, updates…"
+            onBlur={e => { if ((e.target.value || null) !== (trip.notes ?? null)) onSave(trip.id, { notes: e.target.value || null }); else onActivate(""); }}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === "Escape") onActivate(""); }}
+            className="h-5 w-full rounded border border-border bg-card text-xs focus:outline-none focus:ring-1 focus:ring-primary px-1"
+          />
+        ) : (
+          <span className={cn("block max-w-[220px] truncate", trip.notes ? "text-foreground/75" : "text-muted-foreground/40")} title={trip.notes ?? undefined}>
+            {trip.notes?.replace(/\s+/g, " ") || "—"}
+          </span>
+        )}
+      </BoardCell>
+
       {/* Actions */}
       <td className="w-20 px-2 py-1">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
@@ -764,7 +783,7 @@ function BoardAddRow({
   if (!active) {
     return (
       <tr className="border-b border-border/30 hover:bg-muted/10 transition-colors">
-        <td colSpan={10} className="px-3 py-1.5">
+        <td colSpan={12} className="px-3 py-1.5">
           <button
             onClick={() => setActive(true)}
             className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-primary transition-colors"
@@ -838,6 +857,10 @@ function BoardAddRow({
           {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
       </td>
+      <td className="border-r border-border/40 px-2 py-1">
+        <input placeholder="Remarks" value={form.notes ?? ""} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+          className="h-6 w-full rounded border border-border bg-card text-xs px-1 focus:outline-none focus:ring-1 focus:ring-primary" />
+      </td>
       <td className="px-2 py-1">
         <div className="flex items-center gap-1">
           <button onClick={commit} disabled={saving} className="rounded p-1 hover:bg-emerald-500/15 text-emerald-400 transition">
@@ -889,7 +912,32 @@ export function TripsPage() {
     setLoading(false);
   }
 
-  const filtered = useMemo(() => filter === "all" ? trips : trips.filter(t => t.trip_type === filter), [trips, filter]);
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => {
+    const byType = filter === "all" ? trips : trips.filter(t => t.trip_type === filter);
+    const s = search.trim().toLowerCase();
+    if (!s) return byType;
+    return byType.filter(t => [
+      t.passenger_name, t.yacht?.vessel_name, t.pickup_loc?.name, t.pickup_address, t.dropoff_loc?.name, t.dropoff_address,
+      t.driver?.full_name, t.vehicle?.registration, t.flight_number, t.notes, TYPE_LABEL[t.trip_type],
+    ].some(v => String(v ?? "").toLowerCase().includes(s)));
+  }, [trips, filter, search]);
+
+  // Excel-style sort + value filter on each column header. Dates filter by month.
+  const columns = useMemo<FilterColumn<Trip>[]>(() => [
+    { key: "type", label: "Type", value: t => TYPE_LABEL[t.trip_type] },
+    { key: "passenger", label: "Passenger", value: t => t.passenger_name },
+    { key: "yacht", label: "Yacht", value: t => t.yacht?.vessel_name },
+    { key: "pickup", label: "Pickup", value: t => t.pickup_loc?.name ?? t.pickup_address },
+    { key: "dropoff", label: "Drop-off", value: t => t.dropoff_loc?.name ?? t.dropoff_address },
+    { key: "pickupAt", label: "Pickup Time", value: t => t.pickup_datetime?.slice(0, 7), sortValue: t => t.pickup_datetime },
+    { key: "dropoffAt", label: "Drop-off Time", value: t => t.dropoff_datetime?.slice(0, 7), sortValue: t => t.dropoff_datetime },
+    { key: "driver", label: "Driver", value: t => t.driver?.full_name },
+    { key: "vehicle", label: "Vehicle", value: t => (t.vehicle ? `${t.vehicle.make} ${t.vehicle.model}` : null) },
+    { key: "status", label: "Status", value: t => STATUS_LABEL[t.status] },
+    { key: "notes", label: "Remarks", value: t => t.notes?.replace(/\s+/g, " ").slice(0, 80) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
 
   // ── Form mode ──────────────────────────────────────────────────────────────
 
@@ -1006,6 +1054,7 @@ export function TripsPage() {
       driver_id: partialForm.driver_id === "__none" ? null : partialForm.driver_id,
       vehicle_id: partialForm.vehicle_id === "__none" ? null : partialForm.vehicle_id,
       status: partialForm.status ?? "pending",
+      notes: partialForm.notes || null,
     };
     const { error } = await (supabase as any).from("crew_trips").insert([payload]);
     if (error) { toast.error(error.message); return; }
@@ -1062,24 +1111,37 @@ export function TripsPage() {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="rounded-lg border border-border overflow-x-auto bg-card">
+          // No overflow wrapper: the content box above must be the nearest
+          // scroller, or the header row stops sticking.
+          <div className="w-max min-w-full rounded-lg border border-border bg-card">
             {/* Hint bar */}
             <div className="px-3 py-1.5 border-b border-border/60 flex items-center gap-2 bg-muted/20">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search trips…"
+                  className="h-7 w-56 rounded border border-border bg-card pl-6 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
               <span className="text-[10px] text-muted-foreground">
-                Click any cell to edit inline · Enter or Tab to confirm · Add rows at top or bottom
+                Click any cell to edit inline · Enter or Tab to confirm · Add rows at top or bottom · Click a column title to sort, the funnel to filter
               </span>
-              {filtered.length === 0 && (
+              {(search || cf.activeCount > 0) && (
+                <button onClick={() => { setSearch(""); cf.clearAll(); }} className="text-[10px] font-medium text-primary hover:underline">
+                  Clear ({cf.rows.length} of {trips.length} shown)
+                </button>
+              )}
+              {trips.length === 0 && (
                 <span className="ml-auto text-[10px] text-muted-foreground italic">No trips yet — add one above or below</span>
               )}
             </div>
-            <table className="w-full min-w-[1300px]">
-              <thead className="bg-muted/20 border-b border-border/60">
+            <table className="w-full min-w-[1480px]">
+              <thead>
                 <tr>
-                  {["Type", "Passenger", "Yacht", "Pickup", "Drop-off", "Pickup Time", "Drop-off Time", "Driver", "Vehicle", "Status", ""].map(h => (
-                    <th key={h} className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap border-r border-border/40 last:border-r-0">
-                      {h}
+                  {columns.map(c => (
+                    <th key={c.key} className="sticky top-0 z-10 bg-card px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap border-r border-border/40 shadow-[inset_0_-1px_0_0_var(--border)]">
+                      {cf.header(c.key)}
                     </th>
                   ))}
+                  <th className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]" />
                 </tr>
               </thead>
               <tbody>
@@ -1091,7 +1153,7 @@ export function TripsPage() {
                   onAdd={boardAdd}
                   label="Add trip at top"
                 />
-                {filtered.map(t => (
+                {cf.rows.map(t => (
                   <BoardRow
                     key={t.id}
                     trip={t}
