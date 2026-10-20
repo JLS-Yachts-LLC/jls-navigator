@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap, useMapEvent } from "react-leaflet";
+import { MapContainer, Marker, Popup, Polyline, CircleMarker, useMap, useMapEvent } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import EnglishBasemap from "@/components/english-basemap";
 import type { AisYacht } from "@/lib/aisstream.server";
 
 const NAVSTAT: Record<number, string> = {
@@ -92,12 +93,7 @@ export default function AisFleetMap({
 
   return (
     <MapContainer center={[25.2, 55.3]} zoom={8} className="h-full w-full" style={{ background: "#aadaff" }}>
-      {/* CARTO Voyager labels places in English (OSM's own tiles use the local
-          language, so the Gulf showed in Arabic) — same base as the GPS fleet map. */}
-      <TileLayer
-        attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-      />
+      <EnglishBasemap />
       <FitBounds yachts={located} once={fitOnce} />
       <FocusController focus={focus} />
       <DeselectOnMapClick onDeselect={() => setSelectedId(null)} />

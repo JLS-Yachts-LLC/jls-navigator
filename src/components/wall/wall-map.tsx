@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, Marker, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import EnglishBasemap from "@/components/english-basemap";
 import type { WallMapPoint } from "@/lib/wall-types";
 
 /** Dot for a vessel sitting still, arrow for one under way. Interactive boards get a finger-sized hit area. */
@@ -103,9 +104,7 @@ export default function WallMap({
         keyboard={false} boxZoom={false}
         style={{ height: "100%", width: "100%", background: "#0A1A2B" }}
       >
-        {/* Esri dark canvas — keyless (CARTO's dark tiles now refuse this domain without an API key). */}
-        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}" maxZoom={16} />
-        <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}" maxZoom={16} />
+        <EnglishBasemap theme="dark" maxZoom={16} />
         <Frame points={points} hold={active} />
         <Handlers on={interactive} />
         {interactive && <FlyTo points={points} selectedId={selectedId} />}

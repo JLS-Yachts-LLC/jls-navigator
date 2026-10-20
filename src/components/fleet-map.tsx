@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import EnglishBasemap from "@/components/english-basemap";
 import type { FleetVehicle } from "@/lib/mygps.server";
 
 // Default Leaflet marker assets break under bundlers; we use custom divIcons anyway.
@@ -51,10 +52,7 @@ export default function FleetMap({
   const located = useMemo(() => vehicles.filter(v => v.lat != null && v.lon != null), [vehicles]);
   return (
     <MapContainer center={[25.2, 55.3]} zoom={9} className="h-full w-full" style={{ background: "#aadaff" }}>
-      <TileLayer
-        attribution='&copy; OpenStreetMap contributors &copy; CARTO'
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-      />
+      <EnglishBasemap />
       <FitBounds vehicles={located} once={fitOnce} />
       <FocusController focus={focus} />
       {located.map(v => (
