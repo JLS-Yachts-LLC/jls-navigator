@@ -2160,6 +2160,20 @@ async function _syncPermits(
   // never added, linked or used to rewrite a row — it is listed for staff to fix.
   const copyOf = _permitCopyChecker(lists, cfg.listName, cfg.fieldMapping)
 
+  // DMA Foreign Visitor Permit numbers ("PRMT…") in the DMA list. The old push also
+  // POSTed each DMA permit as a NEW item into every other list (lookup failed → create),
+  // so Navigation License, Tenders, Mothership and Gate Pass hold copies at their own
+  // item ids, where the same-id check above can't see them. Such an item is never added.
+  const dmaNumbers = new Set<string>()
+  if (permitType !== 'dma') {
+    const dmaSnap = [...lists.values()].find((l) => _permitTypeFromListName(l.listName) === 'dma')
+    for (const i of dmaSnap?.items ?? []) {
+      if (i['@removed']) continue
+      const n = _permitItemSig(i.fields ?? {}, dmaSnap!.fieldMapping).number
+      if (n.startsWith('prmt')) dmaNumbers.add(n)
+    }
+  }
+
   for (const item of allItems) {
     if (item['@removed']) continue
     const fields = item.fields ?? {}
@@ -2224,6 +2238,10 @@ async function _syncPermits(
       const copy = copyOf(itemKey, fields)
       if (copy) {
         copySkips.push({ itemId: itemKey, holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''), copyOf: copy })
+        continue
+      }
+      if (numberKey && dmaNumbers.has(numberKey)) {
+        copySkips.push({ itemId: itemKey, holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''), copyOf: 'DMA Permits (same permit number)' })
         continue
       }
       let how = ''

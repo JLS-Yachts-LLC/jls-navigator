@@ -323,6 +323,7 @@ export function PermitsDryRunPanel({ lists }: { lists: Array<{ name: string; ena
         </>
       )}
       <RepairSharePoint />
+      <DmaCopies />
     </section>
   );
 }
@@ -517,6 +518,138 @@ function RepairSharePoint() {
                     <td className="whitespace-nowrap py-1 pr-3">{a.list} · {a.itemId}</td>
                     <td className="py-1 pr-3">{a.holds}</td>
                     <td className="py-1 pr-3">{a.kind === "delete" ? "— (deleted)" : a.restoreTo ?? "—"}</td>
+                    <td className="py-1 text-muted-foreground">{a.why}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {actions.length > 40 && (
+            <button className="mt-1 text-[11px] text-teal-300 hover:underline" onClick={() => setAll(!all)}>
+              {all ? "Show fewer" : `Show all ${actions.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+type DmaCopyAction = {
+  key: string;
+  kind: "remove" | "person";
+  polarisId: string | null;
+  list: string | null;
+  itemId: string | null;
+  holds: string;
+  real: string | null;
+  why: string;
+};
+
+/**
+ * DMA Foreign Visitor Permits the old push copied into every other list (and the
+ * sync then pulled back in as Navigation Licenses, Tenders, Gate Passes…). Preview,
+ * then remove: Polaris rows are backed up first, SharePoint items go to the recycle bin.
+ */
+function DmaCopies() {
+  const [busy, setBusy] = useState<"plan" | "apply" | null>(null);
+  const [actions, setActions] = useState<DmaCopyAction[] | null>(null);
+  const [progress, setProgress] = useState<{ done: number; failed: Array<{ key: string; error: string }>; skipped: number; backups: string[] } | null>(null);
+  const [all, setAll] = useState(false);
+  const url = "/api/sharepoint/permits-repair?job=dma-copies";
+
+  const plan = async () => {
+    setBusy("plan"); setProgress(null);
+    try {
+      const res = await fetch(url, { headers: await authHeaders() });
+      const body = await res.json().catch(() => ({ ok: false, error: `Preview failed (${res.status})` }));
+      if (!res.ok || !body.ok) throw new Error(body.error ?? `Preview failed (${res.status})`);
+      setActions(body.actions);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Preview failed");
+    } finally { setBusy(null); }
+  };
+
+  const removable = (actions ?? []).filter((a) => a.kind === "remove");
+  const inPolaris = removable.filter((a) => a.polarisId).length;
+  const inSharePoint = removable.filter((a) => a.itemId).length;
+  const apply = async () => {
+    if (!window.confirm(`Remove ${removable.length} copied DMA permit(s)?\n\n• ${inPolaris} from Polaris (each backed up first)\n• ${inSharePoint} from SharePoint (to the recycle bin for 93 days)\n\nThe real DMA permits are not touched.`)) return;
+    setBusy("apply");
+    let keys = removable.map((a) => a.key);
+    const total = { done: 0, failed: [] as Array<{ key: string; error: string }>, skipped: 0, backups: [] as string[] };
+    try {
+      while (keys.length) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({ keys }),
+        });
+        const body = await res.json().catch(() => ({ ok: false, error: `Clean-up failed (${res.status})` }));
+        if (!res.ok || !body.ok) throw new Error(body.error ?? `Clean-up failed (${res.status})`);
+        total.done += body.done.length; total.failed.push(...body.failed); total.skipped += body.skipped;
+        if (body.backup) total.backups.push(body.backup);
+        setProgress({ ...total });
+        if (!body.done.length && !body.failed.length) break;
+        keys = body.remaining;
+      }
+      toast.success(`Removed ${total.done} copied permit(s)${total.failed.length ? `, ${total.failed.length} failed` : ""}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "Clean-up failed");
+    } finally { setBusy(null); }
+  };
+
+  const shown = all ? actions ?? [] : (actions ?? []).slice(0, 40);
+  return (
+    <div className="border-t border-border/60 px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-[260px] flex-1">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">DMA permits copied into other lists</div>
+          <div className="text-[11px] text-muted-foreground">
+            The old sync added every DMA Foreign Visitor Permit ("PRMT…") to the other lists too, so it shows up again as a Navigation
+            License, Tenders permit, Gate Pass… A copy is removed only when the real DMA permit is in Polaris and in the SharePoint DMA
+            list. Polaris rows are backed up first. Preview writes nothing.
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => void plan()}>
+            {busy === "plan" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {busy === "plan" ? "Reading SharePoint…" : actions ? "Preview again" : "Preview clean-up"}
+          </Button>
+          {actions && removable.length > 0 && (
+            <Button size="sm" className="gap-1.5" disabled={!!busy} onClick={() => void apply()}>
+              {busy === "apply" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {busy === "apply" ? `Removing… ${progress?.done ?? 0}/${removable.length}` : `Remove ${removable.length} copies`}
+            </Button>
+          )}
+        </div>
+      </div>
+      {actions && (
+        <>
+          <div className="mb-2 flex flex-wrap gap-3 text-[11px]">
+            <span><b className="text-amber-300">{inPolaris}</b> from Polaris</span>
+            <span><b className="text-amber-300">{inSharePoint}</b> from SharePoint</span>
+            <span><b className="text-foreground">{actions.length - removable.length}</b> to check by hand</span>
+          </div>
+          {progress && (
+            <div className="mb-2 text-[11px] text-muted-foreground">
+              Done {progress.done}{progress.skipped ? ` · ${progress.skipped} skipped (changed since the preview)` : ""}
+              {progress.backups.length > 0 && ` · backup: ${progress.backups.join(", ")}`}
+              {progress.failed.length > 0 && <span className="text-amber-300"> · {progress.failed.length} failed: {progress.failed.slice(0, 3).map((f) => f.error).join("; ")}</span>}
+            </div>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                <tr><th className="py-1 pr-3 text-left">Action</th><th className="py-1 pr-3 text-left">Copy</th><th className="py-1 pr-3 text-left">SharePoint</th><th className="py-1 pr-3 text-left">Real DMA permit</th><th className="py-1 text-left">Why</th></tr>
+              </thead>
+              <tbody>
+                {shown.map((a) => (
+                  <tr key={a.key} className="border-t border-border/30 align-top">
+                    <td className={cn("whitespace-nowrap py-1 pr-3", a.kind === "remove" ? "text-amber-300" : "text-muted-foreground")}>{a.kind === "remove" ? "Remove copy" : "Check by hand"}</td>
+                    <td className="py-1 pr-3">{a.holds}</td>
+                    <td className="whitespace-nowrap py-1 pr-3">{a.list && a.itemId ? `${a.list} · ${a.itemId}` : "—"}</td>
+                    <td className="py-1 pr-3">{a.real ?? "—"}</td>
                     <td className="py-1 text-muted-foreground">{a.why}</td>
                   </tr>
                 ))}

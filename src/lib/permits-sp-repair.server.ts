@@ -234,3 +234,180 @@ export async function applyPermitRepairs(keys: string[], max = 25): Promise<{
   }
   return { done, failed, skipped, remaining: runnable.slice(max) }
 }
+
+// ─── DMA permits copied into the other lists ──────────────────────────────────
+//
+// The old push also POSTed each DMA Foreign Visitor Permit ("PRMT…" number) as a NEW
+// item into every other permit list, and those items were pulled back into Polaris
+// as Navigation Licenses, Tenders, Mothership permits, Gate Passes and Sanitation
+// certificates. A PRMT number is one DMA permit, so a non-DMA permit carrying one is
+// a copy — provided the real one is in Polaris as a DMA permit AND in the SharePoint
+// DMA list. Each copy is removed from Polaris (backed up first) and from SharePoint.
+
+export type DmaCopyAction = {
+  key: string
+  kind: 'remove' | 'person'
+  /** The copy in Polaris (if any) and its SharePoint item (if any). */
+  polarisId: string | null
+  list: string | null
+  itemId: string | null
+  holds: string
+  /** The real DMA permit it copies. */
+  real: string | null
+  why: string
+}
+
+async function _planDmaCopies(): Promise<{ actions: DmaCopyAction[]; token: string; siteOf: Map<string, string> }> {
+  const { token, lists } = await loadPermitListsForRepair()
+  const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const isPrmt = (n: string) => /^prmt\d{6,}$/.test(n)
+
+  // Every Polaris permit carrying a PRMT number.
+  const rows: Record<string, any>[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await (supabaseAdmin as any).from('permits')
+      .select('id, permit_type, holder_name, permit_number, issue_date, document_url, created_by, sharepoint_list_name, sharepoint_item_id, yacht_id, yachts(vessel_name)')
+      .ilike('permit_number', '%prmt%')
+      .order('id')
+      .range(from, from + 999)
+    if (error) throw new Error(`read permits → ${error.message}`)
+    rows.push(...(data ?? []))
+    if (!data || data.length < 1000) break
+  }
+  const real = new Map<string, Record<string, any>[]>()
+  for (const r of rows) if (r.permit_type === 'dma' && isPrmt(norm(r.permit_number))) {
+    const k = norm(r.permit_number); real.set(k, [...(real.get(k) ?? []), r])
+  }
+
+  // PRMT numbers in the SharePoint DMA list, and every item of the other lists by id.
+  const dma = lists.find((l) => l.permitType === 'dma')
+  const spDma = new Set<string>()
+  for (const i of dma?.items ?? []) { const n = permitItemSignature(i.fields ?? {}, dma!.fieldMapping).number; if (isPrmt(n)) spDma.add(n) }
+  const others = lists.filter((l) => l.permitType !== 'dma')
+  const itemOf = new Map<string, { list: (typeof lists)[number]; item: any }>()
+  for (const l of others) for (const i of l.items) itemOf.set(`${l.listName}#${i.id}`, { list: l, item: i })
+
+  const describeRealRow = (r: Record<string, any>) => [r.holder_name, String(r.permit_number ?? '').trim(), r.yachts?.vessel_name].filter(Boolean).join(' · ')
+  const describeCopy = (r: Record<string, any>) => `${String(r.permit_type).replace(/_/g, ' ')}: ${describeRealRow(r)}`
+  const actions: DmaCopyAction[] = []
+  const handledItems = new Set<string>()
+
+  // 1. Polaris copies (non-DMA rows with a PRMT number).
+  for (const r of rows) {
+    const n = norm(r.permit_number)
+    if (r.permit_type === 'dma' || !isPrmt(n)) continue
+    const twins = real.get(n) ?? []
+    const list = r.sharepoint_item_id ? (r.sharepoint_list_name ?? null) : null
+    const spKey = list ? `${list}#${r.sharepoint_item_id}` : null
+    if (spKey) handledItems.add(spKey)
+    const base = { polarisId: r.id, list, itemId: list ? String(r.sharepoint_item_id) : null, holds: describeCopy(r) }
+    const person = (why: string) => actions.push({ key: `person|${r.id}`, kind: 'person', ...base, real: twins[0] ? describeRealRow(twins[0]) : null, why })
+    if (!twins.length) { person('no DMA permit with this number in Polaris — check by hand'); continue }
+    if (!spDma.has(n)) { person('the DMA permit is not in the SharePoint DMA list yet — check by hand'); continue }
+    const vessel = (x: Record<string, any>) => norm(x.yachts?.vessel_name)
+    if (vessel(r) && twins.every((t) => vessel(t) && vessel(t) !== vessel(r))) { person('same number, but the DMA permit is on a different vessel — check by hand'); continue }
+    if (r.document_url && !twins.some((t) => t.document_url)) { person('has a document the DMA permit lacks — move it to the DMA permit first'); continue }
+    // Its SharePoint item is removed with it, but only if it holds the same number.
+    let spNote = ''
+    if (spKey) {
+      const it = itemOf.get(spKey)
+      if (!it) { base.list = null; base.itemId = null; spNote = ' (its SharePoint item is already gone)' }
+      else if (permitItemSignature(it.item.fields ?? {}, it.list.fieldMapping).number !== n) {
+        base.list = null; base.itemId = null; spNote = ' (its SharePoint item now holds something else — left alone)'
+      }
+    }
+    actions.push({
+      key: `remove|${r.id}|${base.list ?? '-'}#${base.itemId ?? '-'}|${n}`, kind: 'remove', ...base, real: describeRealRow(twins[0]),
+      why: `a copy of DMA permit ${String(twins[0].permit_number).trim()}${spNote}`,
+    })
+  }
+
+  // 2. SharePoint copies no Polaris permit is linked to.
+  const linkedKeys = new Set<string>()
+  // Paged: PostgREST caps a request at 1,000 rows, and a missed link here would mean
+  // deleting an item a Polaris permit still points at.
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await (supabaseAdmin as any).from('permits')
+      .select('id, sharepoint_list_name, sharepoint_item_id, permit_type')
+      .not('sharepoint_item_id', 'is', null).order('id').range(from, from + 999)
+    if (error) throw new Error(`read links → ${error.message}`)
+    for (const r of (data ?? []) as any[]) {
+      const list = r.sharepoint_list_name ?? lists.find((l) => l.permitType === r.permit_type)?.listName
+      if (list) linkedKeys.add(`${list}#${r.sharepoint_item_id}`)
+    }
+    if (!data || data.length < 1000) break
+  }
+  for (const [k, { list, item }] of itemOf) {
+    if (handledItems.has(k) || linkedKeys.has(k)) continue
+    const n = permitItemSignature(item.fields ?? {}, list.fieldMapping).number
+    if (!isPrmt(n) || !spDma.has(n) || !real.has(n)) continue
+    const f = item.fields ?? {}
+    const col = (db: string) => Object.entries(list.fieldMapping).find(([, d]) => d === db)?.[0]
+    const holds = [f[col('holder_name') ?? ''], f[col('permit_number') ?? ''], f[col('vessel_name') ?? '']].filter(Boolean).join(' · ')
+    actions.push({
+      key: `remove|-|${k}|${n}`, kind: 'remove', polarisId: null, list: list.listName, itemId: String(item.id),
+      holds: `${list.listName}: ${holds}`, real: describeRealRow(real.get(n)![0]), why: 'a copy of a DMA permit; not in Polaris',
+    })
+  }
+
+  actions.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'remove' ? -1 : 1) || String(a.list).localeCompare(String(b.list)) || Number(a.itemId) - Number(b.itemId))
+  return { actions, token, siteOf: new Map(lists.map((l) => [l.listName, l.siteId])) }
+}
+
+export async function planDmaCopyCleanup(): Promise<{ actions: DmaCopyAction[]; checkedAt: string }> {
+  const { actions } = await _planDmaCopies()
+  return { actions, checkedAt: new Date().toISOString() }
+}
+
+/**
+ * Remove the previewed copies (by key), at most `max` per call. Every Polaris row is
+ * saved to permit-documents/_backups/ before it is deleted; SharePoint items go to the
+ * site recycle bin. SharePoint first, so the next pull has nothing to bring back.
+ */
+export async function applyDmaCopyCleanup(keys: string[], max = 40): Promise<{
+  done: Array<{ key: string }>
+  failed: Array<{ key: string; error: string }>
+  skipped: number
+  remaining: string[]
+  backup: string | null
+}> {
+  const { actions, token, siteOf } = await _planDmaCopies()
+  const current = new Map(actions.filter((a) => a.kind === 'remove').map((a) => [a.key, a]))
+  const runnable = keys.filter((k) => current.has(k))
+  const skipped = keys.length - runnable.length
+  const batch = runnable.slice(0, max).map((k) => current.get(k)!)
+
+  // Back up the Polaris rows of this batch, whole, before anything is deleted.
+  const ids = batch.map((a) => a.polarisId).filter(Boolean) as string[]
+  let backup: string | null = null
+  if (ids.length) {
+    const { data: full, error } = await (supabaseAdmin as any).from('permits').select('*').in('id', ids)
+    if (error) throw new Error(`backup read → ${error.message}`)
+    backup = `_backups/dma-copies-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+    const { error: upErr } = await supabaseAdmin.storage.from('permit-documents')
+      .upload(backup, new Blob([JSON.stringify(full, null, 2)], { type: 'application/json' }), { upsert: false, contentType: 'application/json' })
+    if (upErr) throw new Error(`backup write → ${upErr.message} — nothing deleted`)
+  }
+
+  const done: Array<{ key: string }> = []
+  const failed: Array<{ key: string; error: string }> = []
+  for (const a of batch) {
+    try {
+      if (a.list && a.itemId) {
+        const res = await fetch(
+          `https://graph.microsoft.com/v1.0/sites/${siteOf.get(a.list)}/lists/${encodeURIComponent(a.list)}/items/${a.itemId}`,
+          { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+        if (!res.ok && res.status !== 404) throw new Error(`DELETE ${a.list} ${a.itemId} → ${res.status} ${(await res.text()).slice(0, 200)}`)
+      }
+      if (a.polarisId) {
+        const { error } = await (supabaseAdmin as any).from('permits').delete().eq('id', a.polarisId)
+        if (error) throw new Error(`delete permit → ${error.message}`)
+      }
+      done.push({ key: a.key })
+      console.log(`[permits-dma-copies] removed ${a.holds}${a.list ? ` (SharePoint ${a.list} ${a.itemId})` : ''}`)
+    } catch (e) {
+      failed.push({ key: a.key, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { done, failed, skipped, remaining: runnable.slice(max), backup }
+}
