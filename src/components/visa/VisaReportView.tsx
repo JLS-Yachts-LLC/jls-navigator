@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth'
 import { cn } from '@/lib/utils'
@@ -6,6 +6,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { downloadVisaExport, emailVisaExport } from '@/lib/visa/export-client'
 import { triggerBlobDownload } from '@/lib/visa/documentExport'
 import { useColumnFilters, type FilterColumn } from '@/components/ui/column-filter'
+import { supabase } from '@/integrations/supabase/client'
+import { fetchAllRows } from '@/lib/fetch-all'
 
 // A visa row as loaded by VisaDashboard (subset we need here).
 type Row = {
@@ -21,6 +23,8 @@ type Row = {
   visa_expiry: string | null
   sign_on_date: string | null
   sign_off_date: string | null
+  cancelled_on?: string | null
+  cancelled_on_estimated?: boolean | null
   submitted_at: string | null
   created_at: string
   application_notes?: string | null
@@ -35,7 +39,12 @@ const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { 
 const name = (r: Row) => `${r.given_name ?? ''} ${r.surname ?? ''}`.trim() || '—'
 const effDate = (r: Row) => r.submitted_at ?? r.visa_issuance_date ?? r.created_at
 
-const CSV_HEADERS = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Sign On', 'Sign Off', 'Status', 'Notes']
+const CSV_HEADERS = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport No.', 'Visa Ref', 'Visa Issuance', 'Visa Expiry', 'Cancelled On', 'Sign On', 'Sign Off', 'Crew Changes', 'Status', 'Notes']
+// Every sign on / sign off made under a visa, oldest first (crew_signon_events.visa_id).
+type Move = { event_type: string; event_date: string }
+const short = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
+const movesText = (ms: Move[] | undefined) => (ms ?? []).map(m => `${m.event_type === 'sign_on' ? 'On' : 'Off'} ${short(m.event_date)}`).join(' · ')
+const cancelledText = (r: Row) => r.cancelled_on ? fmt(r.cancelled_on) + (r.cancelled_on_estimated ? ' (marked)' : '') : (r.status === 'cancelled' ? 'Not recorded' : '—')
 const notes = (r: Row) => (r.application_notes ?? '').replace(/\s+/g, ' ').trim()
 // Solid background: a sticky header cell over a translucent one lets rows show through.
 const TH = 'sticky top-0 z-10 bg-card px-3 py-2.5 font-semibold text-muted-foreground/80 whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]'
@@ -61,6 +70,20 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
   const [emailing, setEmailing] = useState(false)
 
   const vesselName = (id: string | null) => vessels.find(v => v[0] === id)?.[1] ?? 'Unassigned'
+
+  // Crew changes per visa — a multiple-entry visa can carry several sign ons and offs.
+  const [moves, setMoves] = useState<Record<string, Move[]>>({})
+  useEffect(() => {
+    void (async () => {
+      const { data } = await fetchAllRows<Move & { visa_id: string }>(() => (supabase as any)
+        .from('crew_signon_events').select('visa_id, event_type, event_date')
+        .not('visa_id', 'is', null).neq('status', 'cancelled')
+        .order('event_date', { ascending: true }).order('id', { ascending: true }))
+      const by: Record<string, Move[]> = {}
+      for (const m of data ?? []) (by[m.visa_id] ??= []).push(m)
+      setMoves(by)
+    })()
+  }, [])
 
   const pickedSet = useMemo(() => new Set(picked), [picked])
   const filtered = useMemo(() => applications.filter(r => {
@@ -96,8 +119,8 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
     const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     const lines = [CSV_HEADERS.join(','), ...rows.map(r => [
       r.yachts?.vessel_name ?? vesselName(r.yacht_id), r.given_name ?? '', r.surname ?? '', r.nationality ?? '',
-      r.passport_number ?? '', r.visa_number ?? '', fmt(r.visa_issuance_date), fmt(r.visa_expiry),
-      fmt(r.sign_on_date), fmt(r.sign_off_date), STATUS_LABEL[r.status] ?? r.status, notes(r),
+      r.passport_number ?? '', r.visa_number ?? '', fmt(r.visa_issuance_date), fmt(r.visa_expiry), cancelledText(r),
+      fmt(r.sign_on_date), fmt(r.sign_off_date), movesText(moves[r.id]), STATUS_LABEL[r.status] ?? r.status, notes(r),
     ].map(x => esc(String(x))).join(','))]
     return new Blob([lines.join('\r\n')], { type: 'text/csv' })
   }
@@ -112,11 +135,13 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
     { key: 'visa', label: 'Visa Ref', value: r => r.visa_number },
     { key: 'issued', label: 'Visa Issuance', value: r => r.visa_issuance_date?.slice(0, 7), sortValue: r => r.visa_issuance_date },
     { key: 'expiry', label: 'Visa Expiry', value: r => r.visa_expiry?.slice(0, 7), sortValue: r => r.visa_expiry },
+    { key: 'cancelled', label: 'Cancelled On', value: r => r.cancelled_on?.slice(0, 7), sortValue: r => r.cancelled_on },
     { key: 'signon', label: 'Sign On', value: r => r.sign_on_date?.slice(0, 7), sortValue: r => r.sign_on_date },
     { key: 'signoff', label: 'Sign Off', value: r => r.sign_off_date?.slice(0, 7), sortValue: r => r.sign_off_date },
+    { key: 'moves', label: 'Crew Changes', value: r => { const n = moves[r.id]?.length ?? 0; return n ? `${n} movement${n !== 1 ? 's' : ''}` : null }, sortValue: r => moves[r.id]?.length ?? 0 },
     { key: 'status', label: 'Status', value: r => STATUS_LABEL[r.status] ?? r.status },
     { key: 'notes', label: 'Notes', value: r => notes(r).slice(0, 80) },
-  ], [vessels]) // eslint-disable-line react-hooks/exhaustive-deps
+  ], [vessels, moves]) // eslint-disable-line react-hooks/exhaustive-deps
   const cf = useColumnFilters(filtered, detailColumns)
 
   function exportCsv() {
@@ -321,7 +346,7 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
               </thead>
               <tbody>
                 {cf.rows.length === 0 ? (
-                  <tr><td colSpan={12} className="py-10 text-center text-muted-foreground/50">
+                  <tr><td colSpan={14} className="py-10 text-center text-muted-foreground/50">
                     No records match the filters
                     {cf.activeCount > 0 && <> · <button onClick={cf.clearAll} className="text-primary hover:underline">Clear column filters</button></>}
                   </td></tr>
@@ -335,8 +360,20 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
                     <td className="px-3 py-2 font-mono text-[10.5px]">{r.visa_number ?? '—'}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.visa_issuance_date)}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.visa_expiry)}</td>
+                    <td className="px-3 py-2 text-muted-foreground" title={r.cancelled_on_estimated ? 'No date was entered — this is the day it was marked Cancelled in Polaris' : undefined}>
+                      {r.cancelled_on ? <>{fmt(r.cancelled_on)}{r.cancelled_on_estimated && <span className="text-amber-500"> *</span>}</> : r.status === 'cancelled' ? <span className="text-amber-500">Not recorded</span> : '—'}
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.sign_on_date)}</td>
                     <td className="px-3 py-2 text-muted-foreground">{fmt(r.sign_off_date)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-[10.5px] text-muted-foreground">
+                      {moves[r.id]?.length
+                        ? moves[r.id].map((m, k) => (
+                            <span key={k} className={cn('mr-1 inline-block rounded px-1 py-px', m.event_type === 'sign_on' ? 'bg-teal-500/10 text-teal-500' : 'bg-slate-500/10 text-slate-400')}>
+                              {m.event_type === 'sign_on' ? 'On' : 'Off'} {short(m.event_date)}
+                            </span>
+                          ))
+                        : '—'}
+                    </td>
                     <td className="px-3 py-2">{STATUS_LABEL[r.status] ?? r.status}</td>
                     <td className="max-w-[18rem] truncate px-3 py-2 text-muted-foreground" title={r.application_notes ?? undefined}>{notes(r) || '—'}</td>
                   </tr>

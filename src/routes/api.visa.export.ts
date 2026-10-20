@@ -42,9 +42,33 @@ type VisaRow = {
   visa_expiry: string | null
   sign_on_date: string | null
   sign_off_date: string | null
+  cancelled_on?: string | null
+  cancelled_on_estimated?: boolean | null
   status: string
   application_notes: string | null
   yachts?: { vessel_name: string } | null
+  /** Every sign on / sign off made under this visa, oldest first. */
+  moves?: { event_type: string; event_date: string }[]
+}
+
+function shortDate(d: string): string {
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
+}
+
+/** The crew changes under a visa ("On 29 Sep 26", "Off 05 Oct 26", …). With none
+ *  logged in Polaris, the Sign On / Sign Off dates that came from the tracker. */
+function crewChanges(r: VisaRow): string[] {
+  const list = r.moves?.length
+    ? r.moves
+    : ([['sign_on', r.sign_on_date], ['sign_off', r.sign_off_date]] as const)
+        .filter(([, d]) => !!d).map(([t, d]) => ({ event_type: t as string, event_date: String(d) }))
+        .sort((a, b) => a.event_date.localeCompare(b.event_date))
+  return list.map(m => `${m.event_type === 'sign_on' ? 'On' : 'Off'} ${shortDate(m.event_date)}`)
+}
+
+function cancelledOn(r: VisaRow): string {
+  if (r.cancelled_on) return fmt(r.cancelled_on) + (r.cancelled_on_estimated ? '*' : '')
+  return r.status === 'cancelled' ? 'Not recorded' : ''
 }
 
 function fmt(d: string | null): string {
@@ -74,6 +98,21 @@ async function fetchRows(yachtId: string): Promise<{ rows: VisaRow[]; vesselName
     .order('surname', { ascending: true })
   if (error) throw new Error(error.message)
   const all: VisaRow[] = (data ?? []) as VisaRow[]
+  // Crew changes under each visa, in chunks (a long id list overflows the URL).
+  const ids = all.map(r => r.id)
+  const byVisa = new Map<string, { event_type: string; event_date: string }[]>()
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data: ev, error: evErr } = await (db as any)
+      .from('crew_signon_events').select('visa_id, event_type, event_date')
+      .in('visa_id', ids.slice(i, i + 150)).neq('status', 'cancelled')
+      .order('event_date', { ascending: true })
+    if (evErr) throw new Error(evErr.message)
+    for (const e of (ev ?? []) as any[]) {
+      if (!byVisa.has(e.visa_id)) byVisa.set(e.visa_id, [])
+      byVisa.get(e.visa_id)!.push({ event_type: e.event_type, event_date: e.event_date })
+    }
+  }
+  for (const r of all) r.moves = byVisa.get(r.id) ?? []
   const vesselName = (all[0]?.yachts?.vessel_name) ?? 'Vessel'
   return { rows: all, vesselName }
 }
@@ -131,8 +170,8 @@ function buildCsv(rows: VisaRow[], vesselName: string): string {
   // Rank / Rating is deliberately absent — it is rarely filled in and was
   // shipping an empty column to the vessels.
   const headers = ['Given Name','Surname','Nationality','Passport No.',
-                   'Visa Reference','Visa Issuance','First Entry Expiry','Visa Expiry',
-                   'Sign On','Sign Off','Status']
+                   'Visa Reference','Visa Issuance','First Entry Expiry','Visa Expiry','Cancelled On',
+                   'Sign On','Sign Off','Crew Changes','Status']
   const esc = (v: string | null | undefined) => {
     const s = v ?? ''
     return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s
@@ -145,8 +184,8 @@ function buildCsv(rows: VisaRow[], vesselName: string): string {
     lines.push([
       esc(r.given_name), esc(r.surname), esc(r.nationality), esc(r.passport_number),
       esc(r.visa_number), esc(fd(r.visa_issuance_date)),
-      esc(fd(r.first_entry_expiry)), esc(fd(r.visa_expiry)),
-      esc(fd(r.sign_on_date)), esc(fd(r.sign_off_date)), esc(statusLabel(r.status)),
+      esc(fd(r.first_entry_expiry)), esc(fd(r.visa_expiry)), esc(cancelledOn(r)),
+      esc(fd(r.sign_on_date)), esc(fd(r.sign_off_date)), esc(crewChanges(r).join('; ')), esc(statusLabel(r.status)),
     ].join(','))
   }
   // UTF-8 BOM so Excel decodes accented names correctly (without it Excel assumes
@@ -189,23 +228,37 @@ async function buildPdf(rows: VisaRow[], vesselName: string): Promise<Uint8Array
   }
 
   // Column config: [label, key fn, width]
-  type ColDef = [string, (r: VisaRow) => string, number]
+  // Crew Changes lists every sign on / sign off under the visa, wrapped onto as
+  // many lines as it needs; every other column is one line.
+  type ColDef = [string, (r: VisaRow) => string | string[], number]
   const cols: ColDef[] = [
-    ['Name',            r => displayName(r),                  130],
-    ['Nationality',     r => r.nationality ?? '—',             70],
-    ['Passport No.',    r => r.passport_number ?? '—',         85],
-    ['Visa Reference',  r => r.visa_number ?? '—',            115],
-    ['Visa Issuance',   r => fmt(r.visa_issuance_date),        80],
-    ['Visa Expiry',     r => fmt(r.visa_expiry),               80],
-    ['Sign On',         r => fmt(r.sign_on_date),              72],
-    ['Status',          r => statusLabel(r.status),            70],
+    ['Name',            r => displayName(r),                  118],
+    ['Nationality',     r => r.nationality ?? '—',             62],
+    ['Passport No.',    r => r.passport_number ?? '—',         72],
+    ['Visa Reference',  r => r.visa_number ?? '—',             92],
+    ['Visa Issuance',   r => fmt(r.visa_issuance_date),        60],
+    ['Visa Expiry',     r => fmt(r.visa_expiry),               60],
+    ['Cancelled On',    r => cancelledOn(r) || '—',            62],
+    ['Crew Changes',    r => crewChanges(r),                  190],
+    ['Status',          r => statusLabel(r.status),            58],
   ]
+  const lineH = 9
+  const wrap = (parts: string[], w: number): string[] => {
+    const lines: string[] = []
+    for (const part of parts) {
+      const last = lines[lines.length - 1]
+      const joined = last ? `${last} · ${part}` : part
+      if (last && normalFont.widthOfTextAtSize(joined, 7.5) <= w - 8) lines[lines.length - 1] = joined
+      else lines.push(part)
+    }
+    return lines.length ? lines : ['—']
+  }
   const totalColW = cols.reduce((s, c) => s + c[2], 0)
   const marginX = (pageW - totalColW) / 2
 
   let page = addPage()
   let y = pageH - 72
-  const rowH = 18
+  const baseRowH = 18
   const headerH = 20
 
   // Column headers
@@ -222,7 +275,9 @@ async function buildPdf(rows: VisaRow[], vesselName: string): Promise<Uint8Array
   y = drawHeaders(page, y)
 
   rows.forEach((r, idx) => {
-    if (y < 40) {
+    const cells = cols.map(([, valFn, w]) => { const v = valFn(r); return Array.isArray(v) ? wrap(v, w) : [v] })
+    const rowH = Math.max(baseRowH, Math.max(...cells.map(c => c.length)) * lineH + 9)
+    if (y - rowH < 30) {
       page = addPage()
       y = pageH - 72
       y = drawHeaders(page, y)
@@ -231,24 +286,25 @@ async function buildPdf(rows: VisaRow[], vesselName: string): Promise<Uint8Array
     page.drawRectangle({ x: marginX, y: y - rowH + 4, width: totalColW, height: rowH, color: bg })
 
     let cx = marginX
-    for (const [, valFn, w] of cols) {
-      const val = valFn(r)
+    cols.forEach(([label, , w], ci) => {
       let color = black
-      if (valFn === ((rv: VisaRow) => statusLabel(rv.status))) {
+      if (label === 'Status') {
         if (r.status === 'approved' || r.status === 'completed') color = green
         else if (r.status === 'rejected' || r.status === 'cancelled') color = red
         else if (r.status === 'in_review' || r.status === 'processing') color = amber
       }
-      // Truncate long values
-      let display = val
       const font = normalFont
-      while (display.length > 1 && font.widthOfTextAtSize(display, 7.5) > w - 8) {
-        display = display.slice(0, -1)
-      }
-      if (display !== val) display = display.slice(0, -1) + '…'
-      page.drawText(display, { x: cx + 4, y: y - 8, size: 7.5, font, color })
+      cells[ci].forEach((val, li) => {
+        // Truncate long values
+        let display = val
+        while (display.length > 1 && font.widthOfTextAtSize(display, 7.5) > w - 8) {
+          display = display.slice(0, -1)
+        }
+        if (display !== val) display = display.slice(0, -1) + '…'
+        page.drawText(display, { x: cx + 4, y: y - 8 - li * lineH, size: 7.5, font, color })
+      })
       cx += w
-    }
+    })
     y -= rowH
   })
 
@@ -263,6 +319,10 @@ async function buildPdf(rows: VisaRow[], vesselName: string): Promise<Uint8Array
       `Summary — Approved/Completed: ${approved}  |  Cancelled: ${cancelled}  |  Rejected: ${rejected}  |  Other: ${other}`,
       { x: marginX, y, size: 8, font: boldFont, color: navy }
     )
+    if (rows.some(r => r.cancelled_on_estimated)) {
+      page.drawText('* No cancellation date was entered: this is the day the visa was marked Cancelled in Polaris.',
+        { x: marginX, y: y - 12, size: 7, font: normalFont, color: slate })
+    }
   }
 
   return doc.save()
@@ -281,7 +341,10 @@ function buildEmailHtml(rows: VisaRow[], vesselName: string): string {
       <td style="padding:6px 8px;border-bottom:1px solid #e8edf2">${r.nationality ?? '—'}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e8edf2">${r.passport_number ?? '—'}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e8edf2">${r.visa_number ?? '—'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e8edf2">${fmt(r.visa_issuance_date)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e8edf2">${fmt(r.visa_expiry)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e8edf2">${cancelledOn(r) || '—'}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e8edf2;font-size:12px">${crewChanges(r).join('<br>') || '—'}</td>
       <td style="padding:6px 8px;border-bottom:1px solid #e8edf2;color:${statusColor(r.status)};font-weight:600">${statusLabel(r.status)}</td>
     </tr>`).join('')
   return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;margin:0;background:#f4f6f9">
@@ -303,7 +366,10 @@ function buildEmailHtml(rows: VisaRow[], vesselName: string): string {
   <th style="padding:8px;text-align:left">Nationality</th>
   <th style="padding:8px;text-align:left">Passport No.</th>
   <th style="padding:8px;text-align:left">Visa Reference</th>
+  <th style="padding:8px;text-align:left">Visa Issuance</th>
   <th style="padding:8px;text-align:left">Visa Expiry</th>
+  <th style="padding:8px;text-align:left">Cancelled On</th>
+  <th style="padding:8px;text-align:left">Crew Changes</th>
   <th style="padding:8px;text-align:left">Status</th>
 </tr></thead>
 <tbody>${rows_html}</tbody>

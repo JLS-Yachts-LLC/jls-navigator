@@ -22,6 +22,7 @@ import { VisaReportView } from './VisaReportView'
 import { VisaBulkUpload } from './VisaBulkUpload'
 import NewApplicationWizard from './NewApplicationWizard'
 import { VisaDetailPage } from './VisaDetailPage'
+import { useCancelVisaDate } from './CancelVisaDialog'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ interface VisaApplication {
   submitted_at: string | null
   approved_at: string | null
   visa_issuance_date: string | null
+  cancelled_on?: string | null
   application_notes: string | null
   created_at: string
   crew_members: {
@@ -590,9 +592,11 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     }
   }
 
-  function bulkCancel() {
-    if (!confirm(`Cancel ${selected.size} visa application${selected.size === 1 ? '' : 's'}?\n\nThis sets their status to Cancelled. It does not delete anything.`)) return
-    void applyToSelected({ status: 'cancelled' }, 'cancelled')
+  async function bulkCancel() {
+    // One cancellation date for the whole selection; it shows next to each issue date in reports.
+    const on = await cancelDate.ask(selected.size)
+    if (!on) return
+    void applyToSelected({ status: 'cancelled', cancelled_on: on, cancelled_on_estimated: false }, 'cancelled')
   }
 
   /**
@@ -685,6 +689,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   const [bulkOpen, setBulkOpen]         = useState(false)
 
   const [cancelling, setCancelling] = useState<string | null>(null)
+  const cancelDate = useCancelVisaDate()
   const [attaching, setAttaching]   = useState<string | null>(null)
 
   // Quick-attach the issued visa document, which moves the application to Approved.
@@ -738,11 +743,14 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   }
 
   async function cancelOrDelete(app: VisaApplication) {
-    if (!window.confirm(
-      app.status === 'draft'
-        ? `Delete this draft application for ${app.crew_members?.full_name ?? 'this crew member'}? This cannot be undone.`
-        : `Cancel this application for ${app.crew_members?.full_name ?? 'this crew member'}? Status will be set to Cancelled.`
-    )) return
+    // Cancelling asks for the cancellation date (shown next to the issue date in reports).
+    let cancelledOn: string | null = null
+    if (app.status === 'draft') {
+      if (!window.confirm(`Delete this draft application for ${app.crew_members?.full_name ?? 'this crew member'}? This cannot be undone.`)) return
+    } else {
+      cancelledOn = await cancelDate.ask(1)
+      if (!cancelledOn) return
+    }
 
     setCancelling(app.id)
     const db = supabase as any
@@ -754,11 +762,11 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
         toast.error(e?.message ?? 'Delete failed'); setCancelling(null); return
       }
     } else {
-      await db.from('visa_applications').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', app.id)
+      await db.from('visa_applications').update({ status: 'cancelled', cancelled_on: cancelledOn, cancelled_on_estimated: false, updated_at: new Date().toISOString() }).eq('id', app.id)
     }
     setApplications(prev => app.status === 'draft'
       ? prev.filter(a => a.id !== app.id)
-      : prev.map(a => a.id === app.id ? { ...a, status: 'cancelled' } : a)
+      : prev.map(a => a.id === app.id ? { ...a, status: 'cancelled', cancelled_on: cancelledOn } : a)
     )
     setCancelling(null)
   }
@@ -791,7 +799,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     const [appsRes, alertsRes] = await Promise.all([
       fetchAllRows(() => (supabase as any)
         .from('visa_applications')
-        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, sign_off_date, arrival_date, submitted_at, approved_at, visa_issuance_date, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
+        .select('id, crew_member_id, yacht_id, vessel_name, country_code, status, visa_document_url, passport_number, given_name, surname, nationality, visa_number, visa_expiry, sign_on_date, sign_off_date, arrival_date, submitted_at, approved_at, visa_issuance_date, cancelled_on, cancelled_on_estimated, application_notes, created_at, crew_members(full_name, first_name, last_name), yachts(vessel_name)')
         .order('created_at', { ascending: false })),
       // Pull the crew member's name too: the banner had no name to show, so alerts
       // read "AE visa for  expires …" and gave no way to find the record.
@@ -1059,6 +1067,7 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
   return (
     <div style={{ fontFamily: FONTS.display, color: COLORS.frost, minHeight: '100vh', padding: '24px' }}>
       {bulkOpen && <VisaBulkUpload onClose={() => setBulkOpen(false)} onChanged={() => void loadAll()} />}
+      {cancelDate.dialog}
       {exportReview && vessel !== 'all' && (
         <ExportReviewDialog
           format={exportReview}

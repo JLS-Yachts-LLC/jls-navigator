@@ -19,6 +19,7 @@ import { cn, toDMY } from "@/lib/utils";
 import { fileToBase64 } from "@/lib/file-to-base64";
 import { getCrewSharePointFolderLink } from "@/lib/visa-sharepoint.server";
 import { fileVisaToSharePoint, reportVisaFiling } from "@/lib/visa/file-to-sharepoint";
+import { useCancelVisaDate, todayDubai } from "@/components/visa/CancelVisaDialog";
 
 type Visa = Record<string, any>;
 
@@ -72,9 +73,13 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   const [sendOpen, setSendOpen] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  // Cross-linked data: latest sign-on/off from crew_signon_events + passport documents.
-  const [signOn, setSignOn] = useState<string | null>(null);
-  const [signOff, setSignOff] = useState<string | null>(null);
+  // Every sign on / sign off made under THIS visa (crew_signon_events.visa_id —
+  // a multiple-entry visa can carry several), oldest first.
+  type VisaMove = { id: string; event_type: string; event_date: string; status: string | null; port: string | null; notes: string | null; flight_number: string | null; yachts: { vessel_name: string } | null };
+  const [visaMoves, setVisaMoves] = useState<VisaMove[]>([]);
+  const [moveForm, setMoveForm] = useState<{ type: "sign_on" | "sign_off"; date: string; port: string } | null>(null);
+  const [moveBusy, setMoveBusy] = useState(false);
+  const cancelDate = useCancelVisaDate();
   const [docs, setDocs] = useState<Record<string, string | null> | null>(null);
   const [spFolderBusy, setSpFolderBusy] = useState(false);
   // Movement history: every change ever made to this record's Sign On/Off dates
@@ -88,7 +93,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
   // Full visa history for this crew member: every application they've ever had
   // (including expired/cancelled ones) plus the actions taken on each, so an
   // expired or cancelled past visa never hides the record.
-  type CrewApp = { id: string; status: string | null; country_code: string | null; created_at: string; submitted_at: string | null; visa_number: string | null; visa_expiry: string | null };
+  type CrewApp = { id: string; status: string | null; country_code: string | null; created_at: string; submitted_at: string | null; visa_number: string | null; visa_expiry: string | null; visa_issuance_date: string | null; cancelled_on: string | null };
   const [crewApps, setCrewApps] = useState<CrewApp[]>([]);
   const [crewAppHistory, setCrewAppHistory] = useState<Record<string, StatusChange[]>>({});
   const [expandedApp, setExpandedApp] = useState<string | null>(null);
@@ -208,20 +213,17 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     const crewId = (data as any).crew_member_id;
     if (crewId) {
       const db2 = supabase as any;
-      const [{ data: events }, { data: pp }] = await Promise.all([
-        db2.from("crew_signon_events").select("event_type, event_date").eq("crew_member_id", crewId).order("event_date", { ascending: false, nullsFirst: false }),
+      const [{ data: pp }] = await Promise.all([
         (data as any).selected_passport_id
           ? db2.from("crew_passports").select("document_url, cover_url, headshot_url, seamans_book_url, crew_verification_letter_url").eq("id", (data as any).selected_passport_id).maybeSingle()
           : db2.from("crew_passports").select("document_url, cover_url, headshot_url, seamans_book_url, crew_verification_letter_url").eq("crew_id", crewId).order("is_primary", { ascending: false }).limit(1).maybeSingle(),
       ]);
-      setSignOn((events ?? []).find((e: any) => e.event_type === "sign_on")?.event_date ?? null);
-      setSignOff((events ?? []).find((e: any) => e.event_type === "sign_off")?.event_date ?? null);
       setDocs(pp ?? null);
 
       // Every application this crew member has ever had, newest first, plus the
       // status history of each — one extra query, grouped client-side.
       const { data: apps } = await db2.from("visa_applications")
-        .select("id, status, country_code, created_at, submitted_at, visa_number, visa_expiry")
+        .select("id, status, country_code, created_at, submitted_at, visa_number, visa_expiry, visa_issuance_date, cancelled_on")
         .eq("crew_member_id", crewId)
         .order("created_at", { ascending: false });
       setCrewApps((apps ?? []) as CrewApp[]);
@@ -242,10 +244,36 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       .select("id, field, old_date, new_date, changed_at, changed_by_email, source")
       .eq("visa_id", id).order("changed_at", { ascending: false }).limit(50)
       .then(({ data: mh }: { data: any[] | null }) => setMovements((mh ?? []) as any));
+    void loadVisaMoves();
     (supabase as any).from("visa_status_history")
       .select("id, old_status, new_status, changed_at, changed_by_email, source")
       .eq("visa_id", id).order("changed_at", { ascending: false }).limit(50)
       .then(({ data: sh }: { data: any[] | null }) => setStatusHistory((sh ?? []) as any));
+  }
+
+  async function loadVisaMoves() {
+    const { data: ev } = await (supabase as any).from("crew_signon_events")
+      .select("id, event_type, event_date, status, port, notes, flight_number, yachts(vessel_name)")
+      .eq("visa_id", id).order("event_date", { ascending: true }).order("created_at", { ascending: true });
+    setVisaMoves((ev ?? []) as VisaMove[]);
+  }
+
+  /** Record a sign on / sign off under this visa. The DB keeps the visa's Sign On /
+   *  Sign Off as the latest of each, and adds the movement to the crew timeline. */
+  async function saveMove() {
+    if (!moveForm || !visa?.crew_member_id) return;
+    setMoveBusy(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await (supabase as any).from("crew_signon_events").insert({
+      crew_member_id: visa.crew_member_id, yacht_id: visa.yacht_id ?? null, visa_id: id,
+      event_type: moveForm.type, event_date: moveForm.date, port: moveForm.port.trim() || null,
+      status: moveForm.date > todayDubai() ? "confirmed" : "completed", created_by: user?.id ?? null,
+    });
+    setMoveBusy(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(moveForm.type === "sign_on" ? "Sign on recorded" : "Sign off recorded");
+    setMoveForm(null);
+    void load();
   }
 
   function pushExcel() {
@@ -254,8 +282,16 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
 
   async function setStatus(status: string) {
     const label = (STATUS_META[status]?.label ?? status);
-    if (!window.confirm(`Change this application's status to "${label}"?`)) return;
     const patch: any = { status, updated_at: new Date().toISOString() };
+    if (status === "cancelled") {
+      // Ask when it was cancelled — reports show it next to the issue date.
+      const on = await cancelDate.ask(1);
+      if (!on) return;
+      patch.cancelled_on = on;
+      patch.cancelled_on_estimated = false;
+    } else if (!window.confirm(`Change this application's status to "${label}"?`)) return;
+    // Reinstating a cancelled visa clears its cancellation date (the DB does too).
+    if (status !== "cancelled" && visa?.status === "cancelled") { patch.cancelled_on = null; patch.cancelled_on_estimated = false; }
     if (status === "submitted") patch.submitted_at = new Date().toISOString();
     if (status === "approved")  patch.approved_at = new Date().toISOString();
     if (status === "completed") patch.completed_at = new Date().toISOString();
@@ -281,6 +317,7 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
       visa_issuance_date: visa?.visa_issuance_date ?? "", visa_expiry: visa?.visa_expiry ?? "",
       first_entry_expiry: visa?.first_entry_expiry ?? "", arrival_date: visa?.arrival_date ?? "",
       sign_on_date: visa?.sign_on_date ?? "", sign_off_date: visa?.sign_off_date ?? "",
+      ...(visa?.status === "cancelled" ? { cancelled_on: visa?.cancelled_on ?? "" } : {}),
       submitted_at: visa?.submitted_at?.slice(0, 10) ?? "",
       application_notes: visa?.application_notes ?? "",
     });
@@ -311,6 +348,8 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
         patch.visa_expiry = d.toISOString().slice(0, 10);
       }
     }
+    // A cancellation date typed in here is a real one, not the "day marked cancelled" estimate.
+    if ("cancelled_on" in patch && patch.cancelled_on !== (visa?.cancelled_on ?? null)) patch.cancelled_on_estimated = false;
     // Link the typed vessel name to a yacht row when it matches one.
     if (patch.vessel_name) {
       const { data: y } = await (supabase as any)
@@ -370,8 +409,17 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
     ["Visa Expiry", fmt(visa.visa_expiry)],
     ["Visa Use By Date", fmt(visa.first_entry_expiry)],
     ["Arrival", fmt(visa.arrival_date)],
-    ["Sign On", fmt(signOn ?? visa.sign_on_date)],
-    ["Sign Off", fmt(signOff ?? visa.sign_off_date)],
+    // The latest of each under this visa; every one is listed under "Sign On / Sign Off under this visa".
+    ["Sign On", fmt(visa.sign_on_date)],
+    ["Sign Off", fmt(visa.sign_off_date)],
+    ...((visa.status === "cancelled" || visa.cancelled_on ? [["Cancelled On", visa.cancelled_on
+      ? <>{fmt(visa.cancelled_on)}{visa.cancelled_on_estimated && (
+          <span className="ml-1.5 text-[10.5px] text-amber-500"
+            title="Nobody entered a cancellation date, so this is the day the visa was marked Cancelled in Polaris. Use Edit to correct it.">
+            day marked cancelled
+          </span>
+        )}</>
+      : <span className="text-amber-500">Not recorded — use Edit</span>]] : []) as [string, React.ReactNode][]),
     ["Submitted", fmt(visa.submitted_at?.slice(0, 10))],
   ];
 
@@ -618,6 +666,117 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
             </div>
           )}
 
+          {/* Every sign on / sign off made under this visa. A six-month multiple-entry
+              visa can carry several; each is linked to the visa valid on its date. */}
+          {(() => {
+            const issued: string | null = visa.visa_issuance_date ?? visa.visa_issue_date ?? null;
+            const endsOn: string | null = visa.cancelled_on ?? visa.visa_expiry ?? null;
+            const outside = (d: string) =>
+              issued && d < issued ? "before the visa was issued"
+              : endsOn && d > endsOn ? (visa.cancelled_on ? "after the visa was cancelled" : "after the visa expired")
+              : null;
+            // No movements logged in Polaris yet: show the dates that came from the Excel tracker.
+            const fromTracker = visaMoves.length === 0
+              ? ([["sign_on", visa.sign_on_date], ["sign_off", visa.sign_off_date]] as const)
+                  .filter(([, d]) => !!d).map(([t, d]) => ({ type: t as string, date: d as string }))
+                  .sort((a, b) => a.date.localeCompare(b.date))
+              : [];
+            const ons = visaMoves.filter(m => m.event_type === "sign_on" && m.status !== "cancelled").length;
+            const offs = visaMoves.filter(m => m.event_type === "sign_off" && m.status !== "cancelled").length;
+            return (
+              <div className="rounded-xl border border-border bg-card/60 overflow-hidden md:col-span-2">
+                <div className="flex items-center justify-between gap-3 border-b border-border/40 px-4 py-2.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                    Sign On / Sign Off under this visa
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10.5px] text-muted-foreground/60">
+                      {fmt(issued)} – {fmt(endsOn)}{visa.cancelled_on ? " (cancelled)" : ""}
+                      {visaMoves.length > 0 && ` · ${ons} sign on${ons !== 1 ? "s" : ""}, ${offs} sign off${offs !== 1 ? "s" : ""}`}
+                    </span>
+                    {visa.crew_member_id && !moveForm && (
+                      <button onClick={() => setMoveForm({ type: "sign_on", date: todayDubai(), port: "" })}
+                        className="text-[11px] font-medium text-primary hover:underline">+ Record sign on / off</button>
+                    )}
+                  </div>
+                </div>
+                {moveForm && (
+                  <div className="flex flex-wrap items-end gap-2 border-b border-border/40 bg-muted/20 px-4 py-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px]">Movement</Label>
+                      <select value={moveForm.type} onChange={e => setMoveForm(f => f && ({ ...f, type: e.target.value as "sign_on" | "sign_off" }))}
+                        className="h-9 rounded-md border border-border bg-background px-2 text-sm">
+                        <option value="sign_on">Sign On</option>
+                        <option value="sign_off">Sign Off</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px]">Date</Label>
+                      <DateInputDMY value={moveForm.date} onChange={v => setMoveForm(f => f && ({ ...f, date: v }))}
+                        style={{ height: 36, width: 140, borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} />
+                    </div>
+                    <div className="min-w-[160px] flex-1 space-y-1">
+                      <Label className="text-[11px]">Port (optional)</Label>
+                      <Input value={moveForm.port} onChange={e => setMoveForm(f => f && ({ ...f, port: e.target.value }))} className="h-9" placeholder="e.g. Dubai Harbour" />
+                    </div>
+                    <Button size="sm" className="h-9" disabled={moveBusy || !/^\d{4}-\d{2}-\d{2}$/.test(moveForm.date)} onClick={() => void saveMove()}>
+                      {moveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-9" onClick={() => setMoveForm(null)}>Cancel</Button>
+                    {moveForm.date && outside(moveForm.date) && (
+                      <p className="w-full text-[11px] text-amber-500">⚠ This date is {outside(moveForm.date)}.</p>
+                    )}
+                  </div>
+                )}
+                <div className="divide-y divide-border/40">
+                  {visaMoves.map((m) => {
+                    const warn = outside(m.event_date);
+                    return (
+                      <div key={m.id} className={cn("flex items-center justify-between gap-3 px-4 py-2 text-[12.5px]", m.status === "cancelled" && "opacity-50 line-through")}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+                            m.event_type === "sign_on" ? "bg-teal-500/15 text-teal-500" : "bg-slate-500/15 text-slate-400")}>
+                            {m.event_type === "sign_on" ? "Sign On" : "Sign Off"}
+                          </span>
+                          <span className="font-medium">{fmt(m.event_date)}</span>
+                          <span className="truncate text-muted-foreground/70">
+                            {[m.yachts?.vessel_name, m.port, m.flight_number].filter(Boolean).join(" · ")}
+                          </span>
+                        </div>
+                        <span className="shrink-0 text-[11px]">
+                          {warn
+                            ? <span className="text-amber-500" title="Check this date — it falls outside the visa's dates.">⚠ {warn}</span>
+                            : m.status === "confirmed" && m.event_date > todayDubai()
+                              ? <span className="text-muted-foreground/70">planned</span>
+                              : null}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {fromTracker.map((m) => {
+                    const warn = outside(m.date);
+                    return (
+                      <div key={m.type} className="flex items-center justify-between gap-3 px-4 py-2 text-[12.5px]">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+                            m.type === "sign_on" ? "bg-teal-500/15 text-teal-500" : "bg-slate-500/15 text-slate-400")}>
+                            {m.type === "sign_on" ? "Sign On" : "Sign Off"}
+                          </span>
+                          <span className="font-medium">{fmt(m.date)}</span>
+                          <span className="text-muted-foreground/70">from the visa tracker</span>
+                        </div>
+                        {warn && <span className="shrink-0 text-[11px] text-amber-500" title="Check this date — it falls outside the visa's dates.">⚠ {warn}</span>}
+                      </div>
+                    );
+                  })}
+                  {visaMoves.length === 0 && fromTracker.length === 0 && (
+                    <div className="px-4 py-3 text-[12px] text-muted-foreground/70">No sign on or sign off recorded under this visa yet.</div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Visa history — EVERY application this crew member has had, including
               expired and cancelled ones, each expandable to its action log. A past
               expired/cancelled visa must never hide the crew member or a new
@@ -645,7 +804,10 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
                             <span className="font-medium">{fmt(a.submitted_at ?? a.created_at)}</span>
                             {a.country_code && <span className="text-muted-foreground/70">{a.country_code}</span>}
                             {a.visa_number && <span className="text-muted-foreground/70">· {a.visa_number}</span>}
-                            {a.visa_expiry && <span className="text-muted-foreground/70">· expires {fmt(a.visa_expiry)}</span>}
+                            {a.visa_issuance_date && <span className="text-muted-foreground/70">· issued {fmt(a.visa_issuance_date)}</span>}
+                            {a.cancelled_on
+                              ? <span className="text-muted-foreground/70">· cancelled {fmt(a.cancelled_on)}</span>
+                              : a.visa_expiry && <span className="text-muted-foreground/70">· expires {fmt(a.visa_expiry)}</span>}
                             {isCurrent && <span className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-semibold text-primary">viewing</span>}
                           </div>
                         </div>
@@ -689,6 +851,8 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
         </div>
       </div>
 
+      {cancelDate.dialog}
+
       {/* Edit dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-xl">
@@ -718,6 +882,9 @@ export function VisaDetailPage({ visaId, onBack, onEditDraft }: { visaId?: strin
             <div className="space-y-1.5"><Label className="text-xs">Arrival</Label><DateInputDMY value={form.arrival_date} onChange={v => setForm(f => ({ ...f, arrival_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Sign On</Label><DateInputDMY value={form.sign_on_date} onChange={v => setForm(f => ({ ...f, sign_on_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Sign Off</Label><DateInputDMY value={form.sign_off_date} onChange={v => setForm(f => ({ ...f, sign_off_date: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
+            {visa?.status === "cancelled" && (
+              <div className="space-y-1.5"><Label className="text-xs">Cancelled On</Label><DateInputDMY value={form.cancelled_on ?? ""} onChange={v => setForm(f => ({ ...f, cancelled_on: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} /></div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Application / Submitted Date</Label>
               <DateInputDMY value={form.submitted_at} onChange={v => setForm(f => ({ ...f, submitted_at: v }))} style={{ height: 36, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px", fontSize: 14 }} />
