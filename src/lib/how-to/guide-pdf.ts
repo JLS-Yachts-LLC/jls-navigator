@@ -41,11 +41,14 @@ type Word = { w: string; bold: boolean; glue?: boolean };
  *  comma right after a bold word). */
 function words(text: string): Word[] {
   const out: Word[] = [];
+  let prevEndsSpace = true;
   clean(text).split(/(\*\*[^*]+\*\*)/g).forEach((part) => {
     if (!part) return;
     const bold = part.startsWith("**") && part.endsWith("**");
     const body = bold ? part.slice(2, -2) : part;
-    const glueFirst = out.length > 0 && !/^\s/.test(body);
+    // Glue only when nothing separates this part from the previous one ("**Flag**,").
+    const glueFirst = out.length > 0 && !prevEndsSpace && !/^\s/.test(body);
+    prevEndsSpace = /\s$/.test(body);
     body.split(/\s+/).filter(Boolean).forEach((w, i) => out.push({ w, bold, glue: i === 0 && glueFirst }));
   });
   return out;

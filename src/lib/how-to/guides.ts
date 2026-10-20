@@ -604,6 +604,482 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
       },
     ],
   },
+
+  // ══ Services ══════════════════════════════════════════════════════════════
+
+  // ── Immigration ───────────────────────────────────────────────────────────
+  {
+    id: "visa-new-application",
+    title: "Start a new visa application",
+    summary: "Apply for a crew visa step by step — country, crew member, passport, details and submit.",
+    section: "Services",
+    screens: ["immigration"],
+    minutes: 6,
+    steps: [
+      {
+        title: "Click New Application",
+        text: "Open **Immigration**, stay on the **Visa** tab and click **New Application**.",
+        image: img("visa-list", "Visa Applications list", [{ x: 1410, y: 169, w: 126, h: 31 }]),
+      },
+      {
+        title: "Choose the country",
+        text: "Pick the destination country — **UAE** is selected for you. Click a card once to select it, then click it again (or double-click) to continue. The bar at the top shows which step you're on.",
+        image: img("visa-new-country", "Select Destination Country", [
+          { x: 203, y: 332, w: 437, h: 47 },
+          { x: 177, y: 158, w: 1378, h: 82 },
+        ]),
+        tip: "Progress saves automatically. Click Save & exit to finish later — the application waits in the list as a Draft, with Resume next to it.",
+      },
+      {
+        title: "Find the crew member",
+        text: "Type the **Full Name (as per passport)** and, if you have it, the **Date of Birth**, then click **Search**. Polaris matches on name and date of birth so the same person is never added twice.",
+        image: img("visa-new-crew", "Search existing crew", [
+          { x: 220, y: 374, w: 1292, h: 52 },
+          { x: 220, y: 439, w: 72, h: 31 },
+        ]),
+      },
+      {
+        title: "Use a profile or create a new one",
+        text: "Click **Use profile** next to the right person. If nobody matches, click **None of these — create new** and fill in **First Name**, **Last Name** and **Date of Birth** (all required), then **Save crew member**. Click **Continue**.",
+        image: img("visa-new-crew", "Matching crew profiles", [{ x: 1416, y: 561, w: 82, h: 28 }]),
+        tip: "If the crew member already has an open application, Polaris tells you and links to it — open that one instead of starting another.",
+      },
+      {
+        title: "Choose or add the passport",
+        text: "**Passport Details** lists the passports on file — click **Select** on the one for this application (always choose; Polaris never picks for you). No passport yet, or a second nationality? Click **Add Passport** / **Add another passport**:",
+        bullets: [
+          "Upload the **Passport Inside Pages** — Polaris reads the details from the scan for you to check.",
+          "Add the **Passport Cover** and **Headshot Photo** (both required) and the **Seaman's Book** (or tick No Seaman's book).",
+          "Tick every item in the **Passport Checklist** and the confirmation, then **Save Passport**.",
+        ],
+      },
+      {
+        title: "Fill in the country details",
+        text: "The **Application Details** step shows the fields this country needs — required ones are marked with *. The vessel name is filled in for you. Crew without a seaman's book can use **Generate verification letter**. Click **Continue**.",
+      },
+      {
+        title: "Review and submit",
+        text: "**Review & Submit** shows everything on one page — use **✎ Edit** to fix personal details, **Copy details** or **Download CSV** if you need them elsewhere. Click **Submit Application**. It appears in the list as **Submitted**.",
+        tip: "UAE visas must be approved before the crew member travels — allow at least 1–2 working days.",
+      },
+    ],
+  },
+  {
+    id: "visa-manage",
+    title: "Track and update visa applications",
+    summary: "Find an application, change its status, attach the issued visa and send it to the vessel.",
+    section: "Services",
+    screens: ["immigration"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Filter the list",
+        text: "On **Immigration → Visa**, click a status chip (**Draft**, **Pending Docs**, **Submitted**, **Approved**, …) to filter, and narrow further with the search box, **All Vessels**, **All Years**, **Active / Expired / All** and the **From / To** dates. **Current** shows open applications; **All history** shows every one.",
+        image: img("visa-list", "Status chips and filters", [
+          { x: 197, y: 226, w: 664, h: 31 },
+          { x: 197, y: 268, w: 1056, h: 32 },
+        ]),
+      },
+      {
+        title: "Check the compliance alerts",
+        text: "The red banner at the top and **N compliance alerts require attention** list crew whose visa has expired or whose activation window has passed. Click **▼ Show** to see them.",
+        image: img("visa-list", "Compliance alerts", [
+          { x: 197, y: 107, w: 1338, h: 39 },
+          { x: 197, y: 314, w: 1338, h: 35 },
+        ]),
+      },
+      {
+        title: "Open an application",
+        text: "Click **View** on a row (or the row itself). **Edit** opens the application's details for correction; drafts show **Resume** instead.",
+        image: img("visa-list", "View and Edit", [{ x: 1440, y: 420, w: 86, h: 30 }]),
+      },
+      {
+        title: "Change the status",
+        text: "Under **Update Status**, click the new status — **→ Submitted**, **→ In Review**, **→ On Board**, **→ Signed Off**, **→ Cancelled**, … and confirm. Cancelling asks for the cancellation date. Every change is kept in **Status History**.",
+        image: img("visa-detail", "Update Status panel", [{ x: 629, y: 170, w: 199, h: 133 }]),
+      },
+      {
+        title: "Attach the issued visa",
+        text: "When the visa is granted, drag the PDF onto **Issued Visa** (or click it). Polaris files it, checks the name matches and marks the application **Approved**. Use **Replace** if you attached the wrong file.",
+        image: img("visa-detail", "Issued Visa panel", [{ x: 629, y: 320, w: 199, h: 109 }]),
+      },
+      {
+        title: "Send it to the vessel",
+        text: "Click **Send to Vessel**, enter the captain's email and send — the vessel receives the visa straight away. **Edit Passport** corrects the passport used on this application.",
+        image: img("visa-detail", "Send to Vessel button", [{ x: 1167, y: 104, w: 113, h: 29 }]),
+      },
+      {
+        title: "Reports and bulk updates",
+        text: "**Reports** opens the visa reports. Choose a vessel to enable **⬇ CSV** and **⬇ PDF** exports. Tick several rows to cancel visas or set arrival, sign-on or sign-off dates for all of them at once.",
+        image: img("visa-list", "Reports and export buttons", [
+          { x: 1184, y: 169, w: 82, h: 31 },
+          { x: 1355, y: 268, w: 181, h: 32 },
+        ]),
+      },
+    ],
+  },
+  {
+    id: "sign-on-off",
+    title: "Record a sign on or sign off",
+    summary: "Log crew joining or leaving a vessel, with flights and transport, and the immigration crew lists.",
+    section: "Services",
+    screens: ["immigration"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Sign On / Off",
+        text: "Open **Immigration** and click the **Sign On / Off** tab. Every movement is listed with the crew member, vessel, date, port and whether the immigration crew list has been done (**DXB list** / **AUH**).",
+        image: img("signonoff-list", "Sign On / Sign Off list", [{ x: 262, y: 55, w: 116, h: 33 }]),
+      },
+      {
+        title: "Click Record Event",
+        text: "Click **Record Event** (top right). Use the search and the **All Yachts**, **All Events** and immigration filters to find existing movements.",
+        image: img("signonoff-list", "Record Event and filters", [
+          { x: 1427, y: 104, w: 108, h: 31 },
+          { x: 402, y: 104, w: 616, h: 31 },
+        ]),
+      },
+      {
+        title: "Choose the event and crew",
+        text: "Pick **Sign On** or **Sign Off**, choose the **Vessel** to narrow the list, then tick one or more **Crew Members** — everyone ticked gets the same event.",
+        image: img("signonoff-record", "Event type and crew members", [
+          { x: 594, y: 117, w: 380, h: 33 },
+          { x: 594, y: 215, w: 380, h: 196 },
+        ]),
+      },
+      {
+        title: "Add the date, port and flight",
+        text: "Set the **Date** (required) and **Port**. Under **Flight & logistics** add the airline, flight number, airports and times, the driver, the crew contact and whether a **Pickup** is needed. Click **Sign On** / **Sign Off** to save.",
+        image: img("signonoff-record", "Date, port and flight details", [{ x: 594, y: 421, w: 380, h: 245 }]),
+      },
+      {
+        title: "Immigration crew lists",
+        text: "Use **Dubai Imm.** or **AUH Imm.** to record the crew list submitted to Dubai or Abu Dhabi immigration for a vessel and date (Dubai needs the crew list file). The row then shows **DXB list** / **AUH done**.",
+        image: img("signonoff-list", "Dubai and AUH immigration buttons", [{ x: 1025, y: 104, w: 198, h: 31 }]),
+      },
+      {
+        title: "Edit, copy or delete",
+        text: "Each row has icons to duplicate, edit or delete the event. Tick rows to **Generate report** as a CSV.",
+        image: img("signonoff-list", "Row actions", [{ x: 1448, y: 208, w: 74, h: 28 }]),
+      },
+    ],
+  },
+  {
+    id: "seaport-request",
+    title: "Raise and complete a seaport immigration request",
+    summary: "Send our Port & Agency Team a vessel's weekly sign-ons and sign-offs, then track them to completion.",
+    section: "Services",
+    screens: ["route-seaport"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Click New Request",
+        text: "Open **Seaport Immigration** and click **New Request**. The page lists every request with its vessel, week, crew count, status and SLA.",
+        image: img("seaport-queue", "Seaport Immigration", [{ x: 1431, y: 70, w: 104, h: 28 }]),
+      },
+      {
+        title: "Choose the vessel and week",
+        text: "Select the **Vessel** and the **Week / date covered**, and add any **Notes**.",
+        image: img("seaport-new", "Vessel and week", [{ x: 393, y: 134, w: 946, h: 48 }]),
+      },
+      {
+        title: "Add arrivals and departures",
+        text: "Under **Arrivals (Sign On)** and **Departures (Sign Off)**, fill one row per crew member: name, date, time, flight number and contact. Tick **Pickup** if they need transport. Click **Add row** for more (up to 15 each); the bin removes a row.",
+        image: img("seaport-new", "Arrivals and departures", [
+          { x: 393, y: 198, w: 946, h: 207 },
+          { x: 393, y: 421, w: 946, h: 208 },
+        ]),
+      },
+      {
+        title: "Submit",
+        text: "Click **Submit**. The request opens on its own page with its status and a 4-hour SLA timer, and appears in the Seaport Immigration list for our Port & Agency Team.",
+        image: img("seaport-new", "Submit button", [{ x: 1452, y: 70, w: 84, h: 28 }]),
+      },
+      {
+        title: "Work the request (Port & Agency Team)",
+        text: "On the request page click **Acknowledge**, then mark each crew row **Done** or **No-show** as it's completed. When every row is finished, click **Mark complete**, then **Send report** to email the completion report to whoever raised it.",
+        tip: "The SLA bar turns amber at 75% of the 4 hours and red once it's overdue.",
+      },
+    ],
+  },
+
+  // ── Logistics ─────────────────────────────────────────────────────────────
+  {
+    id: "logistics-overview",
+    title: "Find your way around Logistics",
+    summary: "What each Logistics (ShipSync) tab is for, and the overview of what's coming in and going out.",
+    section: "Services",
+    screens: ["logistics"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Logistics",
+        text: "Click **Logistics** under Services. **Overview** shows imports on the way, transit shipments, open exports, parcels waiting to go out and parcels out for delivery — with tables of what's due and anything missing an ETA or ETD.",
+        image: img("logistics-overview", "Logistics overview", [{ x: 197, y: 211, w: 1331, h: 93 }]),
+      },
+      {
+        title: "The tabs",
+        text: "Use the tabs across the top:",
+        bullets: [
+          "**Local Packages** — parcels received in the office and their delivery.",
+          "**Import** / **Export** / **EDAS** / **Gate Pass** — shipment boards for each kind of job.",
+          "**Routing** and **Dispatched** — plan delivery runs and their delivery notes.",
+          "**Warehouse** — storage, shelves and warehouse requests.",
+          "**Locations**, **Drivers**, **Van Tracking**, **Printers** — set-up and live van positions.",
+          "**Dashboard** — charts and working detail.",
+        ],
+        image: img("logistics-overview", "Logistics tabs", [{ x: 190, y: 90, w: 1340, h: 30 }]),
+      },
+      {
+        title: "Mobile and driver apps",
+        text: "**Logistics app**, **Logistics mobile** and **Driver app** open the phone-friendly apps in a new tab — for checking parcels in on a phone, or for drivers to see and complete their deliveries.",
+        image: img("logistics-overview", "App buttons", [{ x: 1218, y: 57, w: 318, h: 29 }]),
+      },
+    ],
+  },
+  {
+    id: "logistics-check-in",
+    title: "Check in a package",
+    summary: "Book a parcel into the office so it can be stored and delivered to the yacht.",
+    section: "Services",
+    screens: ["logistics"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Local Packages",
+        text: "In **Logistics**, click **Local Packages**. The pills split parcels into **In the office**, **Assigned** (on a route) and **Delivered**. Search by barcode, boat, delivery note, invoice or receiver — press **/** to jump to the search box.",
+        image: img("logistics-packages", "Local Packages", [
+          { x: 197, y: 128, w: 351, h: 31 },
+          { x: 197, y: 193, w: 236, h: 31 },
+        ]),
+      },
+      {
+        title: "Click Check in package",
+        text: "Click **Check in package** (top right).",
+        image: img("logistics-packages", "Check in package button", [{ x: 1327, y: 193, w: 128, h: 31 }]),
+      },
+      {
+        title: "Scan and fill in the details",
+        text: "Scan or type the **Barcode / AWB** (or use **Scan** with the camera) and enter the **Boat / vessel** — one of the two is required. Add the receiver, courier, number of packages, priority, warehouse zone and a description. **Add photo** keeps a picture of the parcel as received.",
+        image: img("logistics-checkin", "Check in package form", [{ x: 529, y: 108, w: 511, h: 50 }]),
+      },
+      {
+        title: "Check it in",
+        text: "Click **Check in**. The parcel appears under **In the office**, ready to be routed to a driver.",
+        image: img("logistics-checkin", "Check in button", [{ x: 968, y: 606, w: 72, h: 30 }]),
+        tip: "Changes made directly in the table save straight away. Tick several parcels and use Update selected to change their status or invoice number in one go.",
+      },
+    ],
+  },
+  {
+    id: "logistics-route",
+    title: "Route and dispatch deliveries",
+    summary: "Put waiting parcels on a route, choose the driver and van, and dispatch the run.",
+    section: "Services",
+    screens: ["logistics"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Routing",
+        text: "In **Logistics**, click **Routing**. **To route** shows how many parcels are waiting; pick the delivery date. The **Delivery calendar** on the right shows which boats get a regular delivery on each day.",
+        image: img("logistics-routing", "Routing", [
+          { x: 197, y: 135, w: 365, h: 28 },
+          { x: 1190, y: 135, w: 346, h: 393 },
+        ]),
+      },
+      {
+        title: "Add clients to the route",
+        text: "Click **Add client to this route…** and choose a boat — its waiting parcels are added. **Scan** adds individual parcels with the scanner; **Add route** starts a second run.",
+        image: img("logistics-routing", "Add client and scan", [
+          { x: 211, y: 228, w: 237, h: 26 },
+          { x: 733, y: 182, w: 64, h: 28 },
+          { x: 1084, y: 135, w: 90, h: 28 },
+        ]),
+      },
+      {
+        title: "Choose the driver and van, then dispatch",
+        text: "Pick the driver in **Choose driver…** and the vehicle in **Choose van…**. **Dispatch** becomes available once a driver, van and parcels are set — click it to send the run to the driver's app.",
+        image: img("logistics-routing", "Driver, van and Dispatch", [{ x: 803, y: 182, w: 358, h: 28 }]),
+      },
+      {
+        title: "Follow up in Dispatched",
+        text: "The **Dispatched** tab holds each run's delivery note. From there you can change the driver, print the pre-delivery or delivery note, and email the pre-delivery note or proof of delivery to the client.",
+        image: img("logistics-routing", "Dispatched tab", [{ x: 848, y: 90, w: 85, h: 30 }]),
+      },
+    ],
+  },
+  {
+    id: "logistics-warehouse",
+    title: "Store items in the warehouse",
+    summary: "Check warehouse capacity and register client or internal items into storage.",
+    section: "Services",
+    screens: ["logistics"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open the Warehouse",
+        text: "In **Logistics**, click **Warehouse**. **Shelf Dashboard** shows total, occupied and available space, how full each zone is, and who is using the storage.",
+        image: img("logistics-warehouse", "Warehouse capacity", [{ x: 197, y: 184, w: 1338, h: 243 }]),
+      },
+      {
+        title: "Register new storage",
+        text: "Click **New Storage** and choose **Client** (a yacht's items) or **Internal** (a JLS department's documents or assets).",
+        image: img("logistics-new-storage", "New Storage", [
+          { x: 635, y: 140, w: 98, h: 26 },
+          { x: 502, y: 184, w: 144, h: 32 },
+        ]),
+      },
+      {
+        title: "Fill in the item",
+        text: "For a client, **Client Name** and **Description** are required. Add the dimensions and weight (the CBM is worked out for you), the charges, date stored and due date, and the **Zone**, **Bay** and **Shelf** it's going on. Attach the packing list, then click **Register storage**.",
+        image: img("logistics-new-storage", "Storage form", [{ x: 516, y: 252, w: 701, h: 129 }]),
+      },
+      {
+        title: "Find and request items",
+        text: "**Search** and **Inventory List** find what's stored where; **Zone & Storage Status** shows each zone. **Requests** is where the team raise incoming, picking and dispatch requests for the warehouse.",
+        image: img("logistics-warehouse", "Warehouse sub-tabs", [{ x: 197, y: 136, w: 621, h: 35 }]),
+      },
+    ],
+  },
+
+  // ── Crew Care ─────────────────────────────────────────────────────────────
+  {
+    id: "crewcare-job-card",
+    title: "Raise and handle a Crew Care job card",
+    summary: "Request transport or crew logistics, and take a job card through to a trip.",
+    section: "Services",
+    screens: ["route-crew-cab"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Crew Care",
+        text: "Click **Crew Care**. **Job Cards** lists requests for the Crew Care team — from captains in the Client Portal and from staff. Switch between **Open**, **Completed & cancelled** and **All**, or search.",
+        image: img("crewcare-jobs", "Job Cards", [{ x: 197, y: 163, w: 238, h: 25 }]),
+      },
+      {
+        title: "Click New job card",
+        text: "Click **New job card**.",
+        image: img("crewcare-jobs", "New job card button", [{ x: 1415, y: 113, w: 120, h: 30 }]),
+      },
+      {
+        title: "Describe the job",
+        text: "Choose the **Type** (Transfer, Driver needed, Airport run, …) and **Priority**, and write a **Summary** (required), e.g. \"Driver for 2 crew to DXB\". Add who asked, the vessel, pick-up and drop-off, date & time, passengers and any details. Click **Raise job card** — the Crew Care team is notified.",
+        image: img("crewcare-new-job", "New job card form", [
+          { x: 594, y: 228, w: 380, h: 45 },
+          { x: 850, y: 532, w: 124, h: 31 },
+        ]),
+      },
+      {
+        title: "Handle the job",
+        text: "Open a job card to set its **Status** and **Assigned to** (assigning someone marks it Acknowledged). Click **Create trip** to turn it into a trip — then assign the driver and vehicle in **Trips**. Finish with **Mark completed**.",
+        tip: "Notifications chooses who is emailed or messaged in Teams when a new job card comes in.",
+      },
+    ],
+  },
+  {
+    id: "crewcare-trips",
+    title: "Book a trip and assign a driver",
+    summary: "Create transport trips — airport runs, crew changes, staff shuttles — and assign drivers and vehicles.",
+    section: "Services",
+    screens: ["route-crew-cab"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Trips",
+        text: "In **Crew Care**, click **Trips**. Filter by type with the chips — Arrival Transport, Departure Transport, Crew Pickup, Airport Transfer, Seaport Crew Change, **Staff Shuttle** and more — or search.",
+        image: img("crewcare-trips", "Trips list", [{ x: 190, y: 131, w: 812, h: 27 }]),
+      },
+      {
+        title: "Click New Trip",
+        text: "Click **New Trip**.",
+        image: img("crewcare-trips", "New Trip button", [{ x: 1451, y: 97, w: 88, h: 29 }]),
+      },
+      {
+        title: "Fill in the trip",
+        text: "Choose the **Trip Type** and **Status**, the **Passenger Name** and **Yacht**, then the **Driver** and **Vehicle**. Add the **Flight Number** for airport pickups, the **Pickup** and **Drop-off Location** (saved locations or any address) and the times. The route shows on the map.",
+        image: img("crewcare-new-trip", "New Trip form", [
+          { x: 433, y: 240, w: 466, h: 45 },
+          { x: 433, y: 348, w: 466, h: 100 },
+        ]),
+      },
+      {
+        title: "Create the trip",
+        text: "Click **Create Trip**.",
+        image: img("crewcare-new-trip", "Create Trip button", [{ x: 1058, y: 617, w: 78, h: 26 }]),
+        tip: "In the Trips table you can click any cell to change it — Enter or Tab saves it straight away. Add trip at top adds a blank row.",
+      },
+    ],
+  },
+
+  // ── Compass Card ──────────────────────────────────────────────────────────
+  {
+    id: "compass-card",
+    title: "Handle Compass Card sign-ups and offers",
+    summary: "See new app sign-ups, vendor requests and offers, and open them in the Compass Card admin portal.",
+    section: "Services",
+    screens: ["route-compass-card"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Compass Card",
+        text: "Click **Compass Card**. The cards count app sign-ups, vendor requests and offers in the last 7 days, and the list shows each one with its status (Pending, Approved, …).",
+        image: img("compass-card", "Compass Card", [{ x: 197, y: 127, w: 1338, h: 70 }]),
+      },
+      {
+        title: "Filter",
+        text: "Click **Sign-ups**, **Vendors** or **Offers**, or search by name, email or offer.",
+        image: img("compass-card", "Filters", [
+          { x: 197, y: 209, w: 235, h: 27 },
+          { x: 1325, y: 209, w: 210, h: 27 },
+        ]),
+      },
+      {
+        title: "Approve in the admin portal",
+        text: "Click an item to see its details, then **Open in Compass Card admin** to approve or reject it there. Polaris shows the activity; the decision is made in the Compass Card portal.",
+      },
+      {
+        title: "Get notified",
+        text: "**Notifications** chooses who hears about new sign-ups and about vendors and offers, and whether they're emailed too.",
+        image: img("compass-card", "Notifications button", [{ x: 1419, y: 77, w: 116, h: 30 }]),
+      },
+    ],
+  },
+
+  // ── Agency ────────────────────────────────────────────────────────────────
+  {
+    id: "agency-contacts",
+    title: "Manage Agency Network contacts",
+    summary: "Keep the directory of owners, captains, agents, suppliers, marinas and authorities up to date.",
+    section: "Services",
+    screens: ["route-agency"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Agency",
+        text: "Click **Agency**. **Agency Network** lists every contact with their type, organisation, email and country. Search, filter by type with **All Status**, sort, or click a type count (Owner, Captain, Agent, …) under the title.",
+        image: img("agency-list", "Agency Network", [
+          { x: 862, y: 69, w: 481, h: 30 },
+          { x: 197, y: 120, w: 505, h: 20 },
+        ]),
+      },
+      {
+        title: "Add a contact",
+        text: "Click **Add Contact**. **Name** is required; add the **Type**, **Organisation**, **Vessel**, email, phone, country, region and notes, then click **Add Contact**.",
+        image: img("agency-add", "Add Contact form", [
+          { x: 529, y: 205, w: 511, h: 44 },
+          { x: 949, y: 513, w: 91, h: 31 },
+        ]),
+      },
+      {
+        title: "Edit, remove or export",
+        text: "Use the pencil on a row to edit it and the bin to remove it (you'll be asked to confirm). **Export** downloads the list.",
+        image: img("agency-list", "Row actions and Export", [
+          { x: 1462, y: 200, w: 52, h: 26 },
+          { x: 1351, y: 69, w: 72, h: 30 },
+        ]),
+      },
+    ],
+  },
 ];
 
 export function guideById(id: string): HowToGuide | undefined {
@@ -621,6 +1097,8 @@ const PATH_SCREENS: [prefix: string, screen: string][] = [
   ["/crew-immigration/crew", "crew"],
   ["/permits", "permits"],
   ["/wall-displays", "route-wall-displays"],
+  // The Crew Care nav item opens /crew-cab/jobs; its other tabs (Trips, …) live beside it.
+  ["/crew-cab", "route-crew-cab"],
 ];
 
 /** The help screen for the current page: the active nav screen, else a path match. */
