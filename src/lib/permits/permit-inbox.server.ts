@@ -572,10 +572,11 @@ export async function pollPermitInbox(): Promise<PollResult[] | null> {
 /**
  * Where a permit is kept inside the vessel's SharePoint folder.
  *
- * Entry permits: the Agency team keeps one "ENTRY PERMIT {year}" folder per
+ * Entry permits: the Agency team keeps one "ENTRY PERMITS {year}" folder per
  * yacht per year (Matt asks every yacht to have one), so an entry permit goes
  * in the folder for the year it was received — matched loosely ("Entry
- * Permits 2026", "2026 ENTRY PERMIT") and created with the house name if absent.
+ * Permit 2026", "2026 ENTRY PERMITS") and created with the house name if absent.
+ * Exit permits: the yacht's "Entry & Exit Permit" folder (no year).
  * Other types: an existing subfolder named for the type, else "Permits".
  */
 const FOLDER_HINTS: Record<string, string[][]> = {
@@ -594,12 +595,14 @@ export function suggestSubfolder(subfolders: string[], permitType: string | null
   const keys = subfolders.map(s => ({ s, k: nameKey(s) }))
   const has = (k: string, words: string[]) => words.every(w => k.split(' ').some(part => part.startsWith(w)))
 
+  if (permitType === 'exit_entry' && dmaPhase === 'Exit') {
+    // Exit permits live in the yacht's undated "Entry & Exit Permit" folder.
+    return keys.find(({ k }) => has(k, ['entry', 'exit']))?.s ?? 'Entry & Exit Permit'
+  }
   if (permitType === 'exit_entry') {
-    // Exit permits mirror the entry convention: "EXIT PERMIT {year}".
-    const word = dmaPhase === 'Exit' ? 'exit' : 'entry'
+    // Entry permits: one "ENTRY PERMITS {year}" folder per yacht per year.
     const y = String(year)
-    const hit = keys.find(({ k }) => has(k, [word]) && k.split(' ').includes(y))
-    return hit?.s ?? `${word.toUpperCase()} PERMIT ${y}`
+    return keys.find(({ k }) => has(k, ['entry']) && !has(k, ['exit']) && k.split(' ').includes(y))?.s ?? `ENTRY PERMITS ${y}`
   }
   for (const words of FOLDER_HINTS[permitType ?? ''] ?? []) {
     const hit = keys.find(({ k }) => has(k, words))
@@ -614,12 +617,18 @@ const PERMIT_FILE_LABEL: Record<string, string> = {
   dma: 'DMA Permit', gate_pass: 'Gate Pass', abu_dhabi: 'Abu Dhabi Permit',
 }
 
-/** "Entry Permit 201121001421079 - valid to 2027-04-23.pdf" — the emailed names ("3.pdf") say nothing. */
-export function permitFileName(p: { permit_type: string; dma_phase: string | null; permit_number: string | null; expiry_date: string | null; issue_date: string | null }): string {
-  const label = p.permit_type === 'exit_entry' && p.dma_phase ? `${p.dma_phase} Permit` : (PERMIT_FILE_LABEL[p.permit_type] ?? 'Permit')
-  const parts = [label, p.permit_number].filter(Boolean).join(' ')
-  const when = p.expiry_date ? ` - valid to ${p.expiry_date}` : p.issue_date ? ` - issued ${p.issue_date}` : ''
-  return `${parts}${when}.pdf`
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * The team's naming, "Madame Gu - Entry Permit - 23Sep2026.pdf" (vessel as its
+ * SharePoint folder is named, the permit, its issue date) — the emailed names
+ * ("3.pdf") say nothing.
+ */
+export function permitFileName(vesselFolder: string, p: { permit_type: string; dma_phase: string | null; issue_date: string | null }, fallbackDate: string): string {
+  const label = p.permit_type === 'exit_entry' ? `${p.dma_phase === 'Exit' ? 'Exit' : 'Entry'} Permit` : (PERMIT_FILE_LABEL[p.permit_type] ?? 'Permit')
+  const iso = p.issue_date ?? fallbackDate.slice(0, 10)
+  const [y, m, d] = iso.split('-')
+  return `${vesselFolder} - ${label} - ${d}${MONTHS[Number(m) - 1] ?? m}${y}.pdf`
 }
 
 export type ConfirmInput = {
