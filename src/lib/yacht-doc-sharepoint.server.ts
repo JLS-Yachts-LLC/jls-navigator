@@ -244,6 +244,35 @@ export const createSmallBoatSharePointFolder = createServerFn({ method: 'POST' }
     }
   })
 
+/**
+ * The vessel's folder and the subfolders directly inside it ("Crew Documents"
+ * left out), so a person filing a document can pick where it goes. `folder` is
+ * null when the vessel has no folder yet — filing would create Yacht/{name}.
+ */
+export async function vesselFolderOutline(vesselName: string): Promise<{ folder: string | null; webUrl: string | null; subfolders: string[] }> {
+  const { token, siteId } = await spContext()
+  const folder = await resolveVesselFolder(siteId, token, vesselName)
+  if (!folder) return { folder: null, webUrl: null, subfolders: [] }
+  const root = await getItemByPath(siteId, token, `Yacht/${folder}`)
+  const subfolders = (await listChildren(siteId, token, `Yacht/${folder}`))
+    .filter(c => !!c.folder && !EXCLUDED_FOLDERS.has(nameKey(String(c.name))))
+    .map(c => String(c.name))
+    .sort((a, b) => a.localeCompare(b))
+  return { folder, webUrl: root?.webUrl ?? null, subfolders }
+}
+
+/** Upload bytes into Yacht/{vessel}[/{subfolder}], resolving the vessel's real folder first. */
+export async function fileBytesIntoVesselFolder(
+  vesselName: string, subfolder: string | null, fileName: string, contentType: string, bytes: Uint8Array,
+): Promise<{ webUrl: string | null; name: string | null }> {
+  const { token, siteId } = await spContext()
+  const folder = await resolveVesselFolder(siteId, token, vesselName) ?? sanitizeSegment(vesselName, 'Unnamed Vessel')
+  const segments = ['Yacht', folder]
+  if (subfolder) segments.push(sanitizeSegment(subfolder, 'Permits'))
+  const up = await uploadBytesIntoFolders(siteId, token, segments, fileName, contentType, bytes)
+  return { webUrl: up.webUrl, name: up.name }
+}
+
 /** Create a subfolder in the vessel's folder so a Polaris folder has a twin. */
 export const createYachtSharePointFolder = createServerFn({ method: 'POST' })
   .inputValidator((d: { vesselName: string; folderName: string }) => d)

@@ -1218,6 +1218,12 @@ export default {
       return permitsEmailHandler(request)
     }
 
+    // Permit Inbox — emailed permits awaiting Agency review (staff only)
+    if (url.pathname === '/api/permits/inbox') {
+      const { permitInboxHandler } = await import('./routes/api.permits.inbox')
+      return permitInboxHandler(request)
+    }
+
     if (url.pathname === '/api/backups') {
       const { backupsHandler } = await import('./routes/api.backups')
       return backupsHandler(request)
@@ -1706,6 +1712,16 @@ export default {
           .then((m) => m.pollTicketMailbox())
           .then((r) => { if (r && (r.appended || r.created || r.errors.length)) console.log('[ticket-mail]', JSON.stringify(r)) })
           .catch((e) => console.error('[ticket-mail] error:', e instanceof Error ? e.message : String(e)))
+      );
+
+      // ── Every 5 min: permits emailed to the watched mailboxes (Faisal's) ──
+      //    Every new PDF attachment is read; permits wait in the Permit Inbox for
+      //    the Agency team to confirm the vessel. See lib/permits/permit-inbox.server.
+      ctx.waitUntil(
+        import('./lib/permits/permit-inbox.server')
+          .then((m) => m.pollPermitInbox())
+          .then((r) => { if (r?.some((x) => x.read || x.error)) console.log('[permit-inbox]', JSON.stringify(r)) })
+          .catch((e) => console.error('[permit-inbox] error:', e instanceof Error ? e.message : String(e)))
       );
 
       // ── Every 5 min: email staff about new Client Portal activity ──

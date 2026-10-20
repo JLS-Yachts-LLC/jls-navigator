@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { Shield, FileText } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Shield, FileText, Inbox } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { PermitInbox } from "@/components/permits/permit-inbox";
 import { cn } from "@/lib/utils";
 import { PermitCommandCentre } from "@/components/permit-command-centre";
 import { PermitsPage } from "@/components/permits-page";
@@ -26,7 +28,13 @@ const SHORT_LABEL: Record<string, string> = {
 };
 
 export function PermitsHub() {
-  const [tab, setTab] = useState<"centre" | PermitType>("centre");
+  const [tab, setTab] = useState<"centre" | "inbox" | PermitType>("centre");
+  // Emailed permits waiting for the Agency team — shown on the Inbox tab.
+  const [inboxCount, setInboxCount] = useState(0);
+  useEffect(() => {
+    void (supabase as any).from("permit_inbox").select("id", { count: "exact", head: true })
+      .in("status", ["pending", "error"]).then(({ count }: any) => setInboxCount(count ?? 0));
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -41,6 +49,20 @@ export function PermitsHub() {
           )}
         >
           <Shield className="h-4 w-4" /> Command Centre
+        </button>
+        <button
+          onClick={() => setTab("inbox")}
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+            tab === "inbox"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Inbox className="h-4 w-4" /> Inbox
+          {inboxCount > 0 && (
+            <span className="rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">{inboxCount}</span>
+          )}
         </button>
         {TYPE_TABS.map((t) => (
           <button
@@ -61,6 +83,8 @@ export function PermitsHub() {
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "centre" ? (
           <PermitCommandCentre onOpenType={(t) => setTab(t)} />
+        ) : tab === "inbox" ? (
+          <PermitInbox onCountChange={setInboxCount} />
         ) : (
           <PermitsPage key={tab} permitType={tab} />
         )}
