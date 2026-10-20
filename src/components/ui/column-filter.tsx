@@ -111,6 +111,23 @@ export function useColumnFilters<T>(rows: T[], columns: FilterColumn<T>[]) {
   return { rows: out, header, activeCount, sorted: !!sort, clearAll };
 }
 
+/**
+ * A sticky header row sticks below its scroll box's top padding, so rows scrolling
+ * up show through that band (24px on a p-6 page). Pull the row's sticky cells up
+ * by that padding so the header sits flush with the top edge. Use as a ref on any
+ * element inside the header row; column headers do it for you.
+ */
+export function alignStickyRow(el: HTMLElement | null) {
+  const tr = el?.closest("tr");
+  if (!tr) return;
+  let box = tr.parentElement;
+  while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+  const pad = box ? parseFloat(getComputedStyle(box).paddingTop) || 0 : 0;
+  for (const cell of Array.from(tr.children) as HTMLElement[]) {
+    if (getComputedStyle(cell).position === "sticky") cell.style.top = `${-pad}px`;
+  }
+}
+
 function ColumnHeader({ label, name, dir, selected, onSort, options, onChange }: {
   label: ReactNode;
   name: string;
@@ -121,7 +138,7 @@ function ColumnHeader({ label, name, dir, selected, onSort, options, onChange }:
   onChange: (vals: string[]) => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1">
+    <span ref={alignStickyRow} className="inline-flex items-center gap-1">
       <button
         type="button"
         onClick={onSort}

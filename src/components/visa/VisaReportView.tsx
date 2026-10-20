@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { downloadVisaExport, emailVisaExport } from '@/lib/visa/export-client'
 import { triggerBlobDownload } from '@/lib/visa/documentExport'
-import { useColumnFilters, type FilterColumn } from '@/components/ui/column-filter'
+import { useColumnFilters, alignStickyRow, type FilterColumn } from '@/components/ui/column-filter'
 import { supabase } from '@/integrations/supabase/client'
 import { fetchAllRows } from '@/lib/fetch-all'
 
@@ -293,7 +293,7 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
             <div className="rounded-xl border border-border">
               <table className="w-full text-xs">
                 <thead>
-                  <tr>
+                  <tr ref={alignStickyRow}>
                     <th className={cn(TH, 'px-4 text-left')}>Vessel</th>
                     <th className={cn(TH, 'text-center')}>Total</th>
                     <th className={cn(TH, 'text-center text-emerald-400/80')}>Approved</th>
