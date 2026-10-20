@@ -7,7 +7,7 @@ import { useAccess } from "@/lib/auth/useAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusPill } from "@/components/status-pill";
-import { YACHT_COLUMNS, DEFAULT_VISIBLE_COLUMNS, type YachtColumnKey } from "@/lib/yacht-fields";
+import { YACHT_COLUMNS, YACHT_EXPORT_EXTRA_FIELDS, DEFAULT_VISIBLE_COLUMNS, type YachtColumnKey } from "@/lib/yacht-fields";
 import {
   Plus, LayoutGrid, List, Search, SlidersHorizontal, Anchor, Ship, MapPin, LogOut, RefreshCcw,
   ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Radar,
@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuItem,
+  DropdownMenuRadioGroup, DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -473,22 +474,58 @@ export function YachtsPage({
 
   // ── Export ───────────────────────────────────────────────────────────────────
   // CSV (with a BOM, so Excel opens it straight away and keeps Arabic names).
-  // Uses the columns on screen, always with the vessel name and status.
+  // "Columns on screen" (always with the vessel name and status), or every field
+  // on the yacht record plus its agents, permits, balance and last activity.
+  const [exportFields, setExportFields] = useState<"visible" | "all">("visible");
+
+  /** A cell as a person reads it — names not user ids, Yes/No not true/false. */
+  function exportValue(y: Yacht, key: string): unknown {
+    const v = (y as any)[key];
+    if (key === "agent_user_id") {
+      return agentsLine(vesselAgents.byYacht.get(y.id)) || (v ? staffNames[v as string] ?? "Assigned" : "");
+    }
+    if (key === "ais_location") {
+      if (y.ais_lat == null || y.ais_lon == null) return "";
+      return `${NAVSTAT_LABEL[Number(y.ais_navstat)] ?? "Tracked"} (${y.ais_lat}, ${y.ais_lon})`;
+    }
+    if (typeof v === "boolean") return v ? "Yes" : "No";
+    return v;
+  }
+
   function exportCsv(scope: "shown" | "all") {
     const rows = scope === "shown"
       ? filtered
       : [...baseRows].sort((a, b) =>
           String(a.vessel_name ?? "").localeCompare(String(b.vessel_name ?? ""), undefined, { numeric: true }));
-    const keys: YachtColumnKey[] = [
-      ...(["vessel_name", "status"] as YachtColumnKey[]).filter((k) => !visible.includes(k)),
-      ...visible,
-    ];
-    const cols = keys
-      .map((k) => YACHT_COLUMNS.find((c) => c.key === k))
-      .filter((c): c is (typeof YACHT_COLUMNS)[number] => !!c);
+    type Col = { label: string; value: (y: Yacht) => unknown };
+    const field = (c: { key: string; label: string }): Col => ({ label: c.label, value: (y) => exportValue(y, c.key) });
+    let cols: Col[];
+    if (exportFields === "all") {
+      cols = [
+        ...YACHT_COLUMNS.map(field),
+        {
+          label: "Permits",
+          value: (y) => (permitExpiry.get(y.id) ?? [])
+            .map((p) => `${p.label}${p.permitNumber ? ` ${p.permitNumber}` : ""}: expires ${p.expiryDate}`)
+            .join(" · "),
+        },
+        { label: "Outstanding (AED)", value: (y) => outstanding[y.id] ?? "" },
+        { label: "Last Activity", value: (y) => lastActivityOf(y) },
+        ...YACHT_EXPORT_EXTRA_FIELDS.map(field),
+      ];
+    } else {
+      const keys: YachtColumnKey[] = [
+        ...(["vessel_name", "status"] as YachtColumnKey[]).filter((k) => !visible.includes(k)),
+        ...visible,
+      ];
+      cols = keys
+        .map((k) => YACHT_COLUMNS.find((c) => c.key === k))
+        .filter((c): c is (typeof YACHT_COLUMNS)[number] => !!c)
+        .map(field);
+    }
     const csv = [
       cols.map((c) => csvCell(c.label)).join(","),
-      ...rows.map((y) => cols.map((c) => csvCell((y as any)[c.key])).join(",")),
+      ...rows.map((y) => cols.map((c) => csvCell(c.value(y))).join(",")),
     ].join("\r\n");
     const name = `${isJls ? "jls-boats" : "yacht-registry"}${archiveView === "archived" ? "-archived" : ""}-${new Date().toISOString().slice(0, 10)}.csv`;
     downloadText(name, csv, "text/csv;charset=utf-8");
@@ -649,6 +686,16 @@ export function YachtsPage({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Columns</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={exportFields} onValueChange={(v) => setExportFields(v as "visible" | "all")}>
+                <DropdownMenuRadioItem value="visible" onSelect={(e) => e.preventDefault()}>
+                  Columns on screen
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="all" onSelect={(e) => e.preventDefault()}>
+                  All fields
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-[10px] uppercase tracking-wider">Export for Excel (CSV)</DropdownMenuLabel>
               <DropdownMenuItem onSelect={() => exportCsv("all")}>
                 {archiveView === "archived" ? "All archived" : "All"} {isJls ? "boats" : "yachts"} &amp; statuses

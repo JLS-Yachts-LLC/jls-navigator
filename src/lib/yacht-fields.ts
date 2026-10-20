@@ -53,6 +53,37 @@ export const YACHT_COLUMNS = [
 
 export type YachtColumnKey = (typeof YACHT_COLUMNS)[number]["key"];
 
+/**
+ * Yacht record fields that have no list column but belong in an "All fields"
+ * export, after every YACHT_COLUMNS entry. Internal bookkeeping (org, created_by,
+ * SharePoint dirty flags) is left out.
+ */
+export const YACHT_EXPORT_EXTRA_FIELDS = [
+  { key: "ais_lat", label: "AIS Latitude" },
+  { key: "ais_lon", label: "AIS Longitude" },
+  { key: "ais_speed", label: "AIS Speed (kn)" },
+  { key: "ais_course", label: "AIS Course" },
+  { key: "ais_heading", label: "AIS Heading" },
+  { key: "ais_destination", label: "AIS Destination" },
+  { key: "ais_eta", label: "AIS ETA" },
+  { key: "ais_position_at", label: "AIS Position At" },
+  { key: "ais_synced_at", label: "AIS Synced At" },
+  { key: "vessel_whatsapp", label: "Vessel WhatsApp" },
+  { key: "preferred_document_delivery", label: "Preferred Document Delivery" },
+  { key: "send_visa_via_whatsapp", label: "Send Visa via WhatsApp" },
+  { key: "allow_crew_email_delivery", label: "Allow Crew Email Delivery" },
+  { key: "allow_crew_whatsapp_delivery", label: "Allow Crew WhatsApp Delivery" },
+  { key: "agent_assigned_at", label: "Agent Assigned At" },
+  { key: "qbo_customer_id", label: "QuickBooks Customer ID" },
+  { key: "logo_url", label: "Logo URL" },
+  { key: "archive", label: "Archived" },
+  { key: "sharepoint_item_id", label: "SharePoint Item ID" },
+  { key: "sharepoint_synced_at", label: "SharePoint Synced At" },
+  { key: "created_at", label: "Created At" },
+  { key: "updated_at", label: "Updated At" },
+  { key: "id", label: "Polaris ID" },
+] as const;
+
 export const DEFAULT_VISIBLE_COLUMNS: YachtColumnKey[] = [
   "vessel_name",
   "vessel_type",
