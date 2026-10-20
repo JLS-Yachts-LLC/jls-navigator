@@ -2077,6 +2077,407 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
       },
     ],
   },
+
+  // ══ Resources ═════════════════════════════════════════════════════════════
+  {
+    id: "how-to-guides",
+    title: "Use the How-to Guides",
+    summary: "Get step-by-step help for the page you're on, and download any guide as a PDF.",
+    section: "Resources",
+    screens: ["route-how-to"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Help for the page you're on",
+        text: "On any page, click the **?** button in the top bar (or press **?** on your keyboard). A panel opens with the guides for that page — click one to read it right there.",
+      },
+      {
+        title: "Browse every guide",
+        text: "Click **Browse all how-to guides** at the bottom of the panel, or **Resources → How-to Guides**. Guides are grouped by sidebar section; search finds any word in any step.",
+      },
+      {
+        title: "Download as PDF",
+        text: "Each guide has **Download PDF**. Each section has a button to download all its guides as one PDF — handy for training a new starter.",
+        tip: "Click any screenshot to enlarge it. The gold boxes show where to click.",
+      },
+    ],
+  },
+  {
+    id: "knowledge-base",
+    title: "Add a guide to the Knowledge Base",
+    summary: "Write or import reference guides for a department, with images and videos.",
+    section: "Resources",
+    screens: ["route-guides"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Choose the department",
+        text: "Click **Knowledge Base**. Pick the department the guide belongs to — Crew & Immigration, Yacht IT Solutions, Finance, Operations and so on. Each card shows how many guides it has.",
+        image: img750("kb-overview", "Knowledge Base departments", [{ x: 197, y: 184, w: 1338, h: 203 }]),
+      },
+      {
+        title: "Click New Guide",
+        text: "Click **New Guide**. To turn an existing PDF or Word document into a guide instead, click **Import Document**, choose the file and click **Import & Create** — the text is extracted for you.",
+        image: img750("kb-department", "New Guide and Import Document", [{ x: 1300, y: 84, w: 236, h: 30 }]),
+      },
+      {
+        title: "Write the guide",
+        text: "Enter a **Title** (required), a **Category** (guides are grouped by it) and a one-line **Summary**. Write the **Content** using the toolbar for headings, bold, lists and links; **Image** adds a picture and **YouTube** embeds a video. **Preview** shows how it will look.",
+        image: img750("kb-new-guide", "New Guide form", [
+          { x: 529, y: 154, w: 511, h: 44 },
+          { x: 529, y: 293, w: 511, h: 31 },
+        ]),
+      },
+      {
+        title: "Publish",
+        text: "Leave **Published** on for everyone to see it, or switch it off to keep it as a draft. Click **Create Guide**. Open a guide later to **Edit** it or download a **Branded PDF**.",
+        image: img750("kb-new-guide", "Published switch and Create Guide", [
+          { x: 529, y: 565, w: 88, h: 22 },
+          { x: 945, y: 601, w: 95, h: 30 },
+        ]),
+      },
+    ],
+  },
+  {
+    id: "forms-library",
+    title: "Send a form for a vessel to fill in",
+    summary: "Start a copy of a standard form, such as the Pre-Arrival / Cruising Permit Information, and share it.",
+    section: "Resources",
+    screens: ["route-forms"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open the Forms Library",
+        text: "Click **Forms Library**. Each form shows its sections and fields. **Preview blank form** shows it without starting anything.",
+        image: img750("forms-library", "Forms Library", [{ x: 1122, y: 268, w: 137, h: 28 }]),
+      },
+      {
+        title: "Start a copy",
+        text: "Type the vessel or recipient in **Vessel / recipient** and click **Start a copy for this vessel**. The copy appears under the form with its status.",
+        image: img750("forms-library", "Start a copy", [{ x: 474, y: 268, w: 642, h: 28 }]),
+      },
+      {
+        title: "Share it or fill it in",
+        text: "Click **Share link** to copy a link the vessel can open without logging in, and send it to them. Or click **Open** to fill it in yourself — **Save** as you go and **Mark complete** when done.",
+        tip: "Attach PDF adds the official PDF version of a form for people to download.",
+      },
+    ],
+  },
+  {
+    id: "team-directory",
+    title: "Find the right person (Team Directory)",
+    summary: "Look up a colleague by service or department and call, email, WhatsApp or Teams them.",
+    section: "Resources",
+    screens: ["route-directory"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Find who to contact",
+        text: "Click **Directory**. Under **What do you need help with?** click a service — Airport Transfer, Berth Booking, Bunkering, Crew Visa … — to see who handles it. Or filter by department, or search by name, role or service.",
+        image: img750("directory", "Team Directory", [
+          { x: 410, y: 116, w: 912, h: 82 },
+          { x: 410, y: 213, w: 793, h: 53 },
+        ]),
+      },
+      {
+        title: "Get in touch",
+        text: "Use the buttons on a card to **Call**, **Email**, **WhatsApp** or open **Teams**. Click the card for their full profile — office hours, languages and areas of expertise.",
+        image: img750("directory", "Contact buttons", [{ x: 423, y: 382, w: 122, h: 24 }]),
+        tip: "Admins add and edit people with Add Member. Emergency contacts appear under Quick Reaction Force.",
+      },
+    ],
+  },
+  {
+    id: "contacts",
+    title: "Keep shared contacts",
+    summary: "Store marina, management and captain contacts in groups everyone can use.",
+    section: "Resources",
+    screens: ["route-contacts"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Find a contact",
+        text: "Click **Contacts**. Search, filter by group (Networks, Managers, Yacht Captains, …) and sort. **Export** downloads the list for Excel.",
+        image: img750("contacts", "Contacts", [{ x: 758, y: 70, w: 666, h: 29 }]),
+      },
+      {
+        title: "Add a contact",
+        text: "Click **Add Contact** and fill in the group, name, company, position, phone, email and notes, then **Add Contact**. **New group** adds a group of your own. The pencil edits a contact; the bin removes it.",
+        image: img750("contacts", "Add Contact", [{ x: 1431, y: 70, w: 105, h: 29 }]),
+      },
+    ],
+  },
+  {
+    id: "crew-benefits",
+    title: "Add a vendor to the Compass network",
+    summary: "Build the list of vetted chandlers, fuel suppliers, marinas, agents and service providers.",
+    section: "Resources",
+    screens: ["route-compass"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Add a vendor",
+        text: "Click **Crew Benefits**, then **Add Vendor**. **Vendor Name** is required; add the category (chandlery, fuel, marina, agent, repair, provisioning, service), city, country, contact details, website and a 1–5 rating. Click **Add Vendor**.",
+        image: img750("crew-benefits", "Compass — Vendor Network", [
+          { x: 1433, y: 70, w: 103, h: 29 },
+          { x: 197, y: 120, w: 485, h: 20 },
+        ]),
+        tip: "Click a category count under the title to filter; Export downloads the list.",
+      },
+    ],
+  },
+  {
+    id: "emergency-contacts",
+    title: "Find an emergency contact",
+    summary: "Look up Coast Guard, medical, DPA, port and other emergency contacts by vessel or region.",
+    section: "Resources",
+    screens: ["route-emergency"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Search the directory",
+        text: "Click **Emergency Contacts** and search by name, role, vessel or region. Contacts are grouped — Company 24/7, DPA / CSO, Coast Guard / MRCC, Medical, Local Agent, Port Authority, Flag State, Insurer / P&I and more — with tap-to-call numbers.",
+        image: img750("emergency-contacts", "Emergency Contacts", [
+          { x: 394, y: 133, w: 945, h: 57 },
+          { x: 394, y: 206, w: 945, h: 31 },
+        ]),
+        tip: "In a life-threatening emergency at sea, contact the nearest Coast Guard / MRCC or local emergency services first.",
+      },
+      {
+        title: "Add a contact (admins)",
+        text: "Click **Add contact**, choose the category and whether it applies to all vessels, one vessel or a region, and enter the name plus a phone or email. Tick **Available 24/7** if they are, then **Save**.",
+        image: img750("emergency-contacts", "Add contact", [{ x: 1437, y: 70, w: 99, h: 29 }]),
+      },
+    ],
+  },
+
+  // ══ Settings (admins) ═════════════════════════════════════════════════════
+  {
+    id: "settings-users",
+    title: "Invite a staff member and set their access",
+    summary: "Give a colleague a Polaris login and choose which modules they can see.",
+    section: "Settings",
+    screens: ["settings"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Manage Users",
+        text: "Click **Settings** → **Manage Users**. **Internal Staff** lists every staff login with their role, department, status, 2FA and last seen. **Client Portal** and **Guests** hold captains' and outside guests' logins.",
+        image: img750("settings-users", "Manage Users", [{ x: 190, y: 159, w: 306, h: 32 }]),
+      },
+      {
+        title: "Invite them",
+        text: "Click **Invite user**. Enter their **Email address**, choose the **Department** (this decides which modules they see) and the **Access level**, then **Send invite**. They get an email to set their password.",
+        image: img750("settings-invite", "Invite user", [
+          { x: 627, y: 217, w: 315, h: 317 },
+          { x: 1450, y: 241, w: 81, h: 27 },
+        ]),
+      },
+      {
+        title: "Adjust one person",
+        text: "On their row, **Role** changes their access level and **Modules** fine-tunes which modules they can use beyond their department's defaults. **Resend invite**, **Reset password**, **Suspend** and **Delete** are there too.",
+        image: img750("settings-users", "Row actions", [{ x: 898, y: 314, w: 353, h: 25 }]),
+        tip: "Use View as (top bar) to see Polaris exactly as that person will.",
+      },
+      {
+        title: "Set what a department can do",
+        text: "On **Permissions**, choose a department on the left and tick **View**, **Create** and **Edit** for each module. Click **Save Changes**.",
+        image: img750("settings-permissions", "Department Permissions", [
+          { x: 197, y: 238, w: 171, h: 302 },
+          { x: 1444, y: 183, w: 92, h: 27 },
+        ]),
+      },
+    ],
+  },
+  {
+    id: "view-as",
+    title: "See Polaris as someone else (View as)",
+    summary: "Preview exactly what a colleague or a client captain sees, without logging in as them.",
+    section: "Settings",
+    screens: ["settings"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Pick a person",
+        text: "Click **View as** in the top bar and search for the person. Polaris shows their menu and pages with their real access, under an amber **Viewing as …** banner. Choosing a captain opens their Client Portal read-only.",
+      },
+      {
+        title: "Exit",
+        text: "Click **Exit view** on the banner (or choose **Admin (full access)**) to go back to your own view. Everything you do while previewing still runs as you.",
+      },
+    ],
+  },
+  {
+    id: "dev-settings",
+    title: "Release a feature (Dev Settings)",
+    summary: "Move a feature from Dev Only to Beta to Live, and choose who can preview dev features.",
+    section: "Settings",
+    screens: ["admin-dev"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Change a feature's stage",
+        text: "Click **Dev Settings**. Under **Feature Staging**, each feature has three stages: **Dev Only** (only the dev team sees it), **Beta** (everyone, with a Beta badge) and **Live** (fully released). Click the stage you want — it changes straight away.",
+        image: img750("dev-settings", "Feature Staging", [{ x: 1030, y: 362, w: 161, h: 30 }]),
+      },
+      {
+        title: "Give someone dev access",
+        text: "Under **Dev Access**, **Add person** lets a colleague preview Dev Only features without being an admin. **Add Feature** registers a new feature flag (it starts as Dev Only).",
+        image: img750("dev-settings", "Add person and Add Feature", [
+          { x: 1117, y: 148, w: 100, h: 29 },
+          { x: 1133, y: 258, w: 101, h: 28 },
+        ]),
+      },
+    ],
+  },
+  {
+    id: "automations",
+    title: "Check scheduled automations",
+    summary: "See every automated job, whether it ran, and switch one on or off.",
+    section: "Settings",
+    screens: ["admin-automations"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Automations",
+        text: "Click **Automations**. The cards count automations, runs, errors and retries in the last 30 days. Filter by department, or open **All Runs** for the run history.",
+        image: img750("automations", "Automations", [
+          { x: 197, y: 125, w: 1338, h: 54 },
+          { x: 190, y: 190, w: 956, h: 33 },
+        ]),
+      },
+      {
+        title: "Manage an automation",
+        text: "Each card has an on/off switch, **Steps** to see what it does and **Run log** for its recent runs. Email automations let you set the send time (Dubai) and recipients — click **Save**.",
+        tip: "The switch takes effect immediately. Re-run on All Runs runs the job again for real.",
+      },
+    ],
+  },
+  {
+    id: "sync-centre",
+    title: "Check and run syncs (Sync Centre)",
+    summary: "See when each sync with SharePoint, QuickBooks, vessel tracking and Monday last ran, and run one now.",
+    section: "Settings",
+    screens: ["admin-sync"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Check the last run",
+        text: "Click **Sync**. **Sync Centre** lists every scheduled sync — QuickBooks documents, vessel positions, the visa trackers, the SharePoint lists, ShipSync and Monday — with how often it runs and when it last ran.",
+        image: img750("sync-centre", "Sync Centre", [{ x: 197, y: 153, w: 1338, h: 284 }]),
+      },
+      {
+        title: "Run one now",
+        text: "Click **Run now** (or **Run chunk**) to run a sync straight away rather than waiting for its schedule.",
+        image: img750("sync-centre", "Run now", [{ x: 1438, y: 203, w: 84, h: 27 }]),
+      },
+      {
+        title: "Dry-run the permits first",
+        text: "For permits, click **Dry run** to see what a real sync would change — nothing is written. **Preview repair** and **Preview clean-up** show fixes before you apply them.",
+        image: img750("sync-centre", "Permits dry run", [{ x: 1445, y: 500, w: 77, h: 28 }]),
+        tip: "Run now and Apply change data straight away — use the previews first.",
+      },
+    ],
+  },
+  {
+    id: "error-log",
+    title: "Review errors and warnings",
+    summary: "See errors captured from everyone's browser, with the page and person, and mark them resolved.",
+    section: "Settings",
+    screens: ["admin-errors"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Find an error",
+        text: "Click **Error & Warnings**. Filter **Error** or **Warn**, or type part of the message, page or user. Click a row for the full details — page, stack trace and what the person did just before.",
+        image: img750("error-log", "Error & Warning Log", [{ x: 446, y: 162, w: 831, h: 30 }]),
+      },
+      {
+        title: "Mark it resolved",
+        text: "Click the tick at the end of a row once it's fixed. **Show resolved** brings them back; **Clear resolved** deletes them permanently.",
+        image: img750("error-log", "Mark resolved", [{ x: 1252, y: 210, w: 24, h: 27 }]),
+      },
+    ],
+  },
+  {
+    id: "changelog",
+    title: "See what's new (Changelog)",
+    summary: "Read the history of new features, fixes and improvements to Polaris.",
+    section: "Settings",
+    screens: ["admin-changelog"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Read the changelog",
+        text: "Click **Changelog** for every release, newest first. Each change is tagged **New feature**, **Fix**, **Improvement** or **Patch**.",
+        image: img750("changelog", "Changelog", [{ x: 571, y: 154, w: 239, h: 20 }]),
+      },
+    ],
+  },
+  {
+    id: "staff-usage",
+    title: "See who uses Polaris (Staff Usage)",
+    summary: "See how often each member of staff uses Polaris and which areas they work in.",
+    section: "Settings",
+    screens: ["route-staff-usage"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Read the summary",
+        text: "Click **Staff Usage**. The tiles group staff as **Daily**, **Regular**, **Light**, **Signed in once**, **New** and **No login** — click one to filter. The chart shows how many staff used Polaris each week.",
+        image: img750("staff-usage", "Staff usage groups", [{ x: 341, y: 155, w: 1050, h: 78 }]),
+      },
+      {
+        title: "Look at one person",
+        text: "**Everyone, by person** lists days in, days this week, hours open, actions, main area and last active. Click a column to sort, or search by name, email or area.",
+      },
+    ],
+  },
+  {
+    id: "recycle-bin",
+    title: "Restore something deleted (Recycle Bin)",
+    summary: "Bring back a crew member, yacht or visa application deleted in the last 90 days.",
+    section: "Settings",
+    screens: ["route-recycle-bin"],
+    minutes: 1,
+    steps: [
+      {
+        title: "Find it",
+        text: "Click **Recycle Bin**. Filter by **Crew members**, **Yachts** or **Visa applications**. Each item shows who deleted it and how many days are left before it's gone for good (items are kept for 90 days).",
+      },
+      {
+        title: "Restore it",
+        text: "Click **↩ Restore** — it goes straight back where it was. **Delete forever** removes it permanently (you'll be asked to confirm).",
+      },
+    ],
+  },
+  {
+    id: "feedback",
+    title: "Report a bug or suggest a feature",
+    summary: "Send feedback from any page, and (admins) triage what comes in.",
+    section: "Settings",
+    screens: ["admin-feedback"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Send feedback from any page",
+        text: "Click the **lightbulb** in the top bar. Choose **Report a Bug** or **Feature Request**, describe it, and add a file, a **Screenshot** or a **Record screen** clip. Click **Submit** — a short log of what you were doing is attached automatically.",
+        image: img750("feedback-widget", "Feedback dialog", [
+          { x: 573, y: 108, w: 423, h: 28 },
+          { x: 573, y: 252, w: 423, h: 42 },
+          { x: 934, y: 335, w: 64, h: 32 },
+        ]),
+      },
+      {
+        title: "Triage it (admins)",
+        text: "**Feedback** lists **Feature Requests** and **Bug Reports**. Vote requests up or down, and set each one's status — open, planned, in progress, done or closed. Each has a Service Desk ticket number.",
+        image: img750("feedback", "Feedback & Requests", [
+          { x: 499, y: 132, w: 260, h: 31 },
+          { x: 712, y: 187, w: 75, h: 22 },
+        ]),
+      },
+    ],
+  },
 ];
 
 export function guideById(id: string): HowToGuide | undefined {
