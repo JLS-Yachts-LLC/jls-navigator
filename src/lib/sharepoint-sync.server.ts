@@ -994,7 +994,15 @@ export async function pushRecordToSharePoint(
   const { data: rec } = await (supabaseAdmin as any).from(table).select('*').eq('id', id).maybeSingle();
   if (!rec) return;
   // JLS's own boats stay out of the client Yachts list — same rule as pushYachtToSharePoint.
-  if (target === 'yachts' && rec.fleet === 'jls') return;
+  // An edit still marks the row dirty, so settle the flag here: left set, every JLS
+  // boat ever edited would sit at the head of the oldest-first push queue for good.
+  if (target === 'yachts' && rec.fleet === 'jls') {
+    if (rec.sharepoint_dirty_at) {
+      await (supabaseAdmin as any).from('yachts')
+        .update({ sharepoint_dirty_at: null, sharepoint_synced_at: new Date().toISOString() }).eq('id', id);
+    }
+    return;
+  }
 
   // Resolve name-based links for reverse mapping.
   let yachtName: string | null = rec.vessel_name ?? null;
@@ -1532,7 +1540,7 @@ async function _syncYachts(
   // Load ALL existing yachts once — avoids N per-item DB round trips
   const { data: existingYachts } = await fetchAllRows(() => supabaseAdmin
     .from('yachts')
-    .select('id, vessel_name, imo_no, sharepoint_item_id')
+    .select('id, vessel_name, imo_no, sharepoint_item_id, fleet')
     .order('id'))
   // Items still in the list. A row linked to one of these is spoken for: only its
   // own item may update it. Matching by IMO/name is for rows with no live item —
@@ -1546,6 +1554,9 @@ async function _syncYachts(
   for (const y of (existingYachts ?? []) as Record<string, any>[]) {
     if (y.sharepoint_item_id) bySpId.set(String(y.sharepoint_item_id), String(y.id))
     if (y.sharepoint_item_id && liveItemIds.has(String(y.sharepoint_item_id))) continue
+    // JLS's own boats are not in this client list; a same-named client item must
+    // never be matched onto one of them.
+    if (y.fleet === 'jls') continue
     // Placeholder IMOs ("N/A", "0000") are shared by dozens of vessels.
     if (_isRealImo(y.imo_no)) addKey(byImo, String(y.imo_no).trim().toLowerCase(), String(y.id))
     if (y.vessel_name) addKey(byName, String(y.vessel_name).trim().toLowerCase(), String(y.id))
