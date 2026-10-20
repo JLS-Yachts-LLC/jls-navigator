@@ -34,7 +34,7 @@ import { compressImageToMaxKB } from "@/lib/image-compress";
 import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { storageRef } from "@/lib/signed-url";
 import { SignedImage } from "@/components/ui/signed-file";
-import { ORBIT2_TEAM, FIELD_STATUSES, ORBIT_FIELD_PATH, statusColor, kindToBoatJobCategory } from "./orbit2-constants";
+import { ORBIT2_TEAM, FIELD_STATUSES, ORBIT_FIELD_PATH, statusColor, kindToBoatJobCategory, unitLabel } from "./orbit2-constants";
 import {
   ORBIT2_BUCKET, fmtSchedule, bucketOf,
   type Orbit2Project, type Orbit2Note, type Orbit2File, type Orbit2BoatTask, type Orbit2Boat,
@@ -605,7 +605,7 @@ export function TaskDetail({
               <>
                 <Item label="Product grade" value={task.product_grade} />
                 <Item label="Quantity"
-                  value={task.quantity != null ? `${task.quantity} ${task.quantity_unit ?? ""}`.trim() : null} />
+                  value={task.quantity != null ? `${task.quantity} ${unitLabel(task.quantity_unit)}`.trim() : null} />
               </>
             )}
           </dl>

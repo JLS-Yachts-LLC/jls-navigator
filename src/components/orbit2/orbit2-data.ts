@@ -40,6 +40,33 @@ export type Orbit2Project = {
   product_grade: string | null;
   quantity: number | null;
   quantity_unit: string | null;
+  // Bunkering request (migration 20261020120000) — all null on Project List rows.
+  yacht_id?: string | null;
+  imo_no?: string | null;
+  flag?: string | null;
+  official_no?: string | null;
+  loa_m?: number | null;
+  draught_m?: number | null;
+  berth_no?: string | null;
+  delivery_port?: string | null;
+  delivery_port_other?: string | null;
+  camlock_type?: string | null;
+  camlock_size_in?: number | null;
+  hose_length_m?: number | null;
+  manifold_position?: string | null;
+  max_sulphur?: string | null;
+  specification?: string | null;
+  description?: string | null;
+  admin_remarks?: string | null;
+  supplier_contact_person?: string | null;
+  supplier_contact_number?: string | null;
+  supplier_email?: string | null;
+  supplier_arrival_date?: string | null;
+  supplier_arrival_time?: string | null;
+  bunker_commence_date?: string | null;
+  bunker_commence_time?: string | null;
+  bunker_complete_date?: string | null;
+  bunker_complete_time?: string | null;
   work_completed_at: string | null;
   client_notified_at: string | null;
   created_at: string;
@@ -64,7 +91,9 @@ export type Orbit2File = {
   /** Exactly one of these two is set — a file belongs to a project record or a boat job. */
   project_id: string | null;
   boat_task_id: string | null;
-  slot: "supplier_quote" | "invoice" | "document" | "image" | "service_report" | "certificate" | "final_invoice";
+  slot: "supplier_quote" | "invoice" | "document" | "image" | "service_report" | "certificate" | "final_invoice" | "filled_form";
+  /** The name given with "+ Add document" — null for everything else. */
+  doc_name?: string | null;
   file_name: string;
   storage_ref: string;
   created_at: string;

@@ -120,7 +120,18 @@ export const FIELD_STATUSES: readonly string[] = ["Scheduled/Assigned", "Re-assi
 // orbit2-identity.ts and migration 20260928110000_orbit2_admin_locks.sql.
 
 // ── Bunkering ───────────────────────────────────────────────────────────────
-export const QUANTITY_UNITS = ["LTR", "USG", "MT", "CBM"] as const;
+// The lists below are the Bunkering Request spec's, section 1.3.
+
+/** Stored codes; M3 is shown as M³. Older records said LTR / CBM — migrated. */
+export const QUANTITY_UNITS = ["L", "IG", "M3"] as const;
+export const unitLabel = (u: string | null | undefined) => (u === "M3" ? "M³" : u ?? "");
+
+export const DELIVERY_PORTS = [
+  "AUH Freeport", "Emirates Palace", "Yas Marina", "Mina Rashid", "Dubai Harbour", "Others",
+] as const;
+export const CAMLOCK_TYPES = ["Adaptor (Male)", "Coupler (Female)"] as const;
+export const MANIFOLD_POSITIONS = ["FWD", "MID", "AFT"] as const;
+export const FUEL_GRADES = ["HFO", "MDO", "MGO", "LSMGO", "ULSMGO"] as const;
 
 // ── Managed Boats ───────────────────────────────────────────────────────────
 export const BOAT_TASK_STATUSES = ["Pending", "Ongoing", "Complete"] as const;

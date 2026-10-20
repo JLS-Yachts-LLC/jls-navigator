@@ -24,14 +24,19 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { SignedImage } from "@/components/ui/signed-file";
 import {
-  ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, ADMIN_ONLY_STATUSES, QUANTITY_UNITS, isComplete,
-  statusColor, type Orbit2RecordType,
+  ORBIT2_CATEGORIES, ORBIT2_STATUSES, MOBILE_OWNED_STATUSES, ADMIN_ONLY_STATUSES, isComplete,
+  statusColor, unitLabel, type Orbit2RecordType,
 } from "./orbit2-constants";
 import {
   type Orbit2Project, type Orbit2Note, type Orbit2File,
   fmtSchedule, minutesToHhmm, hhmmToMinutes, suggestionsFor,
 } from "./orbit2-data";
 import { useOrbit2Identity } from "./orbit2-identity";
+import { fmtDMY } from "@/lib/format-date";
+import {
+  BunkeringPanel, BUNKER_YACHT_COLUMNS, bunkeringPayload, bunkeringDraftOf, bunkeringProblem, portLabel,
+  type BunkerYacht,
+} from "./orbit2-bunkering";
 import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, stamp } from "./orbit2-fields";
 
 const sb = supabase as any;
@@ -58,7 +63,7 @@ const emptyDraft = (type: Orbit2RecordType): Draft => ({
   status: "Not Yet Initiated",
   service_category: type === "bunkering" ? "Bunkering" : "Vessel Services",
   assigned_team: [],
-  quantity_unit: "LTR",
+  quantity_unit: "L",
 });
 
 export function Orbit2Projects({
@@ -83,6 +88,20 @@ export function Orbit2Projects({
 
   const [notes, setNotes] = useState<Orbit2Note[]>([]);
   const [files, setFiles] = useState<Orbit2File[]>([]);
+
+  // Vessels a bunkering request can be raised for — picking one fills its
+  // IMO, Flag, Official No., LOA, Draft and Berth.
+  const [yachts, setYachts] = useState<BunkerYacht[]>([]);
+  useEffect(() => {
+    if (!bunkering) return;
+    let on = true;
+    void (async () => {
+      const { data } = await sb.from("yachts").select(BUNKER_YACHT_COLUMNS)
+        .eq("archive", false).order("vessel_name");
+      if (on) setYachts((data ?? []) as BunkerYacht[]);
+    })();
+    return () => { on = false; };
+  }, [bunkering]);
 
   const rows = useMemo(
     () => projects.filter((p) => p.record_type === recordType),
@@ -121,6 +140,7 @@ export function Orbit2Projects({
     return inView.filter((p) =>
       [p.task_id, p.client_name, p.status, p.service_category, p.specific_task,
        p.requestor_name, p.location, p.jls_quote, p.invoice_number, p.supplier,
+       p.product_grade, p.berth_no, p.delivery_port_other,
        (p.assigned_team ?? []).join(" ")]
         .some((v) => (v ?? "").toLowerCase().includes(q)));
   }, [inView, query]);
@@ -168,16 +188,20 @@ export function Orbit2Projects({
     setCreating(true);
   }
 
+  /** A saved record as the form edits it. */
+  const draftOf = (p: Orbit2Project): Draft =>
+    bunkering ? bunkeringDraftOf(p) : { ...p, assigned_team: p.assigned_team ?? [] };
+
   function openRecord(p: Orbit2Project) {
     setCreating(false);
     setSelectedId(p.id);
-    setDraft({ ...p, assigned_team: p.assigned_team ?? [] });
+    setDraft(draftOf(p));
   }
 
   function cancel() {
     // Cancel flushes the typed values and returns to the default detail view.
     setCreating(false);
-    if (selected) setDraft({ ...selected, assigned_team: selected.assigned_team ?? [] });
+    if (selected) setDraft(draftOf(selected));
     else { setSelectedId(null); setDraft(emptyDraft(recordType)); }
   }
 
@@ -201,17 +225,13 @@ export function Orbit2Projects({
       supplier: d.supplier?.trim() || null,
       etc_minutes: d.etc_minutes ?? null,
     };
-    if (bunkering) {
-      base.product_grade = d.product_grade?.trim() || null;
-      base.quantity = d.quantity ?? null;
-      base.quantity_unit = d.quantity_unit ?? "LTR";
-    }
-    return base;
+    return bunkering ? { ...base, ...bunkeringPayload(d) } : base;
   }
 
   async function submit() {
-    if (!draft.client_name?.trim()) {
-      toast.error("Boat / Client Name is required.");
+    const problem = bunkering ? bunkeringProblem(draft) : (draft.client_name?.trim() ? null : "Boat / Client Name is required.");
+    if (problem) {
+      toast.error(problem);
       return;
     }
     setSaving(true);
@@ -227,7 +247,7 @@ export function Orbit2Projects({
         await reload();
         setCreating(false);
         setSelectedId(data.id);
-        setDraft({ ...(data as Orbit2Project), assigned_team: data.assigned_team ?? [] });
+        setDraft(draftOf(data as Orbit2Project));
       } else if (selected) {
         const { error } = await sb.from("orbit2_projects").update(payload(draft)).eq("id", selected.id);
         if (error) throw error;
@@ -294,11 +314,11 @@ export function Orbit2Projects({
     setNotes((data ?? []) as Orbit2Note[]);
   }
 
-  async function attach(slot: Orbit2File["slot"], file: File, ref: string) {
+  async function attach(slot: Orbit2File["slot"], file: File, ref: string, docName?: string) {
     if (!selected) return;
     const { error } = await sb.from("orbit2_files").insert({
       project_id: selected.id, slot, file_name: file.name, storage_ref: ref,
-      uploaded_by: user?.id ?? null,
+      uploaded_by: user?.id ?? null, ...(docName ? { doc_name: docName } : {}),
     });
     if (error) { toast.error(error.message); return; }
     const { data } = await sb.from("orbit2_files").select("*").eq("project_id", selected.id).order("created_at");
@@ -372,6 +392,33 @@ export function Orbit2Projects({
                 Pick a Task ID on the left to see it in full, or start a new one.
               </p>
             </div>
+          ) : bunkering ? (
+            <BunkeringPanel
+              creating={creating}
+              draft={draft}
+              setDraft={setDraft}
+              selected={selected}
+              saving={saving}
+              isAdmin={identity.isAdmin}
+              notes={notes}
+              files={files}
+              yachts={yachts}
+              history={rows}
+              clientOptions={clientOptions}
+              supplierOptions={supplierOptions}
+              statusControl={
+                <StatusSelect value={draft.status ?? "Not Yet Initiated"} isAdmin={identity.isAdmin}
+                  onChange={(v) => setDraft((d) => ({ ...d, status: v }))} />
+              }
+              notify={selected ? <ClientNotify project={selected} onSent={reload} /> : null}
+              onSave={submit}
+              onCancel={cancel}
+              onDelete={identity.isAdmin ? deleteRecord : undefined}
+              onAddNote={addNote}
+              onEditNote={editNote}
+              onAttach={attach}
+              onDetach={detach}
+            />
           ) : (
             <DetailPanel
               bunkering={bunkering}
@@ -414,9 +461,10 @@ function RecordTable({
   onOpen: (p: Orbit2Project) => void;
   onStatus: (p: Orbit2Project, status: string) => void;
 }) {
+  // Bunkering: the grid layout of spec section 1.5.
   const cols = bunkering
-    ? ["Task ID", "Boat/Client", "Status", "Category", "Requestor", "Supply Date and Time",
-       "Location", "Product Grade", "Quantity", "Assign Team", "JLS Quote", "Invoice No."]
+    ? ["Task ID", "Boat/Client", "Status", "Requestor", "Supply Date", "Supply Time", "Delivery Port",
+       "Berth No", "Product Grade", "Quantity", "Units", "JLS Quote", "Invoice No."]
     : ["Task ID", "Boat/Client", "Status", "Service Category", "Specific Task", "Requestor",
        "Work Schedule Date and Time", "Location", "Assign Team", "JLS Quote", "Invoice No."];
 
@@ -449,30 +497,45 @@ function RecordTable({
             <td className="border-b border-border/40 px-3 py-2" onClick={(e) => e.stopPropagation()}>
               <StatusSelect value={p.status} isAdmin={isAdmin} onChange={(s) => onStatus(p, s)} />
             </td>
-            <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground">{p.service_category}</td>
-            {!bunkering && (
-              <td className="max-w-[16rem] border-b border-border/40 px-3 py-2 text-muted-foreground">
-                <span className="line-clamp-2">{p.specific_task || "—"}</span>
-              </td>
-            )}
-            <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.requestor_name ?? "—"}</td>
-            <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground">
-              {fmtSchedule(p.schedule_date, p.schedule_time)}
-            </td>
-            <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.location ?? "—"}</td>
-            {bunkering && (
+            {bunkering ? (
               <>
+                <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.requestor_name ?? "—"}</td>
+                <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground">{p.schedule_date ? fmtDMY(p.schedule_date) : "—"}</td>
+                <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground tabular-nums">{p.schedule_time ? p.schedule_time.slice(0, 5) : "—"}</td>
+                <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{portLabel(p) ?? p.location ?? "—"}</td>
+                <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.berth_no ?? "—"}</td>
                 <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.product_grade ?? "—"}</td>
-                <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 tabular-nums text-muted-foreground">
-                  {p.quantity != null ? `${p.quantity} ${p.quantity_unit ?? ""}`.trim() : "—"}
+                <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground tabular-nums">{p.quantity ?? "—"}</td>
+                <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.quantity != null ? unitLabel(p.quantity_unit) : "—"}</td>
+              </>
+            ) : (
+              <>
+              <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground">{p.service_category}</td>
+              {!bunkering && (
+                <td className="max-w-[16rem] border-b border-border/40 px-3 py-2 text-muted-foreground">
+                  <span className="line-clamp-2">{p.specific_task || "—"}</span>
                 </td>
+              )}
+              <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.requestor_name ?? "—"}</td>
+              <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 text-muted-foreground">
+                {fmtSchedule(p.schedule_date, p.schedule_time)}
+              </td>
+              <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.location ?? "—"}</td>
+              {bunkering && (
+                <>
+                  <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.product_grade ?? "—"}</td>
+                  <td className="whitespace-nowrap border-b border-border/40 px-3 py-2 tabular-nums text-muted-foreground">
+                    {p.quantity != null ? `${p.quantity} ${p.quantity_unit ?? ""}`.trim() : "—"}
+                  </td>
+                </>
+              )}
+              <td className="border-b border-border/40 px-3 py-2">
+                {(p.assigned_team ?? []).length === 0
+                  ? <span className="text-muted-foreground">—</span>
+                  : <span className="text-foreground/85">{p.assigned_team.join(", ")}</span>}
+              </td>
               </>
             )}
-            <td className="border-b border-border/40 px-3 py-2">
-              {(p.assigned_team ?? []).length === 0
-                ? <span className="text-muted-foreground">—</span>
-                : <span className="text-foreground/85">{p.assigned_team.join(", ")}</span>}
-            </td>
             <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.jls_quote ?? "—"}</td>
             <td className="border-b border-border/40 px-3 py-2 text-muted-foreground">{p.invoice_number ?? "—"}</td>
           </tr>
@@ -652,26 +715,6 @@ function DetailPanel({
           <Typeahead value={draft.location ?? ""} onChange={(v) => set("location", v)}
             options={locationOptions} placeholder="Port, berth or yard" />
         </Field>
-
-        {bunkering && (
-          <>
-            <Field label="Product Grade">
-              <input className={inputCls} value={draft.product_grade ?? ""}
-                onChange={(e) => set("product_grade", e.target.value)} placeholder="e.g. MGO 0.1%" />
-            </Field>
-            <Field label="Quantity">
-              <div className="flex gap-2">
-                <input className={inputCls} type="number" min="0" step="any"
-                  value={draft.quantity ?? ""}
-                  onChange={(e) => set("quantity", e.target.value === "" ? null : Number(e.target.value))} />
-                <select className={cn(inputCls, "w-28")} value={draft.quantity_unit ?? "LTR"}
-                  onChange={(e) => set("quantity_unit", e.target.value)}>
-                  {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-            </Field>
-          </>
-        )}
 
         <Field label="Supplier Name">
           <Typeahead value={draft.supplier ?? ""} onChange={(v) => set("supplier", v)}

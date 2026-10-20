@@ -35,7 +35,7 @@ import {
   assignments, peopleOnDay,
 } from "./orbit2-data";
 import { FieldAppButton } from "./orbit2-field-link";
-import { colorFor, COMPLETE_COLOR, PENDING_COLOR, ORBIT2_TEAM } from "./orbit2-constants";
+import { colorFor, COMPLETE_COLOR, PENDING_COLOR, ORBIT2_TEAM, unitLabel } from "./orbit2-constants";
 import { TeamPicker } from "./orbit2-fields";
 
 const sb = supabase as any;
@@ -98,7 +98,7 @@ export function Orbit2Dashboard({
       p.status, p.service_category, p.specific_task ?? "", p.requestor_name ?? "",
       fmtSchedule(p.schedule_date, p.schedule_time), p.location ?? "", minutesToHhmm(p.etc_minutes),
       (p.assigned_team ?? []).join(" / "), p.supplier ?? "", p.jls_quote ?? "", p.invoice_number ?? "",
-      p.product_grade ?? "", p.quantity != null ? `${p.quantity} ${p.quantity_unit ?? ""}`.trim() : "",
+      p.product_grade ?? "", p.quantity != null ? `${p.quantity} ${unitLabel(p.quantity_unit)}`.trim() : "",
       p.work_completed_at ? fmtDMY(p.work_completed_at, { time: true }) : "",
     ]);
     const csv = [head, ...rows]
@@ -702,7 +702,7 @@ function TaskDetailCard({
         ["Location", project.location],
         ["Requestor", project.requestor_name],
         project.record_type === "bunkering"
-          ? ["Product", [project.product_grade, project.quantity != null ? `${project.quantity} ${project.quantity_unit ?? ""}`.trim() : null].filter(Boolean).join(" · ")]
+          ? ["Product", [project.product_grade, project.quantity != null ? `${project.quantity} ${unitLabel(project.quantity_unit)}`.trim() : null].filter(Boolean).join(" · ")]
           : ["Task", project.specific_task],
         ["Supplier", project.supplier],
       ]
