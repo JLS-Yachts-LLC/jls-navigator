@@ -1827,15 +1827,6 @@ function _permitCopyChecker(lists: Map<string, PermitListSnapshot>, listName: st
   }
 }
 
-/** The cross-list "same permit?" rule, for jobs outside the sync (the SharePoint repair). */
-export function permitSigsMatch(
-  a: { vessel: string; holder: string; number: string },
-  b: { vessel: string; holder: string; number: string },
-): boolean {
-  const samePermit = (a.holder && a.holder === b.holder) || (a.number && a.number === b.number)
-  return !!samePermit && (!a.vessel || !b.vessel || a.vessel === b.vessel)
-}
-
 /** An item's permit signature (vessel, holder, number) as the copy check sees it. */
 export function permitItemSignature(fields: Record<string, any>, mapping: Record<string, string>) {
   return _permitItemSig(fields, mapping)
