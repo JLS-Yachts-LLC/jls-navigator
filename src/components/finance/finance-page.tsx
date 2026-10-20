@@ -152,6 +152,7 @@ const TRIP_TYPE_LABEL: Record<string, string> = {
   delivery_collection: "Delivery & Collection",
   seaport_crew_change: "Seaport Crew Change",
   shorebased: "Shorebased",
+  staff_shuttle: "Staff Shuttle",
 };
 
 // ─── Shared Billing Actions ───────────────────────────────────────────────────
@@ -298,6 +299,7 @@ const TRIP_TYPE_ORDER = [
   "delivery_collection",
   "seaport_crew_change",
   "shorebased",
+  "staff_shuttle",
 ];
 
 function InvoiceTracker() {
