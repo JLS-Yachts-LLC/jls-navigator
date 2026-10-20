@@ -693,7 +693,7 @@ function YachtRelatedRecords({ yachtId }: { yachtId: string }) {
   const TRIP_LABEL: Record<string, string> = {
     arrival_transport: "Arrival", departure_transport: "Departure", crew_pickup: "Crew Pickup",
     inhouse: "In-House", airport_transfer: "Airport", delivery_collection: "Delivery",
-    seaport_crew_change: "Seaport", shorebased: "Shorebased",
+    seaport_crew_change: "Seaport", shorebased: "Shorebased", staff_shuttle: "Staff Shuttle",
   };
 
   const statusColor: Record<string, string> = {

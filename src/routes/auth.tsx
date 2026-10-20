@@ -15,6 +15,7 @@ import {
   type WorkspaceContext,
 } from "@/lib/auth/workspace";
 import { Eye, EyeOff } from "lucide-react";
+import { driverLandingPath } from "@/components/logistics/logistics-identity";
 
 /**
  * Where to go after signing in, when the sign-in was an interruption rather than
@@ -61,6 +62,8 @@ function AuthPage() {
   // Post-auth workspace step
   const [workspaces, setWorkspaces] = useState<WorkspaceContext[] | null>(null);
   const [claims, setClaims] = useState<PolarisClaims | null>(null);
+  /** Where to go after signing in when it isn't the role's usual landing (`next`, or the phone app for a driver). */
+  const [landing, setLanding] = useState<string | undefined>(undefined);
   const [resolving, setResolving] = useState(false);
 
   // Detect invite / password-recovery tokens in the URL hash — or the ERROR hash
@@ -127,6 +130,9 @@ function AuthPage() {
       try {
         const c = await deriveClaims(supabase, user);
         setClaims(c);
+        // A driver-only login goes to the phone app, not the desktop dashboard.
+        const home = next ?? (await driverLandingPath(user.id, user.email ?? null, c.roleName)) ?? undefined;
+        setLanding(home);
         const ws = await getAvailableWorkspaces(supabase, c);
         // The workspace selector still shows when there is more than one — the
         // rule is never to skip it. `next` only replaces where it lands afterwards.
@@ -134,9 +140,9 @@ function AuthPage() {
           setWorkspaces(ws); // show selector
         } else if (ws.length === 1) {
           storeWorkspace(ws[0]);
-          navigate({ to: (next ?? resolveWorkspaceLandingPath(c, ws[0])) as any });
+          navigate({ to: (home ?? resolveWorkspaceLandingPath(c, ws[0])) as any });
         } else {
-          navigate({ to: (next ?? resolveLandingPath(c)) as any });
+          navigate({ to: (home ?? resolveLandingPath(c)) as any });
         }
       } catch {
         navigate({ to: (next ?? "/polaris-redesign") as any });
@@ -146,7 +152,7 @@ function AuthPage() {
 
   function pickWorkspace(ws: WorkspaceContext) {
     storeWorkspace(ws);
-    navigate({ to: (next ?? resolveWorkspaceLandingPath(claims ?? ({} as PolarisClaims), ws)) as any });
+    navigate({ to: (landing ?? next ?? resolveWorkspaceLandingPath(claims ?? ({} as PolarisClaims), ws)) as any });
   }
 
   async function handleSignIn(e: React.FormEvent) {

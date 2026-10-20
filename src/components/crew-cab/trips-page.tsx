@@ -23,7 +23,7 @@ import { GoogleRouteMap } from "@/components/maps/google-route-map";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TripType = "crew_pickup" | "inhouse" | "airport_transfer" | "arrival_transport" | "departure_transport" | "delivery_collection" | "seaport_crew_change" | "shorebased";
+type TripType = "crew_pickup" | "inhouse" | "airport_transfer" | "arrival_transport" | "departure_transport" | "delivery_collection" | "seaport_crew_change" | "shorebased" | "staff_shuttle";
 type TripStatus = "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
 
 type SavedLocation = { id: string; name: string; address: string | null; latitude: number | null; longitude: number | null };
@@ -117,6 +117,7 @@ const TYPE_LABEL: Record<TripType, string> = {
   delivery_collection: "Delivery & Collection",
   seaport_crew_change: "Seaport Crew Change",
   shorebased: "Shorebased",
+  staff_shuttle: "Staff Shuttle",
 };
 const TYPE_COLOR: Record<TripType, string> = {
   crew_pickup: "bg-blue-500/15 text-blue-400 border-blue-500/20",
@@ -127,6 +128,7 @@ const TYPE_COLOR: Record<TripType, string> = {
   delivery_collection: "bg-teal-500/15 text-teal-400 border-teal-500/20",
   seaport_crew_change: "bg-indigo-500/15 text-indigo-400 border-indigo-500/20",
   shorebased: "bg-rose-500/15 text-rose-400 border-rose-500/20",
+  staff_shuttle: "bg-slate-500/15 text-slate-400 border-slate-500/20",
 };
 const STATUS_LABEL: Record<TripStatus, string> = {
   pending: "Pending", confirmed: "Confirmed", in_progress: "In Progress",
@@ -556,6 +558,7 @@ function BoardRow({
               { value: "delivery_collection", label: "Delivery & Collection" },
               { value: "seaport_crew_change", label: "Seaport Crew Change" },
               { value: "shorebased", label: "Shorebased" },
+              { value: "staff_shuttle", label: "Staff Shuttle" },
             ]}
             onChange={v => onSave(trip.id, { trip_type: v })}
             onDone={() => onActivate("")}
@@ -808,6 +811,7 @@ function BoardAddRow({
           <option value="delivery_collection">Delivery &amp; Collection</option>
           <option value="seaport_crew_change">Seaport Crew Change</option>
           <option value="shorebased">Shorebased</option>
+          <option value="staff_shuttle">Staff Shuttle</option>
         </select>
       </td>
       <td className="border-r border-border/40 px-2 py-1">
@@ -1087,7 +1091,7 @@ export function TripsPage() {
         </div>
         {/* Filter chips */}
         <div className="flex items-center gap-1 pb-0 overflow-x-auto">
-          {(["all", "arrival_transport", "departure_transport", "crew_pickup", "inhouse", "airport_transfer", "delivery_collection", "seaport_crew_change", "shorebased"] as const).map(f => (
+          {(["all", "arrival_transport", "departure_transport", "crew_pickup", "inhouse", "airport_transfer", "delivery_collection", "seaport_crew_change", "shorebased", "staff_shuttle"] as const).map(f => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -1234,6 +1238,7 @@ export function TripsPage() {
                       <SelectItem value="delivery_collection">Delivery &amp; Collection</SelectItem>
                       <SelectItem value="seaport_crew_change">Seaport Crew Change</SelectItem>
                       <SelectItem value="shorebased">Shorebased</SelectItem>
+                      <SelectItem value="staff_shuttle">Staff Shuttle</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

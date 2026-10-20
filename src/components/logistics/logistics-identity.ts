@@ -56,6 +56,19 @@ export async function lookupDriver(userId: string, email: string | null): Promis
   return { driver: (byEmail.data?.[0] as ShipSyncDriver | undefined) ?? null, failed: false };
 }
 
+/**
+ * Where a driver-only login should land after signing in: the phone app, not the desktop
+ * dashboard (an invited driver who sets their password would otherwise end up there).
+ * Null for everyone else, and when the driver check can't be made — the normal landing applies.
+ */
+export async function driverLandingPath(userId: string, email: string | null, role: string | null): Promise<string | null> {
+  const r = await lookupDriver(userId, email).catch(() => ({ driver: null, failed: true }));
+  if (!r.driver) return null;
+  const emails = [email, r.driver.email].map((e) => (e ?? "").trim().toLowerCase());
+  if (["global_admin", "platform_owner"].includes(role ?? "") || emails.some((e) => LOGISTICS_ADMIN_EMAILS.includes(e))) return null;
+  return "/logistics-app";
+}
+
 const CACHE_KEY = "logistics.identity";
 const readCached = (): LogisticsIdentity | null => {
   try { const v = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as LogisticsIdentity | null; return v ? { ...v, loading: false, lookupFailed: false } : null; } catch { return null; }

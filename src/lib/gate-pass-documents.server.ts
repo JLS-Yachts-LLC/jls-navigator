@@ -281,6 +281,36 @@ export async function gatePassDocumentsDryRun(opts: { libraries?: boolean; folde
   }
 }
 
+/** Read-only: try one item's attachment download several ways and report what SharePoint says. */
+export async function gatePassDocumentProbe(itemId: number) {
+  const job = await readPermitListForJob(LIST)
+  const host = new URL(job.siteAbsoluteUrl).hostname
+  const token = await getSharePointToken(job.creds.tenantId, job.creds.clientId, job.creds.clientSecret, host)
+  let claims: Record<string, unknown> = {}
+  try { claims = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) } catch { /* opaque */ }
+  const site = job.siteAbsoluteUrl.replace(/\/$/, '')
+  const q = (v: string) => encodeURIComponent(v.replace(/'/g, "''"))
+  const list = await fetch(`${site}/_api/web/lists/getbytitle('${q(LIST)}')/items(${itemId})/AttachmentFiles`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json;odata=nometadata' } })
+  const files = list.ok ? ((await list.json()) as any).value ?? [] : []
+  const f = files[0]
+  const out: any[] = [{ way: 'list', status: list.status, diag: list.headers.get('x-ms-diagnostics'), files: files.map((x: any) => x.FileName) }]
+  if (f) {
+    const ways: Record<string, string> = {
+      byItem: `${site}/_api/web/lists/getbytitle('${q(LIST)}')/items(${itemId})/AttachmentFiles('${q(f.FileName)}')/$value`,
+      byPath: `${site}/_api/web/GetFileByServerRelativePath(decodedurl='${q(f.ServerRelativeUrl)}')/$value`,
+    }
+    for (const [way, url] of Object.entries(ways)) {
+      for (const redirect of ['follow', 'manual'] as const) {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect })
+        const b = new Uint8Array(await r.arrayBuffer())
+        out.push({ way, redirect, url: url.replace(site, ''), status: r.status, location: r.headers.get('location'), diag: r.headers.get('x-ms-diagnostics'), bytes: b.byteLength, head: new TextDecoder().decode(b.slice(0, 40)) })
+      }
+    }
+  }
+  return { appidacr: claims.appidacr, roles: claims.roles, out }
+}
+
 /**
  * Import up to `limit` ready documents. Re-plans each call (so it never acts on a
  * stale read) and is safe to repeat: rows that got a document are no longer
@@ -291,19 +321,24 @@ export async function gatePassDocumentsImport(limit = 150) {
   if (attachmentsError) throw new Error(`Cannot read the list's attachments, so nothing was imported: ${attachmentsError}`)
   const ready = plan.filter((p) => p.outcome === 'ready')
   const batch = ready.slice(0, Math.max(1, Math.min(limit, 250)))
-  const origin = new URL(job.siteAbsoluteUrl).origin
+  const site = job.siteAbsoluteUrl.replace(/\/$/, '')
+  const q = (v: string) => encodeURIComponent(v.replace(/'/g, "''"))
   let imported = 0
   const failed: Array<{ id: string; itemId: string; file: string; reason: string }> = []
 
   for (const p of batch) {
     const f = p.pick!
     try {
-      const res = await fetch(`${origin}${encodeURI(f.rel)}`, { headers: { Authorization: `Bearer ${spToken}` } })
+      // Through the item itself: SharePoint refuses an app-only token on the file's
+      // plain address (401) but serves it through the REST API.
+      const res = await fetch(`${site}/_api/web/lists/getbytitle('${q(LIST)}')/items(${Number(p.itemId)})/AttachmentFiles('${q(f.name)}')/$value`,
+        { headers: { Authorization: `Bearer ${spToken}` } })
       if (!res.ok) throw new Error(`download HTTP ${res.status}`)
       const ct = res.headers.get('content-type') ?? ''
       if (ct.includes('text/html')) throw new Error('SharePoint returned a web page, not the file')
       const bytes = await res.arrayBuffer()
       if (!bytes.byteLength) throw new Error('empty file')
+      if (new TextDecoder().decode(bytes.slice(0, 5)) !== '%PDF-') throw new Error('not a PDF')
       const safe = f.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80)
       const path = `permits/sharepoint-gate-pass/${p.itemId}-${safe}`
       const { error: upErr } = await supabaseAdmin.storage.from(BUCKET)

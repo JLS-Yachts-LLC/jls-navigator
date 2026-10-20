@@ -36,6 +36,8 @@ const STATUS_LABEL: Record<string, string> = {
   processing: 'Processing', approved: 'Approved', completed: 'Completed', rejected: 'Rejected', cancelled: 'Cancelled',
 }
 const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+/** Empty dates export as blank cells, not the on-screen dash placeholder. */
+const csvDate = (d: string | null) => d ? fmt(d) : ''
 const name = (r: Row) => `${r.given_name ?? ''} ${r.surname ?? ''}`.trim() || '—'
 const effDate = (r: Row) => r.submitted_at ?? r.visa_issuance_date ?? r.created_at
 
@@ -44,7 +46,7 @@ const CSV_HEADERS = ['Vessel', 'Given Name', 'Surname', 'Nationality', 'Passport
 type Move = { event_type: string; event_date: string }
 const short = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
 const movesText = (ms: Move[] | undefined) => (ms ?? []).map(m => `${m.event_type === 'sign_on' ? 'On' : 'Off'} ${short(m.event_date)}`).join(' · ')
-const cancelledText = (r: Row) => r.cancelled_on ? fmt(r.cancelled_on) + (r.cancelled_on_estimated ? ' (marked)' : '') : (r.status === 'cancelled' ? 'Not recorded' : '—')
+const cancelledText = (r: Row) => r.cancelled_on ? fmt(r.cancelled_on) + (r.cancelled_on_estimated ? ' (marked)' : '') : (r.status === 'cancelled' ? 'Not recorded' : '')
 const notes = (r: Row) => (r.application_notes ?? '').replace(/\s+/g, ' ').trim()
 // Solid background: a sticky header cell over a translucent one lets rows show through.
 const TH = 'sticky top-0 z-10 bg-card px-3 py-2.5 font-semibold text-muted-foreground/80 whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]'
@@ -119,10 +121,12 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
     const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     const lines = [CSV_HEADERS.join(','), ...rows.map(r => [
       r.yachts?.vessel_name ?? vesselName(r.yacht_id), r.given_name ?? '', r.surname ?? '', r.nationality ?? '',
-      r.passport_number ?? '', r.visa_number ?? '', fmt(r.visa_issuance_date), fmt(r.visa_expiry), cancelledText(r),
-      fmt(r.sign_on_date), fmt(r.sign_off_date), movesText(moves[r.id]), STATUS_LABEL[r.status] ?? r.status, notes(r),
+      r.passport_number ?? '', r.visa_number ?? '', csvDate(r.visa_issuance_date), csvDate(r.visa_expiry), cancelledText(r),
+      csvDate(r.sign_on_date), csvDate(r.sign_off_date), movesText(moves[r.id]), STATUS_LABEL[r.status] ?? r.status, notes(r),
     ].map(x => esc(String(x))).join(','))]
-    return new Blob([lines.join('\r\n')], { type: 'text/csv' })
+    // UTF-8 BOM so Excel decodes accented names correctly (without it Excel assumes
+    // Windows-1252 and ç/é/— turn into "Ã§"/"â€"" mojibake).
+    return new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
   }
 
   // Visa Detail: Excel-style sort and value filter on every column header.

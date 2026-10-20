@@ -32,7 +32,25 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     for (const p of pkgsOnNote) { const k = p.boat_name || "No boat"; m.set(k, (m.get(k) ?? 0) + 1); }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [pkgsOnNote]);
-  const boats = useMemo(() => Array.from(new Set(data.deliverable.map((p) => p.boat_name).filter(Boolean) as string[])).sort(), [data.deliverable]);
+  // Every boat or place a note can be for: ones with parcels waiting, every vessel,
+  // and the saved destinations/Locations (hotels, office, warehouse) — matching Routing.
+  const boats = useMemo(() => {
+    const byKey = new Map<string, string>();
+    const add = (n?: string | null) => { const t = (n ?? "").trim(); if (t && !byKey.has(t.toUpperCase())) byKey.set(t.toUpperCase(), t); };
+    for (const p of data.deliverable) add(p.boat_name);
+    for (const d of data.destinations) add(d.boat_name);
+    for (const y of data.yachts) add(y);
+    return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b));
+  }, [data.deliverable, data.destinations, data.yachts]);
+  // Saved destinations with somewhere to go — offered on the Destination field so
+  // it works without Google's address suggestions (which can be switched off on
+  // Google's side, e.g. when billing lapses — then the field gets no suggestions).
+  const savedPlaces = useMemo(
+    () => data.destinations
+      .filter((d) => (d.address ?? "").trim() || (d.lat != null && d.lng != null))
+      .sort((a, b) => a.boat_name.localeCompare(b.boat_name)),
+    [data.destinations],
+  );
   const [confirmDel, setConfirmDel] = useState(false);
   const [showRouteMap, setShowRouteMap] = useState(false);
   const [addingParcels, setAddingParcels] = useState(false);
@@ -150,9 +168,22 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     if (!sel) return;
     await setNoteDriver(sel.id, driverId === "none" ? null : driverId); await reload();
   }
-  async function saveDestination(patch: Partial<ShipSyncDeliveryNote>) {
+  /** Use a saved destination as this note's destination. Picking another place
+   *  (a hotel, the warehouse) must not overwrite the boat's own saved berth. */
+  async function pickSavedPlace(id: string) {
+    const d = savedPlaces.find((x) => x.id === id);
+    if (!d || !sel) return;
+    const lat = d.lat != null ? Number(d.lat) : null;
+    const lng = d.lng != null ? Number(d.lng) : null;
+    setDestDraft({ address: d.address ?? "", lat: lat != null ? String(lat) : "", lng: lng != null ? String(lng) : "" });
+    const isOwnBerth = !!sel.boat_name && d.boat_name.toUpperCase() === sel.boat_name.toUpperCase();
+    await saveDestination({ destination_address: d.address || null, destination_lat: lat, destination_lng: lng }, !isOwnBerth);
+  }
+  async function saveDestination(patch: Partial<ShipSyncDeliveryNote>, noteOnly = false) {
     if (!sel) return;
-    await (supabase as any).from("shipsync_delivery_notes").update(patch).eq("id", sel.id);
+    const { error } = await (supabase as any).from("shipsync_delivery_notes").update(patch).eq("id", sel.id);
+    if (error) { toast.error(error.message ?? "Could not save the destination"); return; }
+    if (noteOnly) { await reload(); return; }
     // Also remember this on the boat's own saved destination (shipsync_destinations,
     // the same table Routing's per-stop address field writes to) — otherwise typing
     // it in here only fixes THIS note, and the next delivery to the same boat shows
@@ -310,7 +341,21 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
 
             {/* Destination (for routing) */}
             <div className="rounded-xl border border-border bg-card p-3">
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Destination</div>
+              <div className="mb-2 flex items-center gap-2">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><MapPin className="h-3.5 w-3.5" /> Destination</div>
+                {savedPlaces.length > 0 && (
+                  <Select value="" onValueChange={(v) => void pickSavedPlace(v)}>
+                    <SelectTrigger className="ml-auto h-8 w-[220px] text-[12px]"><SelectValue placeholder="Use a saved destination…" /></SelectTrigger>
+                    <SelectContent>
+                      {savedPlaces.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.boat_name}{d.address ? <span className="text-muted-foreground"> — {d.address.split("\n")[0].slice(0, 40)}</span> : null}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
               <div className="grid grid-cols-[1fr_120px_120px] gap-2">
                 <Input
                   ref={addressInputRef}

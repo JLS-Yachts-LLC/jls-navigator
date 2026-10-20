@@ -17,15 +17,20 @@ export interface DriverRuns {
   vehicles: ShipSyncVehicle[]
 }
 
-/** Match the signed-in user to a driver record (by user_id, then email). */
+/**
+ * Match the signed-in user to an ACTIVE driver record (by user_id, then email, with _ and %
+ * matched literally). limit(1), not maybeSingle(): a driver who also has a retired row with the
+ * same email (the SharePoint list keeps old entries) made maybeSingle() error and found nobody.
+ */
 export async function resolveDriver(userId: string | null, email: string | null): Promise<ShipSyncDriver | null> {
   if (userId) {
-    const { data } = await db().from('shipsync_drivers').select('*').eq('user_id', userId).maybeSingle()
-    if (data) return data as ShipSyncDriver
+    const { data } = await db().from('shipsync_drivers').select('*').eq('user_id', userId).eq('active', true).limit(1)
+    if (data?.[0]) return data[0] as ShipSyncDriver
   }
   if (email) {
-    const { data } = await db().from('shipsync_drivers').select('*').ilike('email', email).maybeSingle()
-    if (data) return data as ShipSyncDriver
+    const exact = email.trim().replace(/[\\%_]/g, (c) => `\\${c}`)
+    const { data } = await db().from('shipsync_drivers').select('*').ilike('email', exact).eq('active', true).limit(1)
+    if (data?.[0]) return data[0] as ShipSyncDriver
   }
   return null
 }
