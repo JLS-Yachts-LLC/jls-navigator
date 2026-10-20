@@ -10,21 +10,26 @@
  * whatever the warehouse has: a roll label printer (one label per label, paper cut
  * to the chosen size) or an ordinary A4 sheet to cut and stick. The last size
  * chosen is remembered on that phone.
+ *
+ * When the warehouse's Zebra printers are set up (ShipSync → Printers), the same page
+ * offers "Send to label printer", which goes straight to the printer through the print
+ * connector on the office network. A phone can be told to always use one printer; its
+ * "Print label" buttons then print there directly and only open the page to choose another.
  */
 import QRCode from "qrcode";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { supabase } from "@/integrations/supabase/client";
 import { locationCode } from "./logistics-warehouse-data";
+import type { Label } from "@/lib/printing/zpl";
+import {
+  getDefaultPrinterId, isOnline, listPrinters, printerStateText, queueLabels, setDefaultPrinterId, waitForJob,
+  type LabelPrinter,
+} from "@/lib/printing/printers";
 
 const sb = supabase as any;
 
-export type Label = {
-  /** Encoded in the QR and printed beneath it. */
-  code: string;
-  title: string;
-  lines: string[];
-};
+export type { Label };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -51,7 +56,7 @@ export async function loadLabelsForRef(ref: string): Promise<Label[]> {
  * the promise of them: the window is opened before anything is awaited, because phones block a window opened after a wait.
  * Returns false if the browser refused to open it.
  */
-export async function printLabels(source: Label[] | Promise<Label[]>): Promise<boolean> {
+export async function printLabels(source: Label[] | Promise<Label[]>, ref?: string): Promise<boolean> {
   const w = window.open("", "_blank");
   if (!w) return false;
   w.document.write("<!doctype html><title>Labels</title><body style='font-family:sans-serif'>Preparing labels…</body>");
@@ -84,8 +89,16 @@ body{margin:0;font-family:Arial,sans-serif;color:#000}
 .code{font-family:monospace;font-weight:700;word-break:break-all}
 .title{font-weight:700;margin-top:1mm}
 .line{margin-top:.8mm}
-@media print{.bar{display:none}}
+.bar[hidden],.zopts[hidden]{display:none}
+.zbar{background:#e3f1ea}
+.zopts{padding:6px 10px 10px;background:#e3f1ea;border-bottom:1px solid #ccd;font-size:15px}
+.zopts label{display:flex;gap:8px;align-items:center}
+#zmsg{margin-top:6px;font-weight:700}
+#zmsg.err{color:#b00020}
+@media print{.bar,.zopts{display:none}}
 </style></head><body>
+<div class="bar zbar" id="zbar" hidden><select id="zpick"></select><button id="zgo">Send to label printer</button></div>
+<div class="zopts" id="zopts" hidden><label><input type="checkbox" id="zdef"> Always use this printer on this device</label><div id="zmsg"></div></div>
 <div class="bar"><select id="pick"></select><button id="go">Print</button></div>
 <div class="sheet">${cards.join("")}</div>
 <script>
@@ -104,6 +117,7 @@ pick.onchange=function(){apply(pick.value);try{localStorage.setItem("logistics-l
 document.getElementById("go").onclick=function(){window.print()};
 </script></body></html>`);
     w.document.close();
+    void wireLabelPrinters(w, labels, ref);
   } catch (e) {
     w.close();
     throw e;
@@ -111,9 +125,96 @@ document.getElementById("go").onclick=function(){window.print()};
   return true;
 }
 
-/** The tap handler behind every "Print label" button: print a reference's labels, saying so if the browser blocks the window or the reference can't be read. */
-export function labelsFor(ref: string): void {
-  void printLabels(loadLabelsForRef(ref)).then((opened) => {
+/** Fill the print page's "Send to label printer" bar, if any Zebra printer is set up. */
+async function wireLabelPrinters(w: Window, labels: Label[], ref?: string): Promise<void> {
+  let printers: LabelPrinter[];
+  try { printers = await listPrinters(); } catch { return; }
+  if (!printers.length || w.closed) return;
+  const doc = w.document;
+  const bar = doc.getElementById("zbar"), opts = doc.getElementById("zopts");
+  const pick = doc.getElementById("zpick") as HTMLSelectElement | null;
+  const go = doc.getElementById("zgo") as HTMLButtonElement | null;
+  const def = doc.getElementById("zdef") as HTMLInputElement | null;
+  const msg = doc.getElementById("zmsg");
+  if (!bar || !opts || !pick || !go || !def || !msg) return;
+
+  for (const p of printers) {
+    const o = doc.createElement("option");
+    o.value = p.id;
+    o.textContent = `${p.name} — ${printerStateText(p)}`;
+    o.disabled = !isOnline(p);
+    pick.appendChild(o);
+  }
+  const saved = getDefaultPrinterId();
+  const first = printers.find((p) => p.id === saved && isOnline(p)) ?? printers.find(isOnline);
+  if (first) pick.value = first.id;
+  const syncDefault = () => { def.checked = pick.value === getDefaultPrinterId(); };
+  syncDefault();
+  pick.onchange = syncDefault;
+  def.onchange = () => setDefaultPrinterId(def.checked ? pick.value : null);
+  bar.hidden = false;
+  opts.hidden = false;
+
+  const say = (text: string, err = false) => { msg.textContent = text; msg.className = err ? "err" : ""; };
+  go.onclick = async () => {
+    const p = printers.find((x) => x.id === pick.value);
+    if (!p || !isOnline(p)) { say("Choose a printer that is online.", true); return; }
+    go.disabled = true;
+    say(`Sending ${labels.length} label${labels.length === 1 ? "" : "s"} to ${p.name}…`);
+    try {
+      const r = await waitForJob(await queueLabels(p.id, labels, { source: "warehouse", ref }));
+      if (r.status === "printed") say(`Printed on ${p.name}. You can close this page.`);
+      else if (r.status === "failed") say(`${p.name}: ${r.error}`, true);
+      else say(`Sent to ${p.name} — it hasn't confirmed yet. Check the printer before sending again.`, true);
+    } catch (e) {
+      say(errorMessage(e, "Could not send the labels"), true);
+    } finally {
+      go.disabled = false;
+    }
+  };
+}
+
+/** Print a reference's labels straight on this device's chosen Zebra printer, saying how it went. */
+async function sendToDefaultPrinter(printerId: string, ref: string): Promise<void> {
+  const other = { label: "Other printer", onClick: () => openLabelPage(ref) };
+  const t = toast.loading("Sending labels to the printer…");
+  try {
+    const [printers, labels] = await Promise.all([listPrinters(), loadLabelsForRef(ref)]);
+    const p = printers.find((x) => x.id === printerId);
+    if (!p) {
+      setDefaultPrinterId(null);
+      toast.error("The label printer this device used is no longer set up — choose another.", { id: t, action: { label: "Choose", onClick: () => openLabelPage(ref) } });
+      return;
+    }
+    if (!isOnline(p)) {
+      toast.error(`${p.name} is offline — nothing was sent.`, { id: t, action: other, duration: 15000 });
+      return;
+    }
+    const id = await queueLabels(p.id, labels, { source: "warehouse", ref });
+    toast.loading(`Printing ${labels.length} label${labels.length === 1 ? "" : "s"} on ${p.name}…`, { id: t });
+    const r = await waitForJob(id);
+    if (r.status === "printed") toast.success(`Printed on ${p.name}`, { id: t, action: other });
+    else if (r.status === "failed") toast.error(`${p.name}: ${r.error}`, { id: t, action: other, duration: 15000 });
+    else toast.warning(`Sent to ${p.name} — it hasn't confirmed yet. Check the printer before sending again.`, { id: t, action: other, duration: 15000 });
+  } catch (e) {
+    toast.error(errorMessage(e, "Could not print the labels"), { id: t, action: other });
+  }
+}
+
+function openLabelPage(ref: string): void {
+  void printLabels(loadLabelsForRef(ref), ref).then((opened) => {
     if (!opened) toast.error("Your browser blocked the label window — allow pop-ups for this site and try again.");
   }).catch((e) => toast.error(errorMessage(e, "Could not prepare the labels")));
+}
+
+/**
+ * The tap handler behind every "Print label" button. On a device told to always use a
+ * Zebra printer, the labels go straight there; otherwise the print page opens (with the
+ * Zebra printers on it, if any), saying so if the browser blocks the window or the
+ * reference can't be read.
+ */
+export function labelsFor(ref: string): void {
+  const printer = getDefaultPrinterId();
+  if (printer) void sendToDefaultPrinter(printer, ref);
+  else openLabelPage(ref);
 }

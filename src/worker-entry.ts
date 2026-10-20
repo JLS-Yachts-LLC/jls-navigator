@@ -1464,6 +1464,12 @@ export default {
       return compassCardAlertsHandler(request)
     }
 
+    // Zebra label printers: the connector on the office network collects jobs here (token-authenticated).
+    if (url.pathname === '/api/print-connector/poll') {
+      const { printConnectorHandler } = await import('./routes/api.print-connector')
+      return printConnectorHandler(request)
+    }
+
     if (url.pathname === '/api/warehouse-requests/notify') {
       const { warehouseRequestsHandler } = await import('./routes/api.warehouse-requests')
       return warehouseRequestsHandler(request)

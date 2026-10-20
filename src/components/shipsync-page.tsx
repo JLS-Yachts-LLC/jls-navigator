@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2, LayoutDashboard, DoorOpen } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2, LayoutDashboard, DoorOpen, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadDeliverablePackages, isLocalPackage, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
@@ -19,6 +19,7 @@ import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
 import { ShipSyncOverview } from "@/components/shipsync/ShipSyncOverview";
 import { ShipSyncGatePassBoard } from "@/components/shipsync/ShipSyncGatePassBoard";
+import { ShipSyncPrinters } from "@/components/shipsync/ShipSyncPrinters";
 import { TableSkeleton } from "@/components/shipsync/shared";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
 
@@ -48,6 +49,7 @@ const TABS = [
   { key: "locations", label: "Locations",     icon: MapPin },
   { key: "drivers",  label: "Drivers",        icon: Users },
   { key: "tracking", label: "Van Tracking",   icon: Navigation },
+  { key: "printers", label: "Printers",       icon: Printer },
   { key: "dashboard", label: "Dashboard",     icon: BarChart3 },
 ] as const;
 
@@ -162,6 +164,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
             {tab === "locations" && <ShipSyncLocations data={data} reload={reload} />}
             {tab === "drivers" && <ShipSyncDrivers data={data} reload={reload} />}
             {tab === "tracking" && <FleetTrackingPage />}
+            {tab === "printers" && <ShipSyncPrinters />}
             {tab === "dashboard" && <ShipSyncDashboard data={data} />}
           </>
         )}
