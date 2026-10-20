@@ -11,16 +11,13 @@
  * sender adds in the review dialog (a quote, a letter) goes as an ordinary
  * attachment alongside it.
  *
- * Every attempt is recorded in yacht_activity_log, including a refusal: while
- * client email is switched off the guard throws and the attempt is logged as
- * 'blocked' with the reason, so the Yacht view shows what was tried as well as
- * what was delivered.
+ * The send itself (secure link, yacht_activity_log + audit_log, stamping the
+ * permit) lives in `send-permit.server.ts`, shared with the Permit Inbox.
  */
 import { requireAdminAccess } from '@/lib/admin/access'
-import { supabaseAdmin } from '@/integrations/supabase/client.server'
-import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
 import { loadPermitForEmail, renderPermitEmail, PERMIT_LABELS } from '@/lib/permits/permit-email.server'
-import { createDocumentShare, documentButtonHtml, portalPointerHtml, DEFAULT_SHARE_TTL_DAYS } from '@/lib/document-share.server'
+import { documentButtonHtml, portalPointerHtml, DEFAULT_SHARE_TTL_DAYS } from '@/lib/document-share.server'
+import { sendPermitToClient, PermitSendError, type PermitAttachment } from '@/lib/permits/send-permit.server'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -29,7 +26,7 @@ const json = (b: unknown, s = 200) =>
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
 
-type Attachment = { filename: string; contentType: string; contentBase64: string; size: number }
+type Attachment = PermitAttachment
 
 /** Validate what the review dialog sent; a string is the reason it was refused. */
 function parseAttachments(raw: unknown): Attachment[] | string {
@@ -67,8 +64,6 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
   } catch { return json({ error: 'Invalid request body' }, 400) }
   if (!permitId) return json({ error: 'permitId is required' }, 400)
 
-  const sb = supabaseAdmin as any
-
   try {
     const { permit, vesselName, template, delivery } = await loadPermitForEmail(permitId)
     const to = String(permit.contact_email ?? '').trim()
@@ -99,87 +94,20 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
     }
     if (!to) return json({ error: 'This permit has no client email address.' }, 400)
 
-    // Secure link rather than an attachment: the document stays in our storage,
-    // the link expires, and every open is recorded against the share. A client
-    // who asked to be pointed at the portal instead gets no token at all.
-    const share = permit.document_url && delivery === 'secure_link'
-      ? await createDocumentShare({
-          storageRef: permit.document_url,
-          title: label,
-          reference,
-          purpose,
-          vesselName,
-          recipientEmail: to,
-          sourceTable: 'permits',
-          sourceId: permitId,
-          createdBy: session.user.id,
-        })
-      : null
-
-    const documentBlock = share
-      ? documentButtonHtml({ url: share.url, title: label, reference, purpose, expiresAt: share.expiresAt })
-      : permit.document_url && delivery === 'portal'
-        ? portalPointerHtml({ title: label, reference })
-        : null
-    const { subject, html } = renderPermitEmail({ permit, vesselName }, template, documentBlock)
-    const logRow = {
-      yacht_id: permit.yacht_id ?? null,
-      permit_id: permitId,
-      kind: permit.permit_type ?? 'permit',
-      channel: 'email',
-      subject,
-      recipients: [to],
-      cc,
-      body_html: html,
-      attachments: [
-        ...(share
-          ? [{ filename: 'permit document', delivery: 'secure_link', token: share.token, expires_at: share.expiresAt }]
-          : permit.document_url ? [{ filename: 'permit document', delivery }] : []),
-        ...extra.map(a => ({ filename: a.filename, delivery: 'attachment', content_type: a.contentType, size: a.size })),
-      ],
-      actor_id: session.user.id,
-      actor_name: session.user.email,
-    }
-
     try {
-      await sendGraphEmailWithAttachments({
-        to: [to], cc, subject, html,
-        attachments: extra.map(({ filename, contentType, contentBase64 }) => ({ filename, contentType, contentBase64 })),
+      const r = await sendPermitToClient({
+        permitId, cc, extra, via: 'permit dialog',
+        actor: {
+          id: session.user.id, email: session.user.email, role: session.user.role,
+          ip: request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for'),
+          userAgent: request.headers.get('user-agent'),
+        },
       })
-    } catch (e: any) {
-      // A refusal is information, not a dead end — record it against the vessel.
-      const msg = String(e?.message ?? e)
-      const blocked = /switched off|currently disabled/i.test(msg)
-      await sb.from('yacht_activity_log').insert([{ ...logRow, status: blocked ? 'blocked' : 'failed', error: msg.slice(0, 500) }])
-      return json({ error: msg, blocked }, blocked ? 409 : 502)
+      return json({ ok: true, sent: true, ...r, to: r.to.join(', ') })
+    } catch (e) {
+      if (e instanceof PermitSendError) return json({ error: e.message, blocked: e.blocked }, e.status)
+      throw e
     }
-
-    await sb.from('yacht_activity_log').insert([{ ...logRow, status: 'sent' }])
-    // Sending the client the permit document means it has been issued, so a
-    // pending permit becomes active. Most permit dialogs had no status control,
-    // so permits sat at "Pending" after the client already had them and staff
-    // re-sent them. Expired/cancelled are never touched.
-    const issued = !!permit.document_url && permit.status === 'pending'
-    await sb.from('permits').update({
-      email_sent_at: new Date().toISOString(),
-      email_sent_by: session.user.id,
-      email_sent_to: to,
-      ...(issued ? { status: 'active' } : {}),
-    }).eq('id', permitId)
-
-    // The sender's own confirmation, if they want one (My notifications).
-    const { notifySentToClient } = await import('@/lib/staff-notifications.server')
-    await notifySentToClient({
-      userId: session.user.id, document: label, reference, vessel: vesselName || null,
-      to: [to], cc, secureLinkExpiresAt: share?.expiresAt ?? null,
-    })
-
-    return json({
-      ok: true, sent: true, to, subject, label, delivery,
-      secureLink: !!share,
-      linkExpiresAt: share?.expiresAt ?? null,
-      attachments: extra.length,
-    })
   } catch (e: any) {
     return json({ error: String(e?.message ?? e).slice(0, 300) }, 500)
   }
