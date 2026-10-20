@@ -21,7 +21,7 @@ async function fakeSb(pages: number) {
   const doc = await PDFDocument.create();
   for (let i = 0; i < pages; i++) doc.addPage([612, 792]);
   const bytes = await doc.save();
-  return { storage: { from: () => ({ download: async () => ({ data: new Blob([bytes]), error: null }) }) } };
+  return { storage: { from: () => ({ download: async () => ({ data: new Blob([bytes as BlobPart]), error: null }) }) } };
 }
 
 test("a form is pre-filled from the vessel record, the recipient and JLS's agent details", () => {
