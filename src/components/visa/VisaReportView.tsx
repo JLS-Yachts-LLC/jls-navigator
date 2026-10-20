@@ -32,6 +32,8 @@ const STATUS_LABEL: Record<string, string> = {
   processing: 'Processing', approved: 'Approved', completed: 'Completed', rejected: 'Rejected', cancelled: 'Cancelled',
 }
 const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+/** Empty dates export as blank cells, not the on-screen dash placeholder. */
+const csvDate = (d: string | null) => d ? fmt(d) : ''
 const name = (r: Row) => `${r.given_name ?? ''} ${r.surname ?? ''}`.trim() || '—'
 const effDate = (r: Row) => r.submitted_at ?? r.visa_issuance_date ?? r.created_at
 
@@ -96,10 +98,12 @@ export function VisaReportView({ applications, vessels, initialVessel, onClose }
     const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     const lines = [CSV_HEADERS.join(','), ...rows.map(r => [
       r.yachts?.vessel_name ?? vesselName(r.yacht_id), r.given_name ?? '', r.surname ?? '', r.nationality ?? '',
-      r.passport_number ?? '', r.visa_number ?? '', fmt(r.visa_issuance_date), fmt(r.visa_expiry),
-      fmt(r.sign_on_date), fmt(r.sign_off_date), STATUS_LABEL[r.status] ?? r.status, notes(r),
+      r.passport_number ?? '', r.visa_number ?? '', csvDate(r.visa_issuance_date), csvDate(r.visa_expiry),
+      csvDate(r.sign_on_date), csvDate(r.sign_off_date), STATUS_LABEL[r.status] ?? r.status, notes(r),
     ].map(x => esc(String(x))).join(','))]
-    return new Blob([lines.join('\r\n')], { type: 'text/csv' })
+    // UTF-8 BOM so Excel decodes accented names correctly (without it Excel assumes
+    // Windows-1252 and ç/é/— turn into "Ã§"/"â€"" mojibake).
+    return new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
   }
 
   // Visa Detail: Excel-style sort and value filter on every column header.
