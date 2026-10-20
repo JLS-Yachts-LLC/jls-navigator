@@ -9,8 +9,10 @@ import { AV } from "./av-course.mjs";
 import { M365, CREWIT } from "./office-courses.mjs";
 // @ts-ignore
 import { GUESTWIFI, PRINTING, PHONES } from "./services-courses.mjs";
+// @ts-ignore
+import { NETWORK, INTERNET, UPS } from "./tech-courses.mjs";
 
-export const COURSES = [AV, M365, CREWIT, GUESTWIFI, PRINTING, PHONES];
+export const COURSES = [AV, M365, CREWIT, GUESTWIFI, PRINTING, PHONES, NETWORK, INTERNET, UPS];
 let failed = false;
 for (const c of COURSES) {
   const ids = Object.fromEntries((c.files as string[]).map((f) => [f, randomUUID()]));
