@@ -261,15 +261,20 @@ export async function vesselFolderOutline(vesselName: string): Promise<{ folder:
   return { folder, webUrl: root?.webUrl ?? null, subfolders }
 }
 
-/** Upload bytes into Yacht/{vessel}[/{subfolder}], resolving the vessel's real folder first. */
+/**
+ * Upload bytes into Yacht/{vessel}[/{subfolder}], resolving the vessel's real
+ * folder first (both created if missing). `fileName` may be built from the
+ * folder's real name. A same-named file already there is kept, never replaced.
+ */
 export async function fileBytesIntoVesselFolder(
-  vesselName: string, subfolder: string | null, fileName: string, contentType: string, bytes: Uint8Array,
+  vesselName: string, subfolder: string | null, fileName: string | ((vesselFolder: string) => string), contentType: string, bytes: Uint8Array,
 ): Promise<{ webUrl: string | null; name: string | null }> {
   const { token, siteId } = await spContext()
-  const folder = await resolveVesselFolder(siteId, token, vesselName) ?? sanitizeSegment(vesselName, 'Unnamed Vessel')
+  const folder = await resolveVesselFolder(siteId, token, vesselName) ?? sanitizeSegment(vesselName.replace(/\([^)]*\)|\[[^\]]*\]/g, ' '), 'Unnamed Vessel')
   const segments = ['Yacht', folder]
   if (subfolder) segments.push(sanitizeSegment(subfolder, 'Permits'))
-  const up = await uploadBytesIntoFolders(siteId, token, segments, fileName, contentType, bytes)
+  const name = typeof fileName === 'function' ? fileName(folder) : fileName
+  const up = await uploadBytesIntoFolders(siteId, token, segments, name, contentType, bytes, { keepBoth: true })
   return { webUrl: up.webUrl, name: up.name }
 }
 

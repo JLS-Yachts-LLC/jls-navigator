@@ -163,6 +163,7 @@ export async function ensureFolder(siteId: string, token: string, parentPath: st
 /** Upload bytes to `drive/root:/{folderPath}/{fileName}`, creating each folder. */
 export async function uploadBytesIntoFolders(
   siteId: string, token: string, folderSegments: string[], fileName: string, contentType: string, bytes: Uint8Array,
+  opts: { keepBoth?: boolean } = {},
 ): Promise<{ webUrl: string | null; id: string | null; name: string | null }> {
   let accumulated = "";
   for (const seg of folderSegments) {
@@ -171,8 +172,10 @@ export async function uploadBytesIntoFolders(
   }
   const safeFile = sanitizeSegment(fileName, "document");
   const fullPath = `${accumulated}/${safeFile}`;
+  // keepBoth: a same-named file already there is kept and this one becomes "name 1.pdf".
+  const conflict = opts.keepBoth ? "?%40microsoft.graph.conflictBehavior=rename" : "";
   const uploadRes = await fetch(
-    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(fullPath)}:/content`,
+    `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${encodeURI(fullPath)}:/content${conflict}`,
     {
       method: "PUT",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType || "application/octet-stream" },
