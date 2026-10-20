@@ -75,6 +75,7 @@ import { Route as AppCrewPlacementRouteImport } from './routes/_app.crew-placeme
 import { Route as AppCrewImmigrationRouteImport } from './routes/_app.crew-immigration'
 import { Route as AppCrewCabRouteImport } from './routes/_app.crew-cab'
 import { Route as AppContactsRouteImport } from './routes/_app.contacts'
+import { Route as AppCompassCardRouteImport } from './routes/_app.compass-card'
 import { Route as AppCompassRouteImport } from './routes/_app.compass'
 import { Route as AppChangelogRouteImport } from './routes/_app.changelog'
 import { Route as AppBunkeringRouteImport } from './routes/_app.bunkering'
@@ -503,6 +504,11 @@ const AppCrewCabRoute = AppCrewCabRouteImport.update({
 const AppContactsRoute = AppContactsRouteImport.update({
   id: '/contacts',
   path: '/contacts',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCompassCardRoute = AppCompassCardRouteImport.update({
+  id: '/compass-card',
+  path: '/compass-card',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCompassRoute = AppCompassRouteImport.update({
@@ -1036,6 +1042,7 @@ export interface FileRoutesByFullPath {
   '/bunkering': typeof AppBunkeringRoute
   '/changelog': typeof AppChangelogRoute
   '/compass': typeof AppCompassRoute
+  '/compass-card': typeof AppCompassCardRoute
   '/contacts': typeof AppContactsRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
@@ -1199,6 +1206,7 @@ export interface FileRoutesByTo {
   '/bunkering': typeof AppBunkeringRoute
   '/changelog': typeof AppChangelogRoute
   '/compass': typeof AppCompassRoute
+  '/compass-card': typeof AppCompassCardRoute
   '/contacts': typeof AppContactsRoute
   '/crew-cab': typeof AppCrewCabRouteWithChildren
   '/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
@@ -1351,6 +1359,7 @@ export interface FileRoutesById {
   '/_app/bunkering': typeof AppBunkeringRoute
   '/_app/changelog': typeof AppChangelogRoute
   '/_app/compass': typeof AppCompassRoute
+  '/_app/compass-card': typeof AppCompassCardRoute
   '/_app/contacts': typeof AppContactsRoute
   '/_app/crew-cab': typeof AppCrewCabRouteWithChildren
   '/_app/crew-immigration': typeof AppCrewImmigrationRouteWithChildren
@@ -1517,6 +1526,7 @@ export interface FileRouteTypes {
     | '/bunkering'
     | '/changelog'
     | '/compass'
+    | '/compass-card'
     | '/contacts'
     | '/crew-cab'
     | '/crew-immigration'
@@ -1680,6 +1690,7 @@ export interface FileRouteTypes {
     | '/bunkering'
     | '/changelog'
     | '/compass'
+    | '/compass-card'
     | '/contacts'
     | '/crew-cab'
     | '/crew-immigration'
@@ -1831,6 +1842,7 @@ export interface FileRouteTypes {
     | '/_app/bunkering'
     | '/_app/changelog'
     | '/_app/compass'
+    | '/_app/compass-card'
     | '/_app/contacts'
     | '/_app/crew-cab'
     | '/_app/crew-immigration'
@@ -2463,6 +2475,13 @@ declare module '@tanstack/react-router' {
       path: '/contacts'
       fullPath: '/contacts'
       preLoaderRoute: typeof AppContactsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/compass-card': {
+      id: '/_app/compass-card'
+      path: '/compass-card'
+      fullPath: '/compass-card'
+      preLoaderRoute: typeof AppCompassCardRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/compass': {
@@ -3484,6 +3503,7 @@ interface AppRouteChildren {
   AppBunkeringRoute: typeof AppBunkeringRoute
   AppChangelogRoute: typeof AppChangelogRoute
   AppCompassRoute: typeof AppCompassRoute
+  AppCompassCardRoute: typeof AppCompassCardRoute
   AppContactsRoute: typeof AppContactsRoute
   AppCrewCabRoute: typeof AppCrewCabRouteWithChildren
   AppCrewImmigrationRoute: typeof AppCrewImmigrationRouteWithChildren
@@ -3563,6 +3583,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppBunkeringRoute: AppBunkeringRoute,
   AppChangelogRoute: AppChangelogRoute,
   AppCompassRoute: AppCompassRoute,
+  AppCompassCardRoute: AppCompassCardRoute,
   AppContactsRoute: AppContactsRoute,
   AppCrewCabRoute: AppCrewCabRouteWithChildren,
   AppCrewImmigrationRoute: AppCrewImmigrationRouteWithChildren,

@@ -1442,6 +1442,16 @@ export default {
       return crewCareAlertsHandler(request)
     }
 
+    // Compass Card → Polaris: signed events from compasscard.online, and the staff helpers.
+    if (url.pathname === '/api/compass-card/event') {
+      const { compassCardEventHandler } = await import('./routes/api.compass-card.event')
+      return compassCardEventHandler(request, ctx)
+    }
+    if (url.pathname === '/api/compass-card/alerts') {
+      const { compassCardAlertsHandler } = await import('./routes/api.compass-card.alerts')
+      return compassCardAlertsHandler(request)
+    }
+
     if (url.pathname === '/api/warehouse-requests/notify') {
       const { warehouseRequestsHandler } = await import('./routes/api.warehouse-requests')
       return warehouseRequestsHandler(request)
@@ -1693,6 +1703,14 @@ export default {
           .then((m) => m.sendCrewCareJobAlerts())
           .then((r) => { if (r.sent || r.failed) console.log('[crew-care-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[crew-care-alerts] error:', e instanceof Error ? e.message : String(e)))
+      );
+      // …Compass Card events: email to the sign-ups / partners teams, when
+      //    switched on (the bell already rang from the database). See lib/compass-card/alerts.server.
+      ctx.waitUntil(
+        import('./lib/compass-card/alerts.server')
+          .then((m) => m.sendCompassCardAlerts())
+          .then((r) => { if (r.sent || r.failed) console.log('[compass-card-alerts]', JSON.stringify(r)) })
+          .catch((e) => console.error('[compass-card-alerts] error:', e instanceof Error ? e.message : String(e)))
       );
       // …Crew Academy refreshers: a certificate that has run out re-enrols the
       //    crew member on the course (due in 30 days). See lib/academy/academy.server.

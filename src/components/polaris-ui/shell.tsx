@@ -110,6 +110,8 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { label: "Logistics", module: "shipsync", icon: "truck", screen: "logistics" },
       { label: "Crew Care", module: "transport", icon: "car", screen: "route-crew-cab", route: "/crew-cab/jobs" },
+      // Compass Card sign-ups, vendor requests and offers, sent from compasscard.online.
+      { label: "Compass Card", module: "compass_card", icon: "credit-card", screen: "route-compass-card", route: "/compass-card" },
       { label: "Agency", module: "agency", icon: "world", screen: "route-agency", route: "/agency" },
       { label: "Provisioning", module: "provisioning", icon: "tools-kitchen-2", screen: "route-provisioning", route: "/provisioning" },
       { label: "Waypoint Chandlery", module: "waypoint", icon: "shopping-cart", screen: "route-waypoint", route: "/waypoint" },
