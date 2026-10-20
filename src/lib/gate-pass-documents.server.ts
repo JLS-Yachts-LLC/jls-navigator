@@ -23,7 +23,7 @@
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { fetchAllRows } from './fetch-all'
-import { getSharePointToken, permitItemMismatch, readPermitListForJob } from './sharepoint-sync.server'
+import { getGraphToken, getSharePointToken, getSpConfig, getSpSyncs, permitItemMismatch, readPermitListForJob, resolveSpSite } from './sharepoint-sync.server'
 import { storageRef } from './signed-url'
 
 const LIST = 'Gate Pass'
@@ -360,4 +360,174 @@ export async function gatePassDocumentsImport(limit = 150) {
   }
   for (let i = 0; i < batch.length; i += 6) await Promise.all(batch.slice(i, i + 6).map(one))
   return { imported, failed, attempted: batch.length, remaining: ready.length - batch.length + failed.length }
+}
+
+// ─── Reviewed attachments ──────────────────────────────────────────────────────
+// After the import, the held-back passes were checked by a person: some are the
+// right pass under a nickname, a photo of the pass, or an item whose COLUMNS the
+// old push overwrote while its attachment stayed the original pass. These attach
+// exactly the file named, from the row's own SharePoint item — nothing is guessed.
+
+const MAGIC: Array<[string, (b: Uint8Array) => boolean]> = [
+  ['pdf', (b) => b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46],
+  ['jpg', (b) => b[0] === 0xff && b[1] === 0xd8],
+  ['png', (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47],
+]
+const kindOf = (bytes: ArrayBuffer) => MAGIC.find(([, test]) => test(new Uint8Array(bytes.slice(0, 4))))?.[0]
+const typeOf = (kind: string) => (kind === 'pdf' ? 'application/pdf' : kind === 'png' ? 'image/png' : 'image/jpeg')
+const safeName = (v: string, n = 80) => v.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-n)
+
+async function gatePassSite() {
+  const cfg = await getSpConfig()
+  const sync = (await getSpSyncs()).find((s) => s.syncTarget === 'permits' && s.listName === LIST)
+  const sitePath = sync?.sitePath ?? cfg.siteUrl
+  const site = `${new URL(cfg.tenantUrl).origin}${sitePath}`.replace(/\/$/, '')
+  const spToken = await getSharePointToken(cfg.tenantId, cfg.clientId, cfg.clientSecret, new URL(site).hostname)
+  return { cfg, site, sitePath, spToken }
+}
+
+/** One attachment of one Gate Pass item, checked to really be a PDF or image. */
+async function downloadItemAttachment(site: string, spToken: string, itemId: string, file: string) {
+  const q = (v: string) => encodeURIComponent(v.replace(/'/g, "''"))
+  const res = await fetch(`${site}/_api/web/lists/getbytitle('${q(LIST)}')/items(${Number(itemId)})/AttachmentFiles('${q(file)}')/$value`,
+    { headers: { Authorization: `Bearer ${spToken}` } })
+  if (!res.ok) throw new Error(`download HTTP ${res.status}`)
+  const bytes = await res.arrayBuffer()
+  const kind = kindOf(bytes)
+  if (!kind) throw new Error('not a PDF or image')
+  return { bytes, contentType: typeOf(kind) }
+}
+
+/** Set a gate pass's document, only while it still has none; a sync write, so not queued for a push. */
+async function setDocument(id: string, path: string): Promise<boolean> {
+  const { data: upd, error } = await (supabaseAdmin as any).from('permits')
+    .update({ document_url: storageRef(BUCKET, path), sharepoint_synced_at: new Date().toISOString() })
+    .eq('id', id).or('document_url.is.null,document_url.eq.').select('id')
+  if (error) throw new Error(`update: ${error.message}`)
+  return !!upd?.length
+}
+
+/** Attach the named attachment of each row's own SharePoint item. Only rows that still have no document. */
+export async function gatePassDocumentsAttach(list: Array<{ id: string; file: string }>) {
+  const { site, spToken } = await gatePassSite()
+  const { data: rows } = await (supabaseAdmin as any).from('permits')
+    .select('id, permit_type, sharepoint_item_id, sharepoint_list_name, document_url').in('id', list.map((l) => l.id))
+  const byId = new Map(((rows ?? []) as any[]).map((r) => [String(r.id), r]))
+  const results: Array<{ id: string; file: string; ok: boolean; reason?: string }> = []
+  for (const { id, file } of list) {
+    const r = byId.get(id)
+    try {
+      if (!r) throw new Error('no such permit')
+      if (r.permit_type !== PERMIT_TYPE || r.sharepoint_list_name !== LIST || !r.sharepoint_item_id) throw new Error('not a linked gate pass')
+      if (String(r.document_url ?? '').trim()) throw new Error('already has a document')
+      const { bytes, contentType } = await downloadItemAttachment(site, spToken, String(r.sharepoint_item_id), file)
+      const path = `permits/sharepoint-gate-pass/${r.sharepoint_item_id}-${safeName(file)}`
+      const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, bytes, { upsert: true, contentType })
+      if (upErr) throw new Error(`upload: ${upErr.message}`)
+      const ok = await setDocument(id, path)
+      results.push({ id, file, ok, reason: ok ? undefined : 'row changed meanwhile' })
+    } catch (e) {
+      results.push({ id, file, ok: false, reason: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { attached: results.filter((o) => o.ok).length, results }
+}
+
+/**
+ * Copy attachments into a private review folder and hand back 15-minute links,
+ * so a person can open the pass and read the name on it. Attaches nothing.
+ */
+export async function gatePassDocumentsReview(list: Array<{ itemId: string; file: string }>) {
+  const { site, spToken } = await gatePassSite()
+  const results: Array<{ itemId: string; file: string; url?: string; reason?: string }> = []
+  for (const { itemId, file } of list.slice(0, 20)) {
+    try {
+      const { bytes, contentType } = await downloadItemAttachment(site, spToken, itemId, file)
+      const path = `_review/gate-pass/${Number(itemId)}-${safeName(file)}`
+      const { error } = await supabaseAdmin.storage.from(BUCKET).upload(path, bytes, { upsert: true, contentType })
+      if (error) throw new Error(`upload: ${error.message}`)
+      const { data, error: sErr } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(path, 900)
+      if (sErr || !data?.signedUrl) throw new Error(`sign: ${sErr?.message ?? 'no link'}`)
+      results.push({ itemId, file, url: data.signedUrl })
+    } catch (e) {
+      results.push({ itemId, file, reason: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { results }
+}
+
+// ─── Documents library search ──────────────────────────────────────────────────
+// Gate passes with nothing on their list item (or no list item at all) may still
+// have been saved in the site's Documents library ("ISSUED GATE PASS" etc.). Each
+// is searched by its pass number and by the holder's name; candidates are only
+// reported — a person picks, then gatePassDocumentsAttachFromLibrary attaches.
+
+export async function gatePassLibrarySearch(offset = 0, limit = 70) {
+  const { cfg, sitePath } = await gatePassSite()
+  const graphToken = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const siteId = await resolveSpSite(graphToken, cfg.tenantUrl, sitePath)
+  const h = { headers: { Authorization: `Bearer ${graphToken}` } }
+  const drive = await (await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}/drive?$select=id,name`, h)).json() as any
+
+  const { data } = await fetchAllRows(() => (supabaseAdmin as any).from('permits')
+    .select('id, holder_name, permit_number, issue_date, sharepoint_item_id, sharepoint_list_name, document_url')
+    .eq('permit_type', PERMIT_TYPE).order('id'))
+  // Real gate passes only: items 1645+ of the Gate Pass list are DMA/cruising permits filed there by mistake.
+  const rows = ((data ?? []) as any[]).filter((r) => !String(r.document_url ?? '').trim()
+    && !(r.sharepoint_list_name === LIST && Number(r.sharepoint_item_id) >= 1645))
+  const page = rows.slice(offset, offset + limit)
+
+  const search = async (q: string) => {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive.id}/root/search(q='${encodeURIComponent(q.replace(/'/g, "''"))}')?$top=25&$select=id,name,size,file,webUrl,lastModifiedDateTime`, h)
+    const body = await res.json().catch(() => ({})) as any
+    return ((body.value ?? []) as any[]).filter((f) => f.file)
+  }
+  const results: any[] = []
+  for (const r of page) {
+    const num = String(r.permit_number ?? '').replace(/\D/g, '')
+    const words = nameWords(r.holder_name)
+    const hits = new Map<string, any>()
+    if (num.length >= 10) for (const f of await search(num)) hits.set(f.id, { ...f, by: 'pass number' })
+    if (words.length) {
+      for (const f of await search(words.slice(0, 2).join(' '))) {
+        // A name hit counts only when the file name carries one of the holder's names.
+        if (!hits.has(f.id) && nameWords(f.name).some((w) => words.includes(w))) hits.set(f.id, { ...f, by: 'name' })
+      }
+    }
+    results.push({
+      id: String(r.id), holder: r.holder_name, permitNumber: r.permit_number, issueDate: r.issue_date, itemId: r.sharepoint_item_id,
+      hits: [...hits.values()].slice(0, 8).map((f) => ({ driveItemId: f.id, name: f.name, by: f.by, size: f.size, modified: f.lastModifiedDateTime, webUrl: f.webUrl })),
+    })
+  }
+  return { driveId: drive.id, total: rows.length, offset, nextOffset: offset + page.length < rows.length ? offset + page.length : null, results }
+}
+
+/** Attach chosen Documents-library files (by drive item) to gate passes that still have no document. */
+export async function gatePassDocumentsAttachFromLibrary(driveId: string, list: Array<{ id: string; driveItemId: string }>) {
+  const { cfg } = await gatePassSite()
+  const graphToken = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const h = { headers: { Authorization: `Bearer ${graphToken}` } }
+  const results: Array<{ id: string; ok: boolean; file?: string; reason?: string }> = []
+  for (const { id, driveItemId } of list) {
+    try {
+      const { data: r } = await (supabaseAdmin as any).from('permits').select('id, permit_type, document_url').eq('id', id).maybeSingle()
+      if (!r || r.permit_type !== PERMIT_TYPE) throw new Error('not a gate pass')
+      if (String(r.document_url ?? '').trim()) throw new Error('already has a document')
+      const meta = await (await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${driveItemId}?$select=name`, h)).json() as any
+      const res = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${driveItemId}/content`, h)
+      if (!res.ok) throw new Error(`download HTTP ${res.status}`)
+      const bytes = await res.arrayBuffer()
+      const kind = kindOf(bytes)
+      if (!kind) throw new Error('not a PDF or image')
+      const name = String(meta?.name ?? `${driveItemId}.${kind}`)
+      const path = `permits/sharepoint-gate-pass/library-${safeName(name, 90)}`
+      const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, bytes, { upsert: true, contentType: typeOf(kind) })
+      if (upErr) throw new Error(`upload: ${upErr.message}`)
+      const ok = await setDocument(id, path)
+      results.push({ id, ok, file: name, reason: ok ? undefined : 'row changed meanwhile' })
+    } catch (e) {
+      results.push({ id, ok: false, reason: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  return { attached: results.filter((o) => o.ok).length, results }
 }
