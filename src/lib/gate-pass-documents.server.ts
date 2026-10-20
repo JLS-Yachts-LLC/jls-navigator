@@ -38,7 +38,7 @@ interface SpFile { name: string; rel: string }
 
 type Outcome =
   | 'ready' | 'attachment_unreadable' | 'no_attachment' | 'sp_item_missing' | 'conflict' | 'copy' | 'mismatch' | 'ambiguous' | 'no_usable_file'
-  | 'receipt_only' | 'name_mismatch'
+  | 'receipt_only' | 'name_mismatch' | 'image_only'
 
 export interface GatePassDocPlanRow {
   id: string
@@ -120,7 +120,9 @@ function pickFile(all: SpFile[], permitNumber: unknown): { pick?: SpFile; outcom
     if (named.length === 1) return { pick: named[0] }
   }
   if (pdfs.length === 1) return { pick: pdfs[0] }
-  if (!pdfs.length && usable.length === 1) return { pick: usable[0] }
+  // Images attached to the list are as often a rejection notice or an approval
+  // email screenshot as the pass itself — left for staff, not imported.
+  if (!pdfs.length) return { outcome: 'image_only', why: usable.map((f) => f.name).join(', ') }
   return { outcome: 'ambiguous', why: `${pdfs.length || usable.length} files, none named for the pass` }
 }
 
@@ -270,6 +272,7 @@ export async function gatePassDocumentsDryRun(opts: { libraries?: boolean; folde
       ambiguous: sample(plan, 'ambiguous', 30),
       no_usable_file: sample(plan, 'no_usable_file'),
       receipt_only: sample(plan, 'receipt_only', 30),
+      image_only: sample(plan, 'image_only', 20),
       name_mismatch: sample(plan, 'name_mismatch', 60),
       sp_item_missing: sample(plan, 'sp_item_missing'),
       no_attachment: sample(plan, 'no_attachment', 10),
