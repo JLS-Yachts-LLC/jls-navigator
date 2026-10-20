@@ -3,7 +3,10 @@ import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
-import { PERMIT_STATUSES, type Permit, type PermitStatus } from "@/lib/permit-types";
+import {
+  PERMIT_STATUSES, GATE_PASS_VALIDITY, gatePassExpiry, gatePassValidityOf,
+  type GatePassValidity, type Permit, type PermitStatus,
+} from "@/lib/permit-types";
 import { Button } from "@/components/ui/button";
 import { SignedAnchor } from "@/components/ui/signed-file";
 import { Input } from "@/components/ui/input";
@@ -59,6 +62,22 @@ export function GatePassDialog({
     setForm((f) => ({ ...f, [k]: v as Permit[K] }));
   }
 
+  // Pass type is read from the dates, and picking one sets the expiry from the
+  // entry date — so the two can't disagree.
+  const pass = gatePassValidityOf(form.issue_date ?? null, form.expiry_date ?? null);
+  function setPass(v: GatePassValidity) {
+    if (!form.issue_date) { toast.error("Set the entry date first"); return; }
+    set("expiry_date", gatePassExpiry(form.issue_date, v));
+  }
+  function setEntryDate(issue: string) {
+    // Keep the chosen pass length when the entry date moves.
+    setForm((f) => ({
+      ...f,
+      issue_date: issue,
+      expiry_date: pass && issue ? gatePassExpiry(issue, pass) : f.expiry_date,
+    }));
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -82,6 +101,9 @@ export function GatePassDialog({
   /** Save the gate pass and return its id; throws on failure. */
   async function doSave(): Promise<string> {
     if (!userId) throw new Error("Not authenticated");
+    if (form.issue_date && form.expiry_date && form.expiry_date < form.issue_date) {
+      throw new Error("The expiry date is before the entry date");
+    }
     const payload = {
       permit_type: "gate_pass" as const,
       yacht_id: form.yacht_id ?? null,
@@ -248,8 +270,24 @@ export function GatePassDialog({
             className="h-8 text-xs"
             type="date"
             value={form.issue_date ?? ""}
-            onChange={(e) => set("issue_date", e.target.value)}
+            onChange={(e) => setEntryDate(e.target.value)}
           />
+        </div>
+
+        {/* Pass type — sets the expiry from the entry date */}
+        <div className="space-y-1.5">
+          <Label>Pass Type</Label>
+          <Select value={pass ?? "__none"} onValueChange={(v) => v !== "__none" && setPass(v as GatePassValidity)}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Daily, weekly or monthly" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none" disabled>{form.expiry_date ? "Custom dates" : "— Select —"}</SelectItem>
+              {GATE_PASS_VALIDITY.map((v) => (
+                <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Expiry / Exit Date */}

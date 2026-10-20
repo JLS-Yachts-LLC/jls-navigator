@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
 import { useAuth } from "@/lib/auth";
@@ -7,11 +7,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Ship, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { Ship, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { syncYachtShipmentsFromMonday } from "@/lib/yacht-shipments/monday.server";
 import { MyFleetPage } from "@/components/my-fleet-page";
+import { useSearchShortcut } from "@/components/shipsync/shared";
 
 type Row = Record<string, any>;
 
@@ -122,6 +123,33 @@ const EXPORT_COLS: Col[] = [
 
 const COLS_BY_DIRECTION: Record<"import" | "export", Col[]> = { import: IMPORT_COLS, export: EXPORT_COLS };
 
+// Same rounded-pill look as the filters on the Logistics (ShipSync) boards.
+const filterSelectCls = "h-9 rounded-full border border-border bg-card/60 px-3.5 text-[13px] text-foreground/90 outline-none transition-colors duration-150 hover:border-primary/40 focus-visible:border-primary";
+
+// Filters on the ETA column (the Loading Date on Export).
+const DATE_FILTERS = [
+  { key: "all", label: "Any ETA" },
+  { key: "next30", label: "ETA in the next 30 days" },
+  { key: "thisMonth", label: "ETA this month" },
+  { key: "last30", label: "ETA in the last 30 days" },
+  { key: "past", label: "ETA passed" },
+  { key: "none", label: "No ETA" },
+] as const;
+type DateFilter = (typeof DATE_FILTERS)[number]["key"];
+
+function matchesDate(eta: string | null, f: DateFilter): boolean {
+  if (f === "all") return true;
+  if (f === "none") return !eta;
+  if (!eta) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(eta.slice(0, 10) + "T00:00");
+  const days = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+  if (f === "next30") return days >= 0 && days <= 30;
+  if (f === "last30") return days < 0 && days >= -30;
+  if (f === "past") return days < 0;
+  return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+}
+
 const fmtDate = (d: string | null) =>
   d ? new Date(d + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
 const fmtAED = (n: number) => `${n.toLocaleString("en-AE", { maximumFractionDigits: 0 })} AED`;
@@ -137,6 +165,12 @@ export function YachtShipmentsBoard() {
   const [newName, setNewName] = useState("");
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [portFilter, setPortFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSearchShortcut(searchRef);
 
   useEffect(() => { void load(); }, []);
 
@@ -162,12 +196,32 @@ export function YachtShipmentsBoard() {
     }
   }
 
-  const rowsInTab = useMemo(() => rows.filter((r) => (r.direction ?? "import") === direction), [rows, direction]);
+  const allInTab = useMemo(() => rows.filter((r) => (r.direction ?? "import") === direction), [rows, direction]);
   // "tracking" has no board/status groups of its own — it renders MyFleetPage
   // instead further down, so this only ever needs to be real for import/export.
   const statusGroups = STATUS_GROUPS_BY_DIRECTION[direction === "tracking" ? "import" : direction];
   const cols: Col[] = COLS_BY_DIRECTION[direction === "tracking" ? "import" : direction];
   const showCharges = cols.some((c) => c.key === "charges");
+  // Import filters on the arrival port, export on the departure port.
+  const portKey = direction === "export" ? "pol" : "arrival_port";
+  const portOptions = useMemo(
+    () => Array.from(new Set(allInTab.map((r) => String(r[portKey] ?? "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [allInTab, portKey],
+  );
+  const filtering = !!(search.trim() || statusFilter || portFilter || dateFilter !== "all");
+  // Never leave hidden rows selected — "Delete selected" would remove rows you can't see.
+  useEffect(() => { setSelected(new Set()); }, [search, statusFilter, portFilter, dateFilter]);
+
+  const rowsInTab = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return allInTab.filter((r) => {
+      if (statusFilter && (matchGroup(statusGroups, r.status)?.key ?? statusGroups[0].key) !== statusFilter) return false;
+      if (portFilter && String(r[portKey] ?? "").trim() !== portFilter) return false;
+      if (!matchesDate(r.eta, dateFilter)) return false;
+      if (s && !cols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(s))) return false;
+      return true;
+    });
+  }, [allInTab, search, statusFilter, portFilter, dateFilter, statusGroups, cols, portKey]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Row[]>();
@@ -244,20 +298,48 @@ export function YachtShipmentsBoard() {
               </Button>
             )}
             <span className="text-xs text-muted-foreground">
-              {rowsInTab.length} shipments{showCharges && ` · ${fmtAED(totalCharges)} total`}
+              {filtering ? `${rowsInTab.length} of ${allInTab.length}` : rowsInTab.length} shipments{showCharges && ` · ${fmtAED(totalCharges)} total`}
             </span>
           </div>
         )}
       </header>
 
       <div className="border-b border-border/40 bg-muted/10 px-6 py-2.5">
-        <Tabs value={direction} onValueChange={(v) => { setDirection(v as "import" | "export" | "tracking"); setSelected(new Set()); }}>
-          <TabsList>
-            <TabsTrigger value="import">Import</TabsTrigger>
-            <TabsTrigger value="export">Export</TabsTrigger>
-            <TabsTrigger value="tracking">Tracking</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Tabs value={direction} onValueChange={(v) => { setDirection(v as "import" | "export" | "tracking"); setSelected(new Set()); setPortFilter(""); }}>
+            <TabsList>
+              <TabsTrigger value="import">Import</TabsTrigger>
+              <TabsTrigger value="export">Export</TabsTrigger>
+              <TabsTrigger value="tracking">Tracking</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {direction !== "tracking" && (
+            <>
+              <div className="relative ml-2">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                <Input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)}
+                  placeholder={`Search ${direction} shipments…`} title="Press / to search" className="h-9 w-64 pl-8 text-sm" />
+              </div>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className={filterSelectCls}>
+                <option value="">All statuses</option>
+                {statusGroups.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </select>
+              <select value={portFilter} onChange={(e) => setPortFilter(e.target.value)} aria-label={direction === "export" ? "Departure port" : "Arrival port"} className={cn(filterSelectCls, "max-w-[12rem]")}>
+                <option value="">{direction === "export" ? "All departure ports" : "All arrival ports"}</option>
+                {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value as DateFilter)} aria-label={direction === "export" ? "Loading date" : "ETA"} className={filterSelectCls}>
+                {DATE_FILTERS.map((o) => <option key={o.key} value={o.key}>{direction === "export" ? o.label.replace("ETA", "Loading date") : o.label}</option>)}
+              </select>
+              {filtering && (
+                <Button size="sm" variant="ghost" className="h-9 text-xs text-muted-foreground"
+                  onClick={() => { setSearch(""); setStatusFilter(""); setPortFilter(""); setDateFilter("all"); }}>
+                  Clear filters
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {direction === "tracking" ? (

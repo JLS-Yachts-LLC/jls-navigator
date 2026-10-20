@@ -4,9 +4,11 @@ import { updateOrThrow } from "@/lib/db-write";
 import { useAuth } from "@/lib/auth";
 import {
   PERMIT_META, PERMIT_STATUSES, DMA_PHASES,
+  GATE_PASS_VALIDITY,
   type Permit, type PermitType, type PermitStatus,
-  daysUntil, expiryVariant,
+  daysUntil, expiryVariant, effectiveExpiry, displayStatus, datesConflict, gatePassValidityOf,
 } from "@/lib/permit-types";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +34,7 @@ import { NavigationLicenseDialog } from "@/components/navigation-license-dialog"
 import { GatePassDialog } from "@/components/gate-pass-dialog";
 import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
 import { PermitEmailReviewDialog } from "@/components/permits/permit-email-review-dialog";
-import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, RotateCw } from "lucide-react";
+import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, RotateCw, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { cn } from "@/lib/utils";
@@ -50,6 +52,8 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Permit | null>(null);
   const [reviewEmailId, setReviewEmailId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "expiring" | "expired" | "pending" | "cancelled">("all");
+  const [passFilter, setPassFilter] = useState<"all" | "daily" | "weekly" | "monthly" | "unknown">("all");
 
   useEffect(() => { void load(); void loadYachts(); }, [permitType]);
 
@@ -101,27 +105,41 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
     setDeleteTarget(null);
   }
 
+  // Which bucket a row falls in — the same rule drives the stat cards and the filter.
+  function bucketOf(r: Permit): "expired" | "expiring" | "active" | "pending" | "cancelled" {
+    const status = displayStatus(r);
+    if (status === "expired" || status === "cancelled") return status;
+    const d = daysUntil(effectiveExpiry(r));
+    if (d !== null && d <= 30) return "expiring";
+    return status;
+  }
+
   const filtered = useMemo(() => {
-    if (!q.trim()) return rows;
+    let out = rows;
+    if (statusFilter !== "all") out = out.filter((r) => bucketOf(r) === statusFilter);
+    if (passFilter !== "all") out = out.filter((r) => (gatePassValidityOf(r.issue_date, r.expiry_date) ?? "unknown") === passFilter);
+    if (!q.trim()) return out;
     const s = q.toLowerCase();
     const yachtMap = new Map(yachts.map((y) => [y.id, y.vessel_name.toLowerCase()]));
-    return rows.filter((r) =>
+    return out.filter((r) =>
       [r.permit_number, r.holder_name, r.issuing_authority, r.notes, r.dma_phase, r.yacht_id ? yachtMap.get(r.yacht_id) ?? "" : ""]
         .some((v) => String(v ?? "").toLowerCase().includes(s)),
     );
-  }, [rows, q, yachts]);
+  }, [rows, q, yachts, statusFilter, passFilter]);
 
   const stats = useMemo(() => {
     const total = rows.length;
     let active = 0, expiring = 0, expired = 0;
     for (const r of rows) {
-      const d = daysUntil(r.expiry_date);
-      if (r.status === "expired" || (d !== null && d < 0)) expired++;
-      else if (d !== null && d <= 30) expiring++;
-      else if (r.status === "active") active++;
+      const b = bucketOf(r);
+      if (b === "expired") expired++;
+      else if (b === "expiring") expiring++;
+      else if (b === "active") active++;
     }
     return { total, active, expiring, expired };
   }, [rows]);
+
+  const isGatePass = permitType === "gate_pass";
 
   const yachtName = (id: string | null) => yachts.find((y) => y.id === id)?.vessel_name ?? "—";
 
@@ -137,6 +155,27 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search permits…" className="h-9 w-60 pl-8 text-sm bg-background/50 border-border/60 placeholder:text-muted-foreground/40" />
           </div>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+            <SelectTrigger className="h-9 w-40 text-sm" aria-label="Status"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="expiring">Expiring ≤ 30d</SelectItem>
+              <SelectItem value="expired">Expired</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+          {isGatePass && (
+            <Select value={passFilter} onValueChange={(v) => setPassFilter(v as typeof passFilter)}>
+              <SelectTrigger className="h-9 w-36 text-sm" aria-label="Pass type"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All pass types</SelectItem>
+                {GATE_PASS_VALIDITY.map((v) => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}
+                <SelectItem value="unknown">Not recorded</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm" onClick={startNew} className="h-9 gap-1.5 px-3.5 font-medium shadow-sm">
@@ -232,9 +271,19 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
         ) : filtered.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
             <FileCheck2 className="h-10 w-10 text-muted-foreground/60" />
-            <h3 className="mt-3 font-display text-lg font-semibold">No {meta.label.toLowerCase()} yet</h3>
-            <p className="text-sm text-muted-foreground">Create the first record to get started.</p>
-            <Button onClick={startNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> New permit</Button>
+            {rows.length > 0 ? (
+              <>
+                <h3 className="mt-3 font-display text-lg font-semibold">Nothing matches</h3>
+                <p className="text-sm text-muted-foreground">No {meta.label.toLowerCase()} match this search and filter.</p>
+                <Button variant="outline" onClick={() => { setQ(""); setStatusFilter("all"); setPassFilter("all"); }} className="mt-4">Clear search and filters</Button>
+              </>
+            ) : (
+              <>
+                <h3 className="mt-3 font-display text-lg font-semibold">No {meta.label.toLowerCase()} yet</h3>
+                <p className="text-sm text-muted-foreground">Create the first record to get started.</p>
+                <Button onClick={startNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> New permit</Button>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
@@ -246,17 +295,24 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                   <th>Holder</th>
                   <th>Authority</th>
                   {meta.showDmaPhase && <th>Phase</th>}
+                  {isGatePass && <th>Pass</th>}
                   <th>Issued</th>
                   <th>Expiry</th>
                   <th>Status</th>
+                  <th>Document</th>
                   <th>Email</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((r) => {
-                  const days = daysUntil(r.expiry_date);
+                  const conflict = datesConflict(r);
+                  // A gate pass with no expiry still counts down from its entry
+                  // date (see effectiveExpiry); the chip only shows a real expiry.
+                  const days = r.expiry_date && !conflict ? daysUntil(r.expiry_date) : null;
                   const variant = expiryVariant(days);
+                  const status = displayStatus(r);
+                  const pass = isGatePass ? gatePassValidityOf(r.issue_date, r.expiry_date) : null;
                   return (
                     <tr key={r.id}>
                       <td className="font-medium tabular-nums text-foreground/90">{r.permit_number ?? <span className="text-muted-foreground/50">—</span>}</td>
@@ -264,20 +320,47 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                       <td className="text-foreground/75">{r.holder_name ?? <span className="text-muted-foreground/50">—</span>}</td>
                       <td className="text-foreground/75">{r.issuing_authority ?? <span className="text-muted-foreground/50">—</span>}</td>
                       {meta.showDmaPhase && <td className="text-foreground/75">{r.dma_phase ?? <span className="text-muted-foreground/50">—</span>}</td>}
+                      {isGatePass && (
+                        <td className="text-foreground/75">
+                          {pass ? GATE_PASS_VALIDITY.find((v) => v.value === pass)?.label : <span className="text-muted-foreground/50" title="No expiry date recorded, so the pass type isn't known">—</span>}
+                        </td>
+                      )}
                       <td className="tabular-nums text-foreground/60">{r.issue_date ?? "—"}</td>
                       <td className="tabular-nums">
                         <div className="flex items-center gap-2">
-                          <span className={days !== null && days < 0 ? "text-destructive" : days !== null && days <= 30 ? "text-warning" : "text-foreground/75"}>
+                          <span className={conflict ? "text-destructive" : days !== null && days < 0 ? "text-destructive" : days !== null && days <= 30 ? "text-warning" : "text-foreground/75"}>
                             {r.expiry_date ?? <span className="text-muted-foreground/50">—</span>}
                           </span>
-                          {days !== null && (
+                          {conflict ? (
+                            <span className="pill pill-danger" title="The expiry date is before the issue date, so one of them is wrong. Check the permit and correct it.">
+                              <AlertTriangle className="mr-1 inline h-3 w-3" />Check dates
+                            </span>
+                          ) : days !== null && (
                             <span className={cn("pill", variant)}>
                               {days < 0 ? `${Math.abs(days)}d ago` : `${days}d`}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td><StatusPill status={r.status} /></td>
+                      <td>
+                        <span
+                          title={status === r.status ? undefined
+                            : conflict ? `Saved as ${r.status}. The dates don't agree, so check them`
+                            : !r.expiry_date ? `Saved as ${r.status}. No expiry date recorded, and a gate pass lasts at most a month from its entry date`
+                            : `Saved as ${r.status}, but the expiry date has passed`}
+                        >
+                          <StatusPill status={PERMIT_STATUSES.find((s) => s.value === status)?.label ?? status} />
+                        </span>
+                      </td>
+                      <td>
+                        {r.document_url ? (
+                          <SignedAnchor stored={r.document_url} className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline" title="Open the permit document">
+                            <Paperclip className="h-3.5 w-3.5" /> Open
+                          </SignedAnchor>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/40" title="No document attached in Polaris">—</span>
+                        )}
+                      </td>
                       {/* Email send / sent indicator */}
                       <td>
                         {r.contact_email ? (

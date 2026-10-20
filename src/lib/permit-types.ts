@@ -84,6 +84,71 @@ export function daysUntil(dateStr: string | null): number | null {
   return Math.round((d - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Gate passes are issued daily, weekly or monthly. The length is not stored on
+// its own: it is the gap between the entry date and the expiry date, so the
+// dialog sets the expiry from the pass type and the list reads the type back.
+export type GatePassValidity = "daily" | "weekly" | "monthly";
+export const GATE_PASS_VALIDITY: { value: GatePassValidity; label: string }[] = [
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
+/** Last valid day of a gate pass of this length that starts on `issue`. */
+export function gatePassExpiry(issue: string, validity: GatePassValidity): string {
+  if (validity === "daily") return issue;
+  if (validity === "weekly") return addDays(issue, 6);
+  // Day before the same date next month (30 May → 29 Jun); a start date the
+  // next month doesn't have ends on that month's last day (31 Jan → 28 Feb).
+  const [y, m, d] = issue.split("-").map(Number);
+  const lastNext = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  if (d > lastNext) return new Date(Date.UTC(y, m, lastNext)).toISOString().slice(0, 10);
+  return addDays(new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10), -1);
+}
+
+/** The pass type implied by its dates, or null when they don't fit one. */
+export function gatePassValidityOf(issue: string | null, expiry: string | null): GatePassValidity | null {
+  if (!issue || !expiry) return null;
+  const span = Math.round((new Date(expiry + "T00:00:00Z").getTime() - new Date(issue + "T00:00:00Z").getTime()) / 86_400_000);
+  if (span === 0) return "daily";
+  if (span >= 1 && span <= 7) return "weekly";
+  if (span >= 27 && span <= 31) return "monthly";
+  return null;
+}
+
+/** True when the expiry date falls before the issue date, so one of them is wrong. */
+export function datesConflict(p: Pick<Permit, "issue_date" | "expiry_date">): boolean {
+  return !!(p.issue_date && p.expiry_date && p.expiry_date < p.issue_date);
+}
+
+/**
+ * The date a permit stops being valid, for working out whether it has expired.
+ * Most gate passes came over from SharePoint with an entry date but no expiry;
+ * none lasts longer than a month, so one with no usable expiry is treated as
+ * ending a month after its entry date.
+ */
+export function effectiveExpiry(p: Pick<Permit, "permit_type" | "issue_date" | "expiry_date">): string | null {
+  if (p.expiry_date && !datesConflict(p)) return p.expiry_date;
+  if (p.permit_type === "gate_pass" && p.issue_date) return gatePassExpiry(p.issue_date, "monthly");
+  return p.expiry_date;
+}
+
+/**
+ * The status to show: a permit whose expiry has passed reads "expired" even if
+ * nobody changed it from active or pending. Cancelled stays cancelled.
+ */
+export function displayStatus(p: Pick<Permit, "permit_type" | "status" | "issue_date" | "expiry_date">): PermitStatus {
+  if (p.status === "cancelled" || p.status === "expired") return p.status;
+  const days = daysUntil(effectiveExpiry(p));
+  return days !== null && days < 0 ? "expired" : p.status;
+}
+
 export function expiryVariant(days: number | null): "pill-success" | "pill-warning" | "pill-danger" | "pill-muted" {
   if (days === null) return "pill-muted";
   if (days < 0) return "pill-danger";
