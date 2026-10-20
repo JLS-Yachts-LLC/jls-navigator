@@ -1384,6 +1384,424 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
       },
     ],
   },
+
+  // ── Crew Placement ────────────────────────────────────────────────────────
+  {
+    id: "crew-placement",
+    title: "Manage placed crew and payroll",
+    summary: "Add managed crew, post vacancies, track certificates, contracts, leave and payroll.",
+    section: "Services",
+    screens: ["crew-placement"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Open Crew Placement",
+        text: "Click **Crew Placement**. The cards count **Managed Crew**, **Onboard**, **Certs Expiring (60d)** and **Active Contracts**. The tabs run from **Roster** through **Payroll** to the recruitment tabs (**Candidates**, **Pipeline**, **Recruitment Dashboard**).",
+        image: img750("crew-placement", "Crew Placement & Payroll", [
+          { x: 197, y: 123, w: 1338, h: 66 },
+          { x: 197, y: 201, w: 1094, h: 33 },
+        ]),
+      },
+      {
+        title: "Add a crew member",
+        text: "On **Roster**, click **Add Crew**. Only **Full name** is required; add rank, contact details, nationality, start date, department, vessel, rotation (e.g. 2:2) and salary, then **Save**. Switch between **Ship View** (grouped by vessel) and **List**.",
+        image: img750("crew-placement", "Add Crew and view toggle", [
+          { x: 518, y: 253, w: 229, h: 28 },
+        ]),
+      },
+      {
+        title: "Keep records up to date",
+        text: "Click a crew member to open their profile and add documents, certifications, contracts, payslips and bank accounts. Or use the tabs:",
+        bullets: [
+          "**Certifications** — **Add Certificate** with its number, issuer and expiry.",
+          "**Contracts** — **New Contract** walks through salary, trial & notice, travel and review, then **Create contract**; **PDF** produces the contract.",
+          "**Leave & Rotation** — **Schedule Leave** for a crew member.",
+          "**Vacancies & Pool** — **Post Vacancy** for an open role.",
+        ],
+      },
+      {
+        title: "Run payroll",
+        text: "On **Payroll**, **New Payslip** adds one payslip; **Run Payroll** creates payslips for every eligible crew member for a month; **Final Pay** works out a leaver's final pay and marks them inactive.",
+        tip: "Run Payroll and Final Pay take effect as soon as you confirm them — check the month and the crew member first.",
+      },
+    ],
+  },
+
+  // ── Finance ───────────────────────────────────────────────────────────────
+  {
+    id: "finance-overview",
+    title: "Check invoices and what's outstanding",
+    summary: "See invoiced, received, outstanding and overdue totals, and find any invoice, pro-forma or quotation.",
+    section: "Services",
+    screens: ["finance"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Finance",
+        text: "Click **Finance**. Choose the company at the top right — **JLS Yachts** or **Waypoint**. The **Dashboard** shows the year's **Invoiced**, **Received**, **Outstanding** and **Overdue** totals, the paid / unpaid breakdown, top clients by outstanding and recent payments.",
+        image: img750("finance-dashboard", "Finance dashboard", [
+          { x: 1390, y: 68, w: 146, h: 30 },
+          { x: 197, y: 223, w: 1338, h: 82 },
+        ]),
+      },
+      {
+        title: "Find an invoice",
+        text: "Open **Invoices**, **Pro-Forma** or **Quotations** and search by number, customer or vessel, or filter by vessel and status. The PDF icon opens the QuickBooks copy.",
+        image: img750("finance-dashboard", "Finance tabs", [{ x: 197, y: 133, w: 672, h: 31 }]),
+      },
+      {
+        title: "Refresh from QuickBooks",
+        text: "Finance mirrors QuickBooks. Use **Sync** in the header to pull in the latest invoices and payments.",
+      },
+    ],
+  },
+  {
+    id: "finance-invoice-tracker",
+    title: "Make sure work gets invoiced (Invoice Tracker)",
+    summary: "Go through each department's billable work and mark it as needing an invoice, invoiced or not billable.",
+    section: "Services",
+    screens: ["finance"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open the Invoice Tracker",
+        text: "In **Finance**, click **Invoice Tracker** and pick a department — **Crew Care**, **ShipSync**, **Yacht IT**, **Procurement**, **Visas** or **Orbit**. The cards count work **Pending Review**, **Needs Invoice**, **Invoiced** and **Not Billable**.",
+        image: img750("finance-tracker", "Invoice Tracker", [
+          { x: 274, y: 180, w: 479, h: 28 },
+          { x: 197, y: 249, w: 1338, h: 57 },
+        ]),
+      },
+      {
+        title: "Filter the list",
+        text: "Search, and filter by yacht, billing status and type. **Export** downloads the list for Excel.",
+        image: img750("finance-tracker", "Search, filters and export", [{ x: 197, y: 318, w: 1338, h: 29 }]),
+      },
+      {
+        title: "Set the billing status",
+        text: "Use the icons under **Actions** on each row: **Mark as Needs Invoice**, **Mark as Invoiced** (enter the invoice ref and amount, then **Save**) or **Mark as Not Billable**. **Reset to Pending Review** undoes it.",
+        image: img750("finance-tracker", "Row action icons", [{ x: 1444, y: 420, w: 62, h: 26 }]),
+        tip: "Needs Invoice, Not Billable and Reset save as soon as you click. On Visas, Generate Invoice creates a real invoice in QuickBooks.",
+      },
+    ],
+  },
+
+  // ── Port Calls ────────────────────────────────────────────────────────────
+  {
+    id: "port-calls",
+    title: "Open a port call (inward clearance)",
+    summary: "Create a port call for an arriving yacht and work through its inward clearance steps.",
+    section: "Services",
+    screens: ["port-calls"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Port Calls",
+        text: "Click **Port Calls**. **Arrivals — Inward Clearance** lists active port calls with the vessel, ETA, status, office and how many clearance steps are done.",
+        image: img750("port-calls", "Port Calls", [{ x: 1428, y: 69, w: 111, h: 36 }]),
+      },
+      {
+        title: "Create the port call",
+        text: "Click **New Port Call**. Choose the **Vessel** and **Destination Country** (UAE by default) — both required — and add the ETA, ETD and the office and agent handling it. Click **Create Port Call**; Polaris also sets up the pre-arrival document checklist.",
+      },
+      {
+        title: "Work the clearance",
+        text: "Open the port call and click **Start Inward Clearance**. Click **Start** and **Complete** on each step as it's done, and set each pre-arrival document to **Valid**, **Invalid** or **Expired** as you check it.",
+        tip: "Step buttons and document statuses save as soon as you click them.",
+      },
+    ],
+  },
+
+  // ── Warehouse Requests ────────────────────────────────────────────────────
+  {
+    id: "warehouse-requests",
+    title: "Ask the Warehouse for an incoming, picking or dispatch",
+    summary: "Raise a request to the Warehouse with the items and documents, and follow it to completion.",
+    section: "Services",
+    screens: ["route-warehouse-requests"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Choose the type of request",
+        text: "Click **Warehouse Requests**, then **New incoming shipment** (something arriving), **New picking request** (items to prepare) or **New dispatch request** (items to deliver to a yacht).",
+        image: img750("warehouse-requests", "Request buttons", [{ x: 413, y: 136, w: 541, h: 30 }]),
+      },
+      {
+        title: "Fill in the request",
+        text: "Add the yacht or project reference, any delivery order reference and the date — ETA for incoming, needed-by for picking, delivery date for dispatch (dispatch also needs the berth and recipient). List each item with a description and quantity; tick **Large crate or oversized cargo** to give dimensions and weight.",
+        image: img750("warehouse-new", "New incoming shipment form", [
+          { x: 489, y: 118, w: 590, h: 100 },
+          { x: 489, y: 232, w: 590, h: 205 },
+        ]),
+      },
+      {
+        title: "Attach and send",
+        text: "Tick **This is urgent** if it is (and say why and by when). **Attach documents** and **Attach photos** — delivery order, packing list, invoice. Click **Send to the Warehouse**; the Warehouse and Logistics are emailed.",
+        image: img750("warehouse-new", "Attachments and send", [
+          { x: 489, y: 617, w: 246, h: 29 },
+          { x: 934, y: 690, w: 145, h: 24 },
+        ]),
+      },
+      {
+        title: "Follow it up",
+        text: "Use **Open**, **Mine** and **All**, the type filter and search to find requests. Open one to see its progress and add comments — comments and status changes are emailed to the Warehouse, Logistics and you.",
+        image: img750("warehouse-requests", "Filters", [{ x: 413, y: 180, w: 528, h: 31 }]),
+      },
+    ],
+  },
+
+  // ── Bunkering ─────────────────────────────────────────────────────────────
+  {
+    id: "bunkering",
+    title: "Log and manage a bunkering enquiry",
+    summary: "Record a yacht's fuel request, get supplier quotes, the vessel's approval and the delivery.",
+    section: "Services",
+    screens: ["route-bunkering"],
+    minutes: 4,
+    steps: [
+      {
+        title: "Click New bunkering enquiry",
+        text: "Click **Bunkering**, then **New bunkering enquiry**. Use **Open / Mine / All**, the status filter and search to find existing enquiries.",
+        image: img750("bunkering-list", "Bunkering enquiries", [
+          { x: 413, y: 138, w: 183, h: 30 },
+          { x: 602, y: 138, w: 482, h: 30 },
+        ]),
+      },
+      {
+        title: "Vessel and fuel details",
+        text: "Under **Vessel details**, start typing the **Yacht name** and choose it from the list so the vessel sees it in their Client Portal. Add the captain or chief engineer and a phone or email. Under **Bunkering requirements** give the port, preferred date, **Fuel type / grade**, quantity and unit — these are required.",
+        image: img750("bunkering-new", "Vessel details and requirements", [
+          { x: 489, y: 115, w: 290, h: 32 },
+          { x: 489, y: 380, w: 590, h: 262 },
+        ]),
+      },
+      {
+        title: "Delivery and confirmation",
+        text: "Add the delivery method, fuel remaining and tank capacity, and whether the yacht sails out of the UAE afterwards (this decides VAT). The **Vessel's confirmation** can be signed now or recorded later — the enquiry can't go to suppliers until it is. Click **Log the enquiry**; the Agency team is emailed.",
+      },
+      {
+        title: "Quotes, approval and delivery",
+        text: "Open the enquiry and move it along: **Enquiries sent to suppliers**, **Add a quotation**, **Sent to the vessel to approve**, **Approve** (record who approved), then **Mark delivered**. The pre-filled declaration and Bunker Delivery Note open as PDFs.",
+        tip: "Status changes and comments on an enquiry are emailed to the team.",
+      },
+    ],
+  },
+
+  // ── Procurement ───────────────────────────────────────────────────────────
+  {
+    id: "procurement",
+    title: "Record a procurement request",
+    summary: "Log purchases for a yacht and follow them from requested to ordered to received.",
+    section: "Services",
+    screens: ["route-procurement"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Procurement",
+        text: "Click **Procurement**. The cards show the number of requests that are **Requested**, **Ordered** and **Received**, and the total value. Filter by yacht, vendor, status, category and year.",
+        image: img750("procurement", "Procurement", [
+          { x: 193, y: 95, w: 1345, h: 73 },
+          { x: 193, y: 177, w: 651, h: 25 },
+        ]),
+      },
+      {
+        title: "Add a request",
+        text: "Click **New Request**. **Yacht**, **Vendor** and **Description** are required; add the category, quantity, currency and unit price, invoice ref and dates, then **Create Request**. You can also click **Add item** at the bottom of the table to type a row in directly.",
+        image: img750("procurement", "New Request and Add item", [
+          { x: 1435, y: 61, w: 104, h: 27 },
+          { x: 197, y: 279, w: 69, h: 20 },
+        ]),
+      },
+      {
+        title: "Update and export",
+        text: "Click any cell to change it — for example set **Status** to Ordered, then Received. **Export CSV** downloads the list.",
+        tip: "Table edits save when you press Enter or click away. Delete removes a request permanently.",
+      },
+    ],
+  },
+
+  // ── Small Boat Registration ───────────────────────────────────────────────
+  {
+    id: "small-boat-registration",
+    title: "Register a small boat",
+    summary: "Track small-boat registrations and renewals with DMA and other authorities.",
+    section: "Services",
+    screens: ["route-small-boat-registration"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Small Boat Registration",
+        text: "Click **Small Boat Registration**. The cards count **Total Boats**, **Registered**, **In Progress** and **Expiring Soon**. Filter by status and authority, or search.",
+        image: img750("smallboat-list", "Small Boat Registration", [
+          { x: 197, y: 119, w: 1338, h: 57 },
+          { x: 197, y: 184, w: 228, h: 25 },
+        ]),
+      },
+      {
+        title: "Click Register Boat",
+        text: "Click **Register Boat**.",
+        image: img750("smallboat-list", "Register Boat button", [{ x: 1430, y: 74, w: 106, h: 28 }]),
+      },
+      {
+        title: "Fill in the tabs",
+        text: "Only **Boat Name** is required. Work through the tabs:",
+        bullets: [
+          "**Basic Info** — status, boat type, authority, registration type, length and client email.",
+          "**Dates** — registration start and end, document submission and inspection.",
+          "**Commercial** — quotation number, PRO, licence, receipts and portal login.",
+          "**Documents** — tick off the 18 required documents and upload them.",
+          "**Other** — SharePoint folder link and notes.",
+        ],
+        image: img750("smallboat-new", "Register New Small Boat", [
+          { x: 491, y: 173, w: 588, h: 29 },
+          { x: 493, y: 224, w: 583, h: 45 },
+        ]),
+      },
+      {
+        title: "Save",
+        text: "Click **Register Boat**. Polaris saves it and creates the boat's SharePoint folder if there isn't one. Use the pencil on a row to update its status as the registration progresses.",
+        image: img750("smallboat-new", "Register Boat button", [{ x: 985, y: 577, w: 94, h: 29 }]),
+      },
+    ],
+  },
+
+  // ── Berth Billing ─────────────────────────────────────────────────────────
+  {
+    id: "berth-billing",
+    title: "Assign a berth and bill for it",
+    summary: "Record a yacht on a marina berth, then raise and track its invoices.",
+    section: "Services",
+    screens: ["berth-billing"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Berth Billing",
+        text: "Click **Berth Billing**. The cards show occupied berths, revenue, outstanding balance and unbilled occupancies. Filter with **All**, **Not Yet Invoiced** and **Overdue (30d+)**; **Export CSV** downloads what's shown.",
+        image: img750("berth-billing", "Marina Berth Billing", [
+          { x: 193, y: 129, w: 1345, h: 78 },
+          { x: 193, y: 227, w: 245, h: 28 },
+        ]),
+      },
+      {
+        title: "Assign a berth",
+        text: "Click **Assign Berth**. Choose the **Marina** and **Berth** (only free berths are offered), the **Vessel**, the **Client** billed, the **Arrival** date, and daily or monthly billing with its rate. Click **Assign Berth**.",
+        image: img750("berth-billing", "Assign Berth button", [{ x: 1430, y: 72, w: 109, h: 37 }]),
+      },
+      {
+        title: "Invoice and departure",
+        text: "Open the occupancy to see its billing lines. **Generate Draft Invoice** raises an invoice, then move it along with **Mark Pending Approval**, **Mark Approved**, **Mark Sent** and **Mark Paid**. When the yacht leaves, click **Record Departure**.",
+        tip: "These buttons take effect immediately, with no confirmation.",
+      },
+    ],
+  },
+
+  // ── Orbit ─────────────────────────────────────────────────────────────────
+  {
+    id: "orbit-service-request",
+    title: "Raise and approve an Orbit service request",
+    summary: "Request a technical, marina or fuel service, collect quotes and take them through approval.",
+    section: "Services",
+    screens: ["orbit"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Orbit",
+        text: "Click **Orbit**. **Service Requests** shows how many requests are awaiting quote, awaiting approval, scheduled, in progress, completed or cancelled — click a card to filter. Other tabs hold **Projects**, **Approvals**, **Defects & Repairs**, **Planned Maintenance** and **Small Boats**.",
+        image: img750("orbit", "Orbit service requests", [{ x: 197, y: 167, w: 1338, h: 66 }]),
+      },
+      {
+        title: "Raise a request",
+        text: "Click a tile under **Raise a request** — Technical Service, Marina Support, Equipment Rental, Waste Collection, Fuel, Gas Refill — or **New Request**. **Emergency Assistance** goes straight to In Progress.",
+        image: img750("orbit", "Raise a request tiles", [
+          { x: 197, y: 268, w: 1338, h: 59 },
+          { x: 1428, y: 104, w: 108, h: 30 },
+        ]),
+      },
+      {
+        title: "Describe it",
+        text: "Give it a **Title** (required), the vessel, category, request type, urgency, location, preferred date and a description. Click **Submit request**. (Fuel opens a bunkering form with location, fuel grade and quantities, sent as an **RFQ**.)",
+        image: img750("orbit-new", "New Service Request form", [
+          { x: 594, y: 216, w: 381, h: 46 },
+          { x: 872, y: 541, w: 103, h: 30 },
+        ]),
+      },
+      {
+        title: "Quotes and approval",
+        text: "Open the request and **Add quote** for each supplier. **Accept** the chosen quote — it goes to the **Approvals** desk (or is approved automatically if under the captain's limit), where each stage is approved or rejected. Then move the request through Scheduled, In Progress and Completed.",
+      },
+    ],
+  },
+  {
+    id: "orbit2-projects",
+    title: "Log an Orbit 2 project or bunkering job",
+    summary: "Record vessel service jobs and bunkering for managed boats and track them to invoicing.",
+    section: "Services",
+    screens: ["orbit2"],
+    minutes: 3,
+    steps: [
+      {
+        title: "Open Orbit 2",
+        text: "Click **Orbit 2**. **Dashboard** shows the project mix, completion rate, per-client status, a calendar and team management. **Export to Excel** downloads the records; **Mobile App** opens the field app.",
+        image: img750("orbit2-dashboard", "Orbit 2 dashboard", [
+          { x: 197, y: 132, w: 304, h: 29 },
+          { x: 1305, y: 189, w: 231, h: 30 },
+        ]),
+      },
+      {
+        title: "Find projects",
+        text: "Click **Project**, then **Project List**, **Bunkering**, **Internal Request** or **EHS NOC Record**. Switch between **All**, **To Be Invoiced** and **Invoiced**, or search.",
+        image: img750("orbit2-projects", "Project tabs and views", [
+          { x: 197, y: 176, w: 386, h: 27 },
+          { x: 193, y: 214, w: 318, h: 29 },
+        ]),
+      },
+      {
+        title: "Add a project",
+        text: "Click **New Project** (or **New Bunkering**). The form opens on the right — **Boat / Client Name** is required; add the service category, requestor, task, contact, schedule, location, supplier, quote and team. Click **Submit** — the Task ID is created then.",
+        image: img750("orbit2-projects", "New Project button", [{ x: 1435, y: 258, w: 104, h: 30 }]),
+      },
+      {
+        title: "Update the status",
+        text: "Change a job's **Status** in the table as it moves from quote to approved to complete and invoiced. Open a job to add remarks, team comments, quotes, invoices and photos.",
+        image: img750("orbit2-projects", "Status column", [{ x: 355, y: 335, w: 146, h: 405 }]),
+        tip: "The Status dropdown in the table saves straight away. Notify client / Send request form emails or WhatsApps the client — use it deliberately.",
+      },
+    ],
+  },
+
+  // ── Client Requests ───────────────────────────────────────────────────────
+  {
+    id: "client-requests",
+    title: "Respond to Client Portal requests",
+    summary: "Triage requests captains raise in the Client Portal, reply to them and keep their status current.",
+    section: "Services",
+    screens: ["client-requests"],
+    minutes: 2,
+    steps: [
+      {
+        title: "Open Client Requests",
+        text: "Click **Client Requests**. Every request a captain raises in the Client Portal appears here with its yacht, category, priority and needed-by date. Filter with **Open**, **All** or a status.",
+        image: img750("client-requests", "Client Requests", [{ x: 197, y: 163, w: 518, h: 25 }]),
+      },
+      {
+        title: "Reply in the thread",
+        text: "Click **Thread** to open the conversation with the captain, type in **Reply to the captain…** and **Send**. The captain gets it straight away, with a notification on their phone.",
+        image: img750("client-requests", "Thread links", [{ x: 1486, y: 233, w: 42, h: 66 }]),
+      },
+      {
+        title: "Update the status",
+        text: "Change the **Status** dropdown — **Acknowledged**, **In progress**, **Completed** or **Cancelled**. The captain is notified of each change.",
+        image: img750("client-requests", "Status dropdowns", [{ x: 1263, y: 233, w: 111, h: 66 }]),
+      },
+      {
+        title: "Live chat and the directory",
+        text: "**Live Chat** holds instant messages from clients. **Edit directory** changes the department contacts captains see (and can click to call) in their portal.",
+        image: img750("client-requests", "Live Chat and Edit directory", [
+          { x: 262, y: 55, w: 76, h: 33 },
+          { x: 1344, y: 106, w: 109, h: 29 },
+        ]),
+      },
+    ],
+  },
 ];
 
 export function guideById(id: string): HowToGuide | undefined {
