@@ -81,7 +81,22 @@ const list = (v: unknown, max = 10): string[] =>
   Array.isArray(v) ? v.map((x) => str(x, 80)).filter((x): x is string => !!x).slice(0, max) : []
 const status = (v: unknown): string | null => {
   const s = str(v, 20)?.toLowerCase() ?? null
-  return s && ['pending', 'approved', 'rejected', 'inactive'].includes(s) ? s : null
+  return s && ['pending', 'approved', 'rejected', 'inactive', 'banned', 'deleted'].includes(s) ? s : null
+}
+
+/**
+ * "user_status": an admin approved, banned or deleted an app user in Compass Card.
+ * Not a new event (Crew Care made the decision themselves, so no bell): it updates
+ * the status on that user's sign-up, so the page stops reading "pending".
+ */
+export async function applyUserStatus(body: any): Promise<'updated' | 'not_found' | string> {
+  const userId = id(body?.data?.user_id)
+  const s = status(body?.data?.status)
+  if (!userId || !s) return 'data.user_id and a valid data.status are required'
+  const { data, error } = await db().from('compass_card_events').update({ status: s })
+    .eq('event_id', `user_signup:${userId}`).select('id')
+  if (error) throw new Error(error.message)
+  return (data ?? []).length ? 'updated' : 'not_found'
 }
 
 export type ShapedEvent = {

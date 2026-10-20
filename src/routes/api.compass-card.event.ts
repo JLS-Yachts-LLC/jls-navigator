@@ -8,7 +8,7 @@
  * or badly signed is refused. Each event is stored once, the bell rings from the
  * database, and email goes out now if it's switched on.
  */
-import { loadPublicKey, verifySignature, shapeEvent, storeEvent } from '@/lib/compass-card/events.server'
+import { applyUserStatus, loadPublicKey, verifySignature, shapeEvent, storeEvent } from '@/lib/compass-card/events.server'
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
 
@@ -28,6 +28,17 @@ export async function compassCardEventHandler(request: Request, ctx?: { waitUnti
 
   let body: unknown
   try { body = JSON.parse(raw) } catch { return json({ ok: false, error: 'Body is not JSON' }, 400) }
+  if ((body as { type?: unknown }).type === 'user_status') {
+    try {
+      const r = await applyUserStatus(body)
+      if (r !== 'updated' && r !== 'not_found') return json({ ok: false, error: r }, 400)
+      return json({ ok: true, result: r })
+    } catch (e) {
+      console.error('[compass-card-event] user status failed:', e instanceof Error ? e.message : String(e))
+      return json({ ok: false, error: 'Could not update the status' }, 500)
+    }
+  }
+
   const shaped = shapeEvent(body)
   if (typeof shaped === 'string') return json({ ok: false, error: shaped }, 400)
 

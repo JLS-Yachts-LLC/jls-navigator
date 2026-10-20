@@ -46,6 +46,8 @@ const STATUS_COLOR: Record<string, string> = {
   approved: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25",
   rejected: "bg-red-500/15 text-red-400 border-red-500/25",
   inactive: "bg-muted/60 text-muted-foreground border-border",
+  banned: "bg-red-500/15 text-red-400 border-red-500/25",
+  deleted: "bg-muted/60 text-muted-foreground border-border",
 };
 const IN_VIEW: Record<View, (t: EventType) => boolean> = {
   all: () => true,
