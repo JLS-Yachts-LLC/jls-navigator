@@ -1088,34 +1088,43 @@ const REQUIRED_GRAPH_PERMS: { perm: string; purpose: string; have?: boolean }[] 
 
 function GraphPermissionsChecklist() {
   return (
-    <div className="mt-4 border-t border-border/60 pt-4">
-      <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        <AlertTriangle className="h-3 w-3 text-amber-400" /> Required Graph application permissions
-      </h3>
-      <div className="space-y-1.5">
+    <div className="space-y-3">
+      <div className="divide-y divide-border/60 rounded-lg border border-border">
         {REQUIRED_GRAPH_PERMS.map(p => (
-          <div key={p.perm} className="flex items-start gap-2 text-[12.5px]">
+          <div key={p.perm} className="flex items-center gap-3 px-3 py-2 text-xs">
             {p.have
-              ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-              : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />}
-            <div>
-              <code className="rounded bg-muted px-1.5 py-px font-mono text-[11px]">{p.perm}</code>
-              <span className="ml-2 text-muted-foreground">{p.purpose}</span>
-            </div>
+              ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              : <XCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />}
+            <code className="w-56 shrink-0 font-mono text-[11px]">{p.perm}</code>
+            <span className="text-muted-foreground">{p.purpose}</span>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground/70">
+      <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+        <AlertTriangle className="mt-px h-3 w-3 shrink-0 text-amber-400" />
         Grant in Azure &rarr; Entra ID &rarr; App registrations &rarr; this app &rarr; API permissions, then &ldquo;Grant admin consent&rdquo;.
       </p>
     </div>
   )
 }
 
+const EMPTY_SETTING = (key: string): IntegrationSetting => ({ integration_name: key, enabled: false, config: {} })
+
+function sameSetting(a: IntegrationSetting, b: IntegrationSetting) {
+  if (a.enabled !== b.enabled) return false
+  const keys = new Set([...Object.keys(a.config), ...Object.keys(b.config)])
+  for (const k of keys) if ((a.config[k] ?? '') !== (b.config[k] ?? '')) return false
+  return true
+}
+
 function IntegrationsPanel() {
+  /** What's in the database — drives the status pills. */
+  const [stored, setStored] = useState<Record<string, IntegrationSetting>>({})
+  /** What's on screen, including unsaved edits. */
   const [settings, setSettings] = useState<Record<string, IntegrationSetting>>({})
   const [saving, setSaving] = useState<string | null>(null)
-  const [saved, setSaved] = useState<string | null>(null)
+  const [justSaved, setJustSaved] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
 
   useEffect(() => {
     supabase
@@ -1125,28 +1134,35 @@ function IntegrationsPanel() {
         if (!data) return
         const map: Record<string, IntegrationSetting> = {}
         for (const row of data as IntegrationSetting[]) {
-          map[row.integration_name] = row
+          map[row.integration_name] = { ...row, config: row.config ?? {} }
         }
+        setStored(map)
         setSettings(map)
       })
   }, [])
 
   function getSetting(key: string): IntegrationSetting {
-    return settings[key] ?? { integration_name: key, enabled: false, config: {} }
+    return settings[key] ?? EMPTY_SETTING(key)
   }
 
   function updateField(key: string, field: string, value: string) {
     setSettings(prev => {
-      const cur = prev[key] ?? { integration_name: key, enabled: false, config: {} }
+      const cur = prev[key] ?? EMPTY_SETTING(key)
       return { ...prev, [key]: { ...cur, config: { ...cur.config, [field]: value } } }
     })
   }
 
   function toggleEnabled(key: string) {
     setSettings(prev => {
-      const cur = prev[key] ?? { integration_name: key, enabled: false, config: {} }
+      const cur = prev[key] ?? EMPTY_SETTING(key)
       return { ...prev, [key]: { ...cur, enabled: !cur.enabled } }
     })
+    // The switch only takes effect on Save, so open the row to show it.
+    setOpen(key)
+  }
+
+  function discard(key: string) {
+    setSettings(prev => ({ ...prev, [key]: stored[key] ?? EMPTY_SETTING(key) }))
   }
 
   async function handleSave(key: string) {
@@ -1160,74 +1176,177 @@ function IntegrationsPanel() {
       )
     setSaving(null)
     if (error) { alert(error.message); return }
-    setSaved(key)
-    setTimeout(() => setSaved(null), 2000)
+    setStored(prev => ({ ...prev, [key]: s }))
+    setJustSaved(key)
+    setTimeout(() => setJustSaved(null), 2000)
   }
 
+  const connected = INTEGRATIONS.filter(i => stored[i.key]?.enabled).length
+
   return (
-    <div className="p-6 max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Integrations</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Connect third-party services</p>
+    <div className="p-6 max-w-3xl space-y-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Integrations</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Connect third-party services. Click a row to configure it.</p>
+        </div>
+        <span className="text-xs text-muted-foreground">{connected} of {INTEGRATIONS.length} connected</span>
       </div>
 
-      {INTEGRATIONS.map(({ name, key, logo, fields }) => {
-        const s = getSetting(key)
-        const isSaving = saving === key
-        const isSaved = saved === key
-        return (
-          <div key={key} className="rounded-xl border border-border overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 bg-muted/30 border-b border-border">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{logo}</span>
-                <div>
-                  <div className="font-semibold text-sm">{name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {s.enabled ? 'Connected' : 'Not connected'}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => toggleEnabled(key)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  s.enabled ? 'bg-primary' : 'bg-muted-foreground/30'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                    s.enabled ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              {fields.map(f => (
-                <div key={f.key} className="grid grid-cols-[140px_1fr] items-center gap-3">
-                  <Label className="text-right text-xs">{f.label}</Label>
-                  <Input
-                    type={f.type ?? 'text'}
-                    placeholder={f.placeholder}
-                    value={s.config[f.key] ?? ''}
-                    onChange={e => updateField(key, f.key, e.target.value)}
-                    className="h-8 text-sm"
-                  />
-                </div>
-              ))}
-              <div className="flex justify-end pt-2">
-                <Button size="sm" onClick={() => handleSave(key)} disabled={isSaving} className="min-w-[80px]">
-                  {isSaving
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : isSaved
-                      ? <><CheckCircle2 className="h-4 w-4 mr-1.5" />Saved</>
-                      : <><Save className="h-4 w-4 mr-1.5" />Save</>}
-                </Button>
-              </div>
-              {key === 'sharepoint' && <GraphPermissionsChecklist />}
-              {key === 'sharepoint' && <SharePointSyncSection />}
-            </div>
+      <div className="rounded-xl border border-border divide-y divide-border overflow-hidden">
+        {INTEGRATIONS.map(def => (
+          <IntegrationRow
+            key={def.key}
+            def={def}
+            setting={getSetting(def.key)}
+            storedEnabled={!!stored[def.key]?.enabled}
+            dirty={!sameSetting(getSetting(def.key), stored[def.key] ?? EMPTY_SETTING(def.key))}
+            isOpen={open === def.key}
+            isSaving={saving === def.key}
+            isSaved={justSaved === def.key}
+            onOpenChange={o => setOpen(o ? def.key : null)}
+            onToggle={() => toggleEnabled(def.key)}
+            onField={(f, v) => updateField(def.key, f, v)}
+            onSave={() => handleSave(def.key)}
+            onDiscard={() => discard(def.key)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+type SharePointSection = 'credentials' | 'permissions' | 'syncs'
+
+function IntegrationRow({
+  def, setting, storedEnabled, dirty, isOpen, isSaving, isSaved,
+  onOpenChange, onToggle, onField, onSave, onDiscard,
+}: {
+  def: IntegrationDef
+  setting: IntegrationSetting
+  storedEnabled: boolean
+  dirty: boolean
+  isOpen: boolean
+  isSaving: boolean
+  isSaved: boolean
+  onOpenChange: (open: boolean) => void
+  onToggle: () => void
+  onField: (field: string, value: string) => void
+  onSave: () => void
+  onDiscard: () => void
+}) {
+  const [section, setSection] = useState<SharePointSection>('credentials')
+  const isSharePoint = def.key === 'sharepoint'
+  const grantedPerms = REQUIRED_GRAPH_PERMS.filter(p => p.have).length
+
+  const credentials = (
+    <div className="space-y-4">
+      <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+        {def.fields.map(f => (
+          <div key={f.key} className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground">{f.label}</Label>
+            <Input
+              type={f.type ?? 'text'}
+              placeholder={f.placeholder}
+              title={f.placeholder}
+              value={setting.config[f.key] ?? ''}
+              onChange={e => onField(f.key, e.target.value)}
+              className="h-8 text-sm"
+              autoComplete="off"
+            />
           </div>
-        )
-      })}
+        ))}
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        {dirty && !isSaving && (
+          <>
+            <span className="mr-auto text-[11px] text-amber-400">Unsaved changes</span>
+            <Button size="sm" variant="ghost" onClick={onDiscard} className="h-8 text-xs">Discard</Button>
+          </>
+        )}
+        <Button size="sm" onClick={onSave} disabled={isSaving || (!dirty && !isSaved)} className="h-8 min-w-[80px] text-xs">
+          {isSaving
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : isSaved
+              ? <><CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />Saved</>
+              : <><Save className="h-3.5 w-3.5 mr-1.5" />Save</>}
+        </Button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpenChange(!isOpen)}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChange(!isOpen) } }}
+        className={`flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30 ${isOpen ? 'bg-muted/30' : ''}`}
+      >
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${def.tint}`}>
+          <def.Icon className="h-[18px] w-[18px]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold">{def.name}</span>
+            <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ${
+              storedEnabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted text-muted-foreground'
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${storedEnabled ? 'bg-emerald-400' : 'bg-muted-foreground/60'}`} />
+              {storedEnabled ? 'Connected' : 'Off'}
+            </span>
+            {dirty && <span className="shrink-0 text-[10px] text-amber-400">• unsaved</span>}
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{def.description}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={setting.enabled}
+          aria-label={`${setting.enabled ? 'Disable' : 'Enable'} ${def.name}`}
+          onClick={e => { e.stopPropagation(); onToggle() }}
+          onKeyDown={e => e.stopPropagation()}
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+            setting.enabled ? 'bg-primary' : 'bg-muted-foreground/30'
+          }`}
+        >
+          <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+            setting.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
+          }`} />
+        </button>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </div>
+
+      {isOpen && (
+        <div className="border-t border-border bg-background/40 px-4 py-4">
+          {isSharePoint ? (
+            <div className="space-y-4">
+              <div className="inline-flex flex-wrap rounded-lg border border-border p-0.5 text-xs">
+                {([
+                  { key: 'credentials', label: 'Credentials' },
+                  { key: 'permissions', label: `Graph permissions · ${grantedPerms}/${REQUIRED_GRAPH_PERMS.length}` },
+                  { key: 'syncs', label: 'List syncs' },
+                ] as const).map(t => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setSection(t.key)}
+                    className={`rounded-md px-3 py-1 font-medium transition ${
+                      section === t.key ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {section === 'credentials' && credentials}
+              {section === 'permissions' && <GraphPermissionsChecklist />}
+              {section === 'syncs' && <SharePointSyncSection />}
+            </div>
+          ) : credentials}
+        </div>
+      )}
     </div>
   )
 }
@@ -1916,22 +2035,30 @@ function SyncCard({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-muted/10 p-3 space-y-2">
-      <div className="flex items-start justify-between gap-2">
+    <div className="px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-sm">{sync.name}</span>
+            <span className={`font-medium text-[13px] ${sync.enabled ? '' : 'text-muted-foreground'}`}>{sync.name}</span>
             <SyncTargetBadge target={sync.syncTarget} />
             {!sync.enabled && (
               <span className="text-[10px] text-muted-foreground italic">disabled</span>
             )}
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
-            <span className="font-mono bg-muted/60 rounded px-1">{sync.listName}</span>
-            {sync.lastSyncedAt && (
-              <span>· Last sync {new Date(sync.lastSyncedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+          <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <span className="font-mono">{sync.listName}</span>
+            <span>·</span>
+            {sync.lastSyncedAt
+              ? <span>Last sync {new Date(sync.lastSyncedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              : <span>Never synced</span>}
+            {result && (
+              <>
+                <span>·</span>
+                <span className={result.errors > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+                  {result.synced} synced{result.errors > 0 && `, ${result.errors} errors`}
+                </span>
+              </>
             )}
-            {!sync.lastSyncedAt && <span>· Never synced</span>}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -1952,12 +2079,7 @@ function SyncCard({
         </div>
       </div>
 
-      {result && (
-        <div className={`rounded px-2 py-1 text-[11px] ${result.errors > 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-          {result.synced} synced · {result.errors} errors
-        </div>
-      )}
-      {err && <div className="rounded px-2 py-1 text-[11px] bg-destructive/10 text-destructive">{err}</div>}
+      {err && <div className="mt-1.5 rounded px-2 py-1 text-[11px] bg-destructive/10 text-destructive">{err}</div>}
     </div>
   )
 }
@@ -2065,7 +2187,7 @@ function SyncEditPanel({
   }
 
   return (
-    <div className="border-t border-border mt-4 pt-4 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center gap-2">
         <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
@@ -2286,17 +2408,35 @@ function SharePointSyncSection() {
   }
 
   return (
-    <div className="border-t border-border mt-4 pt-4 space-y-4">
+    <div className="space-y-4">
       {/* ── Webhook status ── */}
-      <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <p className="text-xs font-semibold">Real-time Webhook (SharePoint → App)</p>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs font-semibold">Real-time webhook</p>
+              {webhook !== null && (
+                <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ${
+                  webhookActive
+                    ? webhookExpiringSoon
+                      ? 'bg-amber-500/15 text-amber-400'
+                      : 'bg-emerald-500/15 text-emerald-400'
+                    : 'bg-muted text-muted-foreground'
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${webhookActive ? webhookExpiringSoon ? 'bg-amber-400' : 'bg-emerald-400' : 'bg-muted-foreground'}`} />
+                  {webhookActive
+                    ? `Active · expires in ${webhook.daysLeft}d`
+                    : webhook?.subscriptionId
+                      ? 'Expired — re-register'
+                      : 'Not registered'}
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              SharePoint notifies the app instantly when list items change. Requires a cron fallback for reliability.
+              SharePoint tells the app the moment list items change. A full sync also runs every 15 min, so nothing is missed.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {webhookActive && (
               <Button size="sm" variant="outline" onClick={handleRenewWebhook} disabled={webhookBusy} className="gap-1.5 h-7 text-xs">
                 {webhookBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
@@ -2309,32 +2449,13 @@ function SharePointSyncSection() {
             </Button>
           </div>
         </div>
-        {webhookErr && <p className="text-[11px] text-destructive">{webhookErr}</p>}
-        {webhook !== null && (
-          <div className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-            webhookActive
-              ? webhookExpiringSoon
-                ? 'bg-amber-500/15 text-amber-400'
-                : 'bg-emerald-500/15 text-emerald-400'
-              : 'bg-muted text-muted-foreground'
-          }`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${webhookActive ? webhookExpiringSoon ? 'bg-amber-400' : 'bg-emerald-400' : 'bg-muted-foreground'}`} />
-            {webhookActive
-              ? `Active · expires in ${webhook.daysLeft}d`
-              : webhook?.subscriptionId
-                ? 'Expired — re-register'
-                : 'Not registered'}
-          </div>
-        )}
-        <p className="text-[11px] text-muted-foreground">
-          Cron fallback runs every 15 min automatically — no action needed.
-        </p>
+        {webhookErr && <p className="mt-1.5 text-[11px] text-destructive">{webhookErr}</p>}
       </div>
 
       {/* ── Syncs list ── */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold">SharePoint Syncs</p>
+          <p className="text-xs font-semibold">List syncs{!loading && ` (${syncs.length})`}</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Each sync maps one SharePoint list to an app table.
           </p>
@@ -2358,7 +2479,7 @@ function SharePointSyncSection() {
           <p className="text-xs text-muted-foreground mt-1">Click <strong>+ Add Sync</strong> to connect a SharePoint list.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="rounded-lg border border-border divide-y divide-border">
           {syncs.map(sync => (
             <SyncCard
               key={sync.id}
