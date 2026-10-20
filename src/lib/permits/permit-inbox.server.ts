@@ -650,7 +650,7 @@ export type ConfirmInput = {
 type SpOutcome = { ok: true; webUrl: string | null } | { ok: false; error: string }
 export type ConfirmResult = { permitId: string; updated: boolean; sharepoint: SpOutcome | null }
 
-async function copyToVesselFolder(documentUrl: string, vesselName: string, subfolder: string | null, fileName: string): Promise<SpOutcome> {
+async function copyToVesselFolder(documentUrl: string, vesselName: string, subfolder: string | null, fileName: (vesselFolder: string) => string): Promise<SpOutcome> {
   try {
     const ref = parseStorageRef(documentUrl)
     if (!ref) throw new Error('PDF not found in Polaris storage')
@@ -710,10 +710,9 @@ export async function confirmInboxPermit(input: ConfirmInput, userId: string): P
     permitId = data.id
   }
 
-  const fileName = permitFileName({
-    permit_type: input.permitType, dma_phase: phased ? input.dmaPhase : null,
-    permit_number: input.permitNumber, expiry_date: input.expiryDate, issue_date: input.issueDate,
-  })
+  const fileName = (folder: string) => permitFileName(folder, {
+    permit_type: input.permitType, dma_phase: phased ? input.dmaPhase : null, issue_date: input.issueDate,
+  }, row.received_at ?? row.created_at)
   const sharepoint = input.fileToSharePoint
     ? await copyToVesselFolder(row.document_url, yacht.vessel_name, input.subfolder, fileName)
     : null
@@ -733,12 +732,22 @@ export async function confirmInboxPermit(input: ConfirmInput, userId: string): P
   return { permitId, updated, sharepoint }
 }
 
-/** Retry only the SharePoint copy of an already-filed item. */
-export async function refileToSharePoint(id: string, subfolder: string | null): Promise<SpOutcome> {
+/** Retry only the SharePoint copy of an already-filed item, into the folder it belongs in. */
+export async function refileToSharePoint(id: string): Promise<SpOutcome> {
   const { data: row } = await db().from('permit_inbox').select('*').eq('id', id).maybeSingle()
   if (!row || row.status !== 'filed' || !row.yacht_id || !row.document_url) return { ok: false, error: 'Only a filed permit can be copied to SharePoint' }
   const { data: yacht } = await db().from('yachts').select('vessel_name').eq('id', row.yacht_id).maybeSingle()
-  const res = await copyToVesselFolder(row.document_url, yacht?.vessel_name ?? 'Unnamed Vessel', subfolder, permitFileName(row))
+  const vesselName = yacht?.vessel_name ?? 'Unnamed Vessel'
+  let subfolder: string | null = null
+  try {
+    const { vesselFolderOutline } = await import('@/lib/yacht-doc-sharepoint.server')
+    const outline = await vesselFolderOutline(vesselName)
+    subfolder = suggestSubfolder(outline.subfolders, row.permit_type, row.dma_phase, new Date(row.received_at ?? row.created_at).getFullYear())
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+  const res = await copyToVesselFolder(row.document_url, vesselName, subfolder,
+    (folder) => permitFileName(folder, row, row.received_at ?? row.created_at))
   const now = new Date().toISOString()
   await db().from('permit_inbox').update(res.ok
     ? { sharepoint_filed_at: now, sharepoint_web_url: res.webUrl, sharepoint_error: null, updated_at: now }

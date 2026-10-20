@@ -334,7 +334,7 @@ function InboxDetail({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
               <div className="space-y-2">
                 <div className="text-xs text-destructive">{row.sharepoint_error ? `Not copied to SharePoint: ${row.sharepoint_error}` : "Not copied to SharePoint."}</div>
                 <Button size="sm" variant="outline" disabled={!!busy}
-                  onClick={() => act("refile", { action: "refile", subfolder: row.permit_type === "exit_entry" ? `${row.dma_phase === "Exit" ? "EXIT" : "ENTRY"} PERMIT ${new Date(row.received_at ?? row.created_at).getFullYear()}` : "Permits" }, "Copied to SharePoint")}>
+                  onClick={() => act("refile", { action: "refile" }, "Copied to SharePoint")}>
                   {busy === "refile" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Copy to SharePoint again
                 </Button>
               </div>

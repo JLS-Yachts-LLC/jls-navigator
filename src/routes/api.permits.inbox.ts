@@ -8,7 +8,7 @@
  *   { action: 'match', id, yachtId, permitType, dmaPhase }
  *                                                       the permit an item would update for this vessel
  *   { action: 'confirm', ...ConfirmInput }              create/update the permit, file the PDF in SharePoint
- *   { action: 'refile', id, subfolder }                 retry the SharePoint copy
+ *   { action: 'refile', id }                            retry the SharePoint copy
  *   { action: 'reject', id, as: 'rejected' | 'not_permit' }
  *   { action: 'reread', id }                            read the PDF again (also "this IS a permit")
  *
@@ -95,7 +95,7 @@ export async function permitInboxHandler(request: Request): Promise<Response> {
       }
 
       case 'refile':
-        return json(await inbox.refileToSharePoint(String(body.id ?? ''), s(body.subfolder)))
+        return json(await inbox.refileToSharePoint(String(body.id ?? '')))
 
       case 'reject': {
         const as = body.as === 'not_permit' ? 'not_permit' : 'rejected'
