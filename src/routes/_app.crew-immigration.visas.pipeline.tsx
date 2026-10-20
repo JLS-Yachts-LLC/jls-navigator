@@ -8,9 +8,11 @@
  */
 
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { useAuth } from '@/lib/auth'
+import { useColumnFilters, type FilterColumn } from '@/components/ui/column-filter'
+import { triggerBlobDownload } from '@/lib/visa/documentExport'
 
 export const Route = createFileRoute('/_app/crew-immigration/visas/pipeline')({
   component: VisaPipelinePage,
@@ -92,6 +94,15 @@ function VisaPipelinePage() {
   }
 
   async function exportFile(format: 'csv' | 'pdf') {
+    if (format === 'csv') {
+      // Exactly what's on screen: column filters and sort included.
+      const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+      const out = [['Crew member', 'Vessel', 'Status', 'Issue date', 'Expiry date', 'Days left'],
+        ...cf.rows.map((r) => [r.crew_members?.full_name ?? '', r.yachts?.vessel_name ?? r.vessel_name ?? '', r.status,
+          r.visa_issuance_date ?? '', r.visa_expiry ?? '', daysLeft(r.visa_expiry)])]
+      triggerBlobDownload(new Blob([out.map((l) => l.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'uae-visa-pipeline.csv')
+      return
+    }
     const res = await fetch(`/api/visa/reports/pipeline?format=${format}&${queryString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -110,14 +121,26 @@ function VisaPipelinePage() {
     draft: 'Draft', pending_docs: 'Pending Docs', cancelled: 'Cancelled', expired: 'Expired',
   }
 
+  // Excel-style sort + value filter on each column title. Dates filter by month.
+  const columns = useMemo<FilterColumn<PipelineRow>[]>(() => [
+    { key: 'crew', label: 'Crew member', value: (r) => r.crew_members?.full_name },
+    { key: 'vessel', label: 'Vessel', value: (r) => r.yachts?.vessel_name ?? r.vessel_name },
+    { key: 'status', label: 'Status', value: (r) => STATUS_LABEL[r.status] ?? r.status },
+    { key: 'expiry', label: 'Expiry', value: (r) => r.visa_expiry?.slice(0, 7), sortValue: (r) => r.visa_expiry },
+    { key: 'left', label: 'Days left', value: (r) => daysLeft(r.visa_expiry), sortValue: (r) => r.visa_expiry },
+  ], []) // eslint-disable-line react-hooks/exhaustive-deps
+  const cf = useColumnFilters(rows, columns)
+
   const select: React.CSSProperties = {
     background: COLORS.void, border: `1px solid var(--border)`, borderRadius: 8,
     padding: '7px 10px', fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost,
   }
+  // Header row stays in view while the page scrolls; solid background so rows don't show through.
   const th: React.CSSProperties = {
     textAlign: 'left', fontFamily: FONTS.display, fontSize: 10, fontWeight: 700,
     letterSpacing: '0.14em', textTransform: 'uppercase', color: COLORS.steel,
-    padding: '8px 12px', borderBottom: `1px solid var(--border)`,
+    padding: '8px 12px', position: 'sticky', top: 0, zIndex: 10, background: COLORS.abyss,
+    boxShadow: 'inset 0 -1px 0 0 var(--border)', whiteSpace: 'nowrap',
   }
   const td: React.CSSProperties = {
     fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost, padding: '10px 12px',
@@ -145,11 +168,14 @@ function VisaPipelinePage() {
         <select value={expiry} onChange={(e) => setExpiry(e.target.value)} style={select}>
           {EXPIRY_BANDS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
         </select>
-        {(status || expiry) && (
-          <button onClick={() => { setStatus(''); setExpiry('') }} style={{ ...select, cursor: 'pointer', color: COLORS.muted }}>
+        {(status || expiry || cf.activeCount > 0) && (
+          <button onClick={() => { setStatus(''); setExpiry(''); cf.clearAll() }} style={{ ...select, cursor: 'pointer', color: COLORS.muted }}>
             Clear filters
           </button>
         )}
+        <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 12, color: COLORS.muted }}>
+          {cf.rows.length !== rows.length ? `${cf.rows.length} of ${rows.length}` : rows.length} record{rows.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
       {error && (
@@ -163,16 +189,21 @@ function VisaPipelinePage() {
       ) : rows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: COLORS.muted, fontSize: 13 }}>No applications match these filters.</div>
       ) : (
-        <div style={{ overflowX: 'auto', background: COLORS.abyss, border: `1px solid var(--border)`, borderRadius: 12 }}>
+        // No overflow wrapper: it would stop the header row sticking.
+        <div style={{ background: COLORS.abyss, border: `1px solid var(--border)`, borderRadius: 12 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={th}>Crew member</th><th style={th}>Vessel</th><th style={th}>Status</th>
-                <th style={th}>Expiry</th><th style={th}>Days left</th>
+                {columns.map((c) => <th key={c.key} style={th}>{cf.header(c.key)}</th>)}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {cf.rows.length === 0 && (
+                <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: COLORS.muted }}>
+                  No applications match the column filters · <button onClick={cf.clearAll} style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.signal, textDecoration: 'underline' }}>Clear column filters</button>
+                </td></tr>
+              )}
+              {cf.rows.map((r) => (
                 <tr key={r.id}>
                   <td style={td}>{r.crew_members?.full_name ?? '—'}</td>
                   <td style={td}>{r.yachts?.vessel_name ?? r.vessel_name ?? '—'}</td>

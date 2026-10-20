@@ -14,10 +14,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  ShoppingCart, Plus, Pencil, Trash2, Loader2, Search, X, Check,
+  ShoppingCart, Plus, Pencil, Trash2, Loader2, Search, X, Check, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -362,6 +363,21 @@ function BoardRow({
         )}
       </BoardCell>
 
+      {/* Remarks — the same notes field as the full form */}
+      <BoardCell editing={is("notes")} onClick={() => onActivate("notes")} className="min-w-[180px]">
+        {is("notes") ? (
+          <input autoFocus defaultValue={item.notes ?? ""} placeholder="Remarks…"
+            onBlur={e => { if ((e.target.value || null) !== (item.notes ?? null)) onSave(item.id, { notes: e.target.value || null }); else onActivate(""); }}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === "Escape") onActivate(""); }}
+            className="h-5 w-full rounded border border-border bg-card text-xs px-1 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        ) : (
+          <span className={cn("block max-w-[220px] truncate", item.notes ? "text-foreground/75" : "text-muted-foreground/40")} title={item.notes ?? undefined}>
+            {item.notes?.replace(/\s+/g, " ") || "—"}
+          </span>
+        )}
+      </BoardCell>
+
       {/* Actions */}
       <td className="w-16 px-2 py-1 last:border-r-0">
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
@@ -386,7 +402,7 @@ function BoardAddRow({ yachts, onAdd }: { yachts: Yacht[]; onAdd: (f: Partial<Pr
   const [form, setForm] = useState({
     request_no: "", yacht_name: "__none", vendor: "", description: "",
     category: "other", quantity: 1, currency: "AED", unit_price: "" as string | number,
-    status: "requested", requested_date: new Date().toISOString().slice(0, 10),
+    status: "requested", requested_date: new Date().toISOString().slice(0, 10), notes: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -406,8 +422,9 @@ function BoardAddRow({ yachts, onAdd }: { yachts: Yacht[]; onAdd: (f: Partial<Pr
       total_amount: price != null ? form.quantity * price : null,
       status: form.status,
       requested_date: form.requested_date,
+      notes: form.notes.trim() || null,
     });
-    setForm({ request_no: "", yacht_name: "__none", vendor: "", description: "", category: "other", quantity: 1, currency: "AED", unit_price: "", status: "requested", requested_date: new Date().toISOString().slice(0, 10) });
+    setForm({ request_no: "", yacht_name: "__none", vendor: "", description: "", category: "other", quantity: 1, currency: "AED", unit_price: "", status: "requested", requested_date: new Date().toISOString().slice(0, 10), notes: "" });
     setActive(false);
     setSaving(false);
   }
@@ -415,7 +432,7 @@ function BoardAddRow({ yachts, onAdd }: { yachts: Yacht[]; onAdd: (f: Partial<Pr
   if (!active) {
     return (
       <tr className="border-b border-border/40">
-        <td colSpan={13} className="px-3 py-1.5">
+        <td colSpan={14} className="px-3 py-1.5">
           <button onClick={() => setActive(true)}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition">
             <Plus className="h-3 w-3" /> Add item
@@ -473,6 +490,8 @@ function BoardAddRow({ yachts, onAdd }: { yachts: Yacht[]; onAdd: (f: Partial<Pr
       </td>
       {/* Date */}
       <td className={cell}><input type="date" value={form.requested_date} onChange={e => setForm(f => ({ ...f, requested_date: e.target.value }))} className={inp} /></td>
+      {/* Remarks */}
+      <td className={cell}><input placeholder="Remarks" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className={inp} /></td>
       {/* Commit/cancel */}
       <td className="px-2 py-1">
         <div className="flex items-center gap-1">
@@ -541,11 +560,45 @@ export function ProcurementPage() {
         i.vendor.toLowerCase().includes(s) ||
         i.description.toLowerCase().includes(s) ||
         (i.request_no ?? "").toLowerCase().includes(s) ||
-        (i.invoice_ref ?? "").toLowerCase().includes(s),
+        (i.invoice_ref ?? "").toLowerCase().includes(s) ||
+        (i.notes ?? "").toLowerCase().includes(s),
       );
     }
     return list;
   }, [items, statusFilter, categoryFilter, yachtFilter, vendorFilter, yearFilter, search]);
+
+  // Excel-style sort + value filter on each column title, on top of the filters above.
+  const columns = useMemo<FilterColumn<ProcurementItem>[]>(() => [
+    { key: "ref", label: "Ref", value: i => i.request_no },
+    { key: "yacht", label: "Yacht", value: i => i.yacht_name },
+    { key: "vendor", label: "Vendor", value: i => i.vendor },
+    { key: "description", label: "Description", value: i => i.description },
+    { key: "category", label: "Category", value: i => CATEGORIES.find(c => c.value === i.category)?.label ?? i.category },
+    { key: "qty", label: "Qty", value: i => i.quantity },
+    { key: "currency", label: "Cur", value: i => i.currency || "AED" },
+    { key: "unit", label: "Unit Price", value: i => fmtNum(i.unit_price), sortValue: i => i.unit_price },
+    { key: "total", label: "Total", value: i => fmtNum(i.total_amount), sortValue: i => i.total_amount },
+    { key: "invoice", label: "Inv Ref", value: i => i.invoice_ref },
+    { key: "status", label: "Status", value: i => STATUSES.find(s => s.value === i.status)?.label ?? i.status },
+    // Dates filter by month, sort on the full date.
+    { key: "requested", label: "Requested", value: i => i.requested_date?.slice(0, 7), sortValue: i => i.requested_date },
+    { key: "notes", label: "Remarks", value: i => i.notes?.replace(/\s+/g, " ").trim().slice(0, 80) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
+
+  function exportCsv() {
+    // Exactly what's on screen: every filter and the column sort.
+    const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = ["Ref", "Yacht", "Vendor", "Description", "Category", "Qty", "Currency", "Unit Price", "Total", "Invoice Ref", "Status", "Requested", "Ordered", "Received", "Requested By", "Remarks"];
+    const lines = cf.rows.map(i => [
+      i.request_no, i.yacht_name, i.vendor, i.description, i.category, i.quantity, i.currency || "AED", i.unit_price, i.total_amount,
+      i.invoice_ref, i.status, i.requested_date, i.ordered_date, i.received_date, i.requested_by, i.notes?.replace(/\s+/g, " ").trim(),
+    ].map(esc).join(","));
+    const url = URL.createObjectURL(new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8;" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `procurement-${new Date().toISOString().slice(0, 10)}.csv` });
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const stats = useMemo(() => ({
     total: items.length,
@@ -650,8 +703,6 @@ export function ProcurementPage() {
     setDeleteTarget(null);
   }
 
-  const HEADERS = ["Ref", "Yacht", "Vendor", "Description", "Category", "Qty", "Cur", "Unit Price", "Total", "Inv Ref", "Status", "Requested", ""];
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -741,30 +792,42 @@ export function ProcurementPage() {
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="rounded-lg border border-border overflow-x-auto bg-card">
+          // No overflow wrapper: the content box above must be the nearest
+          // scroller, or the header row stops sticking.
+          <div className="w-max min-w-full rounded-lg border border-border bg-card">
             {/* Hint bar */}
             <div className="px-3 py-1.5 border-b border-border/60 flex items-center gap-2 bg-muted/20">
               <span className="text-[10px] text-muted-foreground">
-                Click any cell to edit inline · Enter to confirm · Add rows at the bottom
+                Click any cell to edit inline · Enter to confirm · Add rows at the bottom · Click a column title to sort, the funnel to filter
               </span>
-              {filtered.length === 0 && (
-                <span className="ml-auto text-[10px] text-muted-foreground italic">
-                  {hasFilters ? "No items match filters" : "No items yet — add one below ↓"}
+              {(hasFilters || cf.activeCount > 0) && (
+                <button onClick={() => { clearFilters(); cf.clearAll(); }} className="text-[10px] font-medium text-primary hover:underline">
+                  Clear ({cf.rows.length} of {items.length} shown)
+                </button>
+              )}
+              {cf.rows.length === 0 && (
+                <span className="text-[10px] text-muted-foreground italic">
+                  {hasFilters || cf.activeCount > 0 ? "No items match filters" : "No items yet — add one below ↓"}
                 </span>
               )}
+              <button onClick={exportCsv} disabled={cf.rows.length === 0}
+                className="ml-auto inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-40">
+                <Download className="h-3 w-3" /> Export CSV
+              </button>
             </div>
-            <table className="w-full min-w-[1200px]">
-              <thead className="bg-muted/20 border-b border-border/60">
+            <table className="w-full min-w-[1400px]">
+              <thead>
                 <tr>
-                  {HEADERS.map(h => (
-                    <th key={h} className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap border-r border-border/40 last:border-r-0">
-                      {h}
+                  {columns.map(c => (
+                    <th key={c.key} className="sticky top-0 z-10 bg-card px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap border-r border-border/40 shadow-[inset_0_-1px_0_0_var(--border)]">
+                      {cf.header(c.key)}
                     </th>
                   ))}
+                  <th className="sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_0_var(--border)]" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(item => (
+                {cf.rows.map(item => (
                   <BoardRow
                     key={item.id}
                     item={item}

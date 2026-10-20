@@ -15,6 +15,10 @@ import {
 import { KeyRound, Plus, Search, Pencil, Trash2, Loader2, AlertTriangle, Ship } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
+
+// Header cell that stays in view while the list scrolls (solid background, or rows show through).
+const TH = "sticky top-0 z-10 bg-card px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]";
 
 type License = {
   id: string;
@@ -157,11 +161,25 @@ export function LicensingPage() {
     if (!showArchived && r.archived) return false;
     if (vessel !== "all" && vesselLabel(r) !== vessel) return false;
     if (q.trim()) {
-      const hay = [r.license_name, r.license_key, r.configuration_item, r.company_contacts, r.party_responsible, vesselLabel(r)].join(" ").toLowerCase();
+      const hay = [r.license_name, r.license_key, r.configuration_item, r.company_contacts, r.party_responsible, vesselLabel(r), r.notes].join(" ").toLowerCase();
       if (!hay.includes(q.toLowerCase())) return false;
     }
     return true;
   }), [rows, q, vessel, showArchived, yachts]);
+
+  // Excel-style sort + value filter on each column title. Dates filter by month.
+  const columns = useMemo<FilterColumn<License>[]>(() => [
+    { key: "name", label: "License / Software", value: r => r.license_name },
+    { key: "vessel", label: "Vessel", value: r => vesselLabel(r) },
+    { key: "start", label: "Start", value: r => r.start_date?.slice(0, 7), sortValue: r => r.start_date },
+    { key: "expiry", label: "Expiration", value: r => r.expiration_date?.slice(0, 7), sortValue: r => r.expiration_date },
+    { key: "key", label: "License Key", value: r => r.license_key },
+    { key: "config", label: "Config Item", value: r => r.configuration_item },
+    { key: "users", label: "Users", value: r => r.user_license_count },
+    { key: "responsible", label: "Responsible", value: r => r.party_responsible },
+    { key: "notes", label: "Notes", value: r => r.notes?.replace(/\s+/g, " ").trim().slice(0, 80) },
+  ], [yachts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cf = useColumnFilters(filtered, columns);
 
   const expiringSoon = useMemo(() => rows.filter(r => { const d = daysUntil(r.expiration_date); return !r.archived && d !== null && d <= 30; }).length, [rows]);
 
@@ -200,7 +218,8 @@ export function LicensingPage() {
         <label className="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
           <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} /> Show archived
         </label>
-        <span className="ml-auto text-muted-foreground">{filtered.length} of {rows.length}</span>
+        {cf.activeCount > 0 && <button onClick={cf.clearAll} className="ml-auto font-medium text-primary hover:underline">Clear column filters</button>}
+        <span className={cn("text-muted-foreground", cf.activeCount === 0 && "ml-auto")}>{cf.rows.length} of {rows.length}</span>
       </div>
 
       <div className="flex-1 overflow-auto px-6 py-5">
@@ -214,15 +233,23 @@ export function LicensingPage() {
             {rows.length === 0 && <Button onClick={openNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> Add License</Button>}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
-            <table className="w-full min-w-[1000px] text-sm">
-              <thead><tr className="border-b border-border bg-muted/30">
-                {["License / Software", "Vessel", "Start", "Expiration", "License Key", "Config Item", "Users", "Responsible", ""].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">{h}</th>
+          // No overflow wrapper: the content box above must be the nearest scroller,
+          // or the header row stops sticking.
+          <div className="w-max min-w-full rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+            <table className="w-full min-w-[1150px] text-sm">
+              <thead><tr>
+                {columns.map(c => (
+                  <th key={c.key} className={TH}>{cf.header(c.key)}</th>
                 ))}
+                <th className={TH} />
               </tr></thead>
               <tbody>
-                {filtered.map(r => (
+                {cf.rows.length === 0 && (
+                  <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No licenses match the column filters · <button onClick={cf.clearAll} className="text-primary hover:underline">Clear column filters</button>
+                  </td></tr>
+                )}
+                {cf.rows.map(r => (
                   <tr key={r.id} className={cn("border-b border-border/40 hover:bg-accent/20 transition-colors", r.archived && "opacity-50")}>
                     <td className="px-4 py-3 font-medium max-w-xs"><span className="line-clamp-2">{r.license_name}</span></td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
@@ -234,6 +261,7 @@ export function LicensingPage() {
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{r.configuration_item || "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{r.user_license_count ?? "—"}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{r.party_responsible || "—"}</td>
+                    <td className="max-w-[16rem] truncate px-4 py-3 text-[12.5px] text-muted-foreground" title={r.notes ?? undefined}>{r.notes?.replace(/\s+/g, " ").trim() || "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => openEdit(r)}><Pencil className="h-3.5 w-3.5" /></Button>

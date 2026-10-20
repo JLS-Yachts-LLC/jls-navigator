@@ -14,6 +14,7 @@ import { QbExcelImportPage } from "@/components/qb/excel-import-page";
 import { QbExtensionTab } from "@/components/finance/qb-extension-tab";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/fetch-all";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 
 // ─── CSV export utility ───────────────────────────────────────────────────────
 
@@ -31,6 +32,31 @@ function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
   const a = Object.assign(document.createElement("a"), { href: url, download: filename });
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ─── Tracker table helpers ────────────────────────────────────────────────────
+
+// Header cell that stays in view while the page scrolls. Solid background, or
+// the rows show through it. There must be no overflow wrapper between the table
+// and the page's own scroll box, or it stops sticking.
+const TH = "sticky top-0 z-10 bg-card px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]";
+/** Remarks/notes on one line (the cell's title carries the full text). */
+const oneLine = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+/** Dates filter by month ("2026-10"), sort on the full date. */
+const monthOf = (d: string | null | undefined) => d?.slice(0, 7) ?? null;
+const aedText = (n: number | null | undefined) => (n ? `AED ${Number(n).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null);
+
+/** "Showing N of M …" under a tracker: what's on screen after every filter. */
+function TrackerCount({ shown, total, noun, onClear }: { shown: number; total: number; noun: string; onClear?: () => void }) {
+  if (!total) return null;
+  return (
+    <div className="flex items-center gap-2 border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+      Showing {shown} of {total} {noun}
+      {onClear && (
+        <button onClick={onClear} className="font-medium text-primary hover:underline">Clear column filters</button>
+      )}
+    </div>
+  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -72,6 +98,7 @@ type TrackerPackage = {
   description: string | null;
   recipient_name: string | null;
   received_date: string | null;
+  notes?: string | null;
   status: string;
   billing_status: BillingStatus;
   invoice_ref: string | null;
@@ -87,6 +114,7 @@ type TrackerItContract = {
   charge_amount: number | null;
   billing_cycle: string;
   expiry_date: string | null;
+  notes?: string | null;
   status: string;
   billing_status: BillingStatus;
   invoice_ref: string | null;
@@ -104,6 +132,7 @@ type TrackerProcurement = {
   total_amount: number | null;
   status: string;
   requested_date: string | null;
+  notes?: string | null;
   billing_status: BillingStatus;
   invoice_ref: string | null;
   invoice_amount: number | null;
@@ -123,6 +152,7 @@ type TrackerVisa = {
   status: string;
   submitted_at: string | null;
   created_at: string;
+  application_notes?: string | null;
   billing_status: BillingStatus;
   invoice_ref: string | null;
   invoice_amount: number | null;
@@ -348,11 +378,25 @@ function InvoiceTracker() {
     return true;
   }), [trips, filterYacht, filterBilling, filterType, q]);
 
+  // Excel-style sort + value filter on each column title, on top of the filters above.
+  const columns = useMemo<FilterColumn<TrackerTrip>[]>(() => [
+    { key: "date", label: "Date", value: t => monthOf(t.pickup_datetime), sortValue: t => t.pickup_datetime },
+    { key: "type", label: "Type", value: t => TRIP_TYPE_LABEL[t.trip_type] ?? t.trip_type },
+    { key: "yacht", label: "Yacht", value: t => t.yacht?.vessel_name },
+    { key: "driver", label: "Driver", value: t => t.driver?.full_name },
+    { key: "route", label: "Pickup → Dropoff", value: t => [t.pickup_address, t.dropoff_address].filter(Boolean).join(" → ") },
+    { key: "notes", label: "Notes", value: t => oneLine(t.notes).slice(0, 80) },
+    { key: "billing", label: "Billing Status", value: t => BILLING_LABEL[t.billing_status ?? "pending_review"] },
+    { key: "ref", label: "Invoice Ref", value: t => t.invoice_ref },
+    { key: "amount", label: "Amount (AED)", value: t => aedText(t.invoice_amount), sortValue: t => t.invoice_amount },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
+
   // Group trips by type, maintaining canonical order
   const groupedTrips = useMemo(() => {
     const map = new Map<string, TrackerTrip[]>();
     TRIP_TYPE_ORDER.forEach(k => map.set(k, []));
-    filtered.forEach(t => {
+    cf.rows.forEach(t => {
       const key = t.trip_type ?? "other";
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
@@ -364,7 +408,7 @@ function InvoiceTracker() {
         result.push({ type, label: TRIP_TYPE_LABEL[type] ?? type, trips: tripsArr });
     });
     return result;
-  }, [filtered]);
+  }, [cf.rows]);
 
   function toggleGroup(type: string) {
     setCollapsedGroups(prev => {
@@ -429,8 +473,8 @@ function InvoiceTracker() {
             {Object.entries(TRIP_TYPE_LABEL).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
           </SelectContent>
         </Select>
-        {(q || filterYacht !== "all" || filterBilling !== "all" || filterType !== "all") && (
-          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterYacht("all"); setFilterBilling("all"); setFilterType("all"); }}>
+        {(q || filterYacht !== "all" || filterBilling !== "all" || filterType !== "all" || cf.activeCount > 0 || cf.sorted) && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterYacht("all"); setFilterBilling("all"); setFilterType("all"); cf.clearAll(); }}>
             <RotateCcw className="h-3 w-3" /> Clear
           </Button>
         )}
@@ -442,7 +486,8 @@ function InvoiceTracker() {
             <LayoutGrid className="h-3 w-3" /> {grouped ? "Grouped" : "Group by Type"}
           </button>
           <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => {
-            const rows = filtered.map(t => ({
+            // Exactly what's on screen: every filter and the column sort.
+            const rows = cf.rows.map(t => ({
               Date: t.pickup_datetime ? new Date(t.pickup_datetime).toLocaleDateString("en-GB") : "",
               Type: TRIP_TYPE_LABEL[t.trip_type] ?? t.trip_type,
               Yacht: t.yacht?.vessel_name ?? "",
@@ -455,7 +500,7 @@ function InvoiceTracker() {
               "Amount (AED)": t.invoice_amount ?? "",
             }));
             downloadCSV(`trips-tracker-${new Date().toISOString().slice(0,10)}.csv`, rows);
-          }} disabled={filtered.length === 0}>
+          }} disabled={cf.rows.length === 0}>
             <Download className="h-3 w-3" /> Export
           </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={load} disabled={loading}>
@@ -463,23 +508,24 @@ function InvoiceTracker() {
           </Button>
         </div>
       </div>
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* No overflow wrapper: the page's scroll box must be the nearest scroller, or the header row stops sticking. */}
+      <div className="w-max min-w-full rounded-lg border border-border">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
+              <tr>
                 {(grouped
-                  ? ["Date", "Yacht", "Driver", "Pickup → Dropoff", "Notes", "Billing Status", "Invoice Ref", "Amount (AED)", "Actions"]
-                  : ["Date", "Type", "Yacht", "Driver", "Pickup → Dropoff", "Notes", "Billing Status", "Invoice Ref", "Amount (AED)", "Actions"]
-                ).map(col => (
-                  <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
+                  ? ["date", "yacht", "driver", "route", "notes", "billing", "ref", "amount"]
+                  : ["date", "type", "yacht", "driver", "route", "notes", "billing", "ref", "amount"]
+                ).map(k => (
+                  <th key={k} className={TH}>{cf.header(k)}</th>
                 ))}
+                <th className={TH}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
                 <tr><td colSpan={grouped ? 9 : 10} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filtered.length === 0 ? (
+              ) : cf.rows.length === 0 ? (
                 <tr><td colSpan={grouped ? 9 : 10} className="px-3 py-10 text-center text-sm text-muted-foreground">No trips match the current filters.</td></tr>
               ) : grouped ? (
                 // ── Grouped view ──────────────────────────────────────────────
@@ -524,7 +570,7 @@ function InvoiceTracker() {
                               <div className="truncate text-muted-foreground">{[trip.pickup_address, trip.dropoff_address].filter(Boolean).join(" → ") || "—"}</div>
                             </td>
                             <td className="px-3 py-2 text-xs max-w-[150px]">
-                              <div className="truncate text-muted-foreground">{trip.notes ?? "—"}</div>
+                              <div className="truncate text-muted-foreground" title={trip.notes ?? undefined}>{oneLine(trip.notes) || "—"}</div>
                             </td>
                             <td className="px-3 py-2"><BillingBadge status={bs} /></td>
                             <td className="px-3 py-2 text-xs">
@@ -555,7 +601,7 @@ function InvoiceTracker() {
                 })
               ) : (
                 // ── Flat view ─────────────────────────────────────────────────
-                filtered.map(trip => {
+                cf.rows.map(trip => {
                   const isEditing = editingRow === trip.id;
                   const isSaving = saving === trip.id;
                   const bs = (trip.billing_status ?? "pending_review") as BillingStatus;
@@ -569,7 +615,7 @@ function InvoiceTracker() {
                         <div className="truncate text-muted-foreground">{[trip.pickup_address, trip.dropoff_address].filter(Boolean).join(" → ") || "—"}</div>
                       </td>
                       <td className="px-3 py-2 text-xs max-w-[150px]">
-                        <div className="truncate text-muted-foreground">{trip.notes ?? "—"}</div>
+                        <div className="truncate text-muted-foreground" title={trip.notes ?? undefined}>{oneLine(trip.notes) || "—"}</div>
                       </td>
                       <td className="px-3 py-2"><BillingBadge status={bs} /></td>
                       <td className="px-3 py-2 text-xs">
@@ -598,12 +644,7 @@ function InvoiceTracker() {
               )}
             </tbody>
           </table>
-        </div>
-        {filtered.length > 0 && (
-          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {trips.length} trips
-          </div>
-        )}
+        <TrackerCount shown={cf.rows.length} total={trips.length} noun="trips" onClear={cf.activeCount > 0 ? cf.clearAll : undefined} />
       </div>
     </div>
   );
@@ -627,7 +668,7 @@ function PackagesTracker() {
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("packages")
-      .select("id, tracking_number, carrier, description, recipient_name, received_date, status, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .select("id, tracking_number, carrier, description, recipient_name, received_date, notes, status, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
       .order("received_date", { ascending: false })
       .limit(500);
     if (error) toast.error(error.message);
@@ -639,11 +680,26 @@ function PackagesTracker() {
     if (filterBilling !== "all" && i.billing_status !== filterBilling) return false;
     if (q.trim()) {
       const qq = q.toLowerCase();
-      const hay = [i.tracking_number, i.carrier, i.description, i.recipient_name, i.yacht?.vessel_name, i.invoice_ref].filter(Boolean).join(" ").toLowerCase();
+      const hay = [i.tracking_number, i.carrier, i.description, i.recipient_name, i.yacht?.vessel_name, i.invoice_ref, i.notes].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(qq)) return false;
     }
     return true;
   }), [items, filterBilling, q]);
+
+  const columns = useMemo<FilterColumn<TrackerPackage>[]>(() => [
+    { key: "received", label: "Received", value: p => monthOf(p.received_date), sortValue: p => p.received_date },
+    { key: "yacht", label: "Yacht", value: p => p.yacht?.vessel_name },
+    { key: "tracking", label: "Tracking #", value: p => p.tracking_number },
+    { key: "carrier", label: "Carrier", value: p => p.carrier },
+    { key: "description", label: "Description", value: p => p.description },
+    { key: "recipient", label: "Recipient", value: p => p.recipient_name },
+    { key: "status", label: "Status", value: p => p.status?.replace(/_/g, " ") },
+    { key: "billing", label: "Billing", value: p => BILLING_LABEL[p.billing_status ?? "pending_review"] },
+    { key: "ref", label: "Invoice Ref", value: p => p.invoice_ref },
+    { key: "amount", label: "Amount", value: p => aedText(p.invoice_amount), sortValue: p => p.invoice_amount },
+    { key: "notes", label: "Remarks", value: p => oneLine(p.notes).slice(0, 80) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
 
   async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
     setSaving(id);
@@ -688,42 +744,41 @@ function PackagesTracker() {
             <SelectItem value="not_billable">Not Billable</SelectItem>
           </SelectContent>
         </Select>
-        {(q || filterBilling !== "all") && (
-          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterBilling("all"); }}>
+        {(q || filterBilling !== "all" || cf.activeCount > 0 || cf.sorted) && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterBilling("all"); cf.clearAll(); }}>
             <RotateCcw className="h-3 w-3" /> Clear
           </Button>
         )}
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 ml-auto" onClick={() => {
-          const rows = filtered.map(p => ({
+          const rows = cf.rows.map(p => ({
             "Tracking No": p.tracking_number ?? "", Carrier: p.carrier ?? "", Description: p.description ?? "",
             Recipient: p.recipient_name ?? "", Yacht: p.yacht?.vessel_name ?? "",
             "Received Date": p.received_date ?? "", Status: p.status ?? "",
             "Billing Status": p.billing_status ?? "", "Invoice Ref": p.invoice_ref ?? "", "Amount (AED)": p.invoice_amount ?? "",
+            Remarks: oneLine(p.notes),
           }));
           downloadCSV(`packages-tracker-${new Date().toISOString().slice(0,10)}.csv`, rows);
-        }} disabled={filtered.length === 0}>
+        }} disabled={cf.rows.length === 0}>
           <Download className="h-3 w-3" /> Export
         </Button>
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={load} disabled={loading}>
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh
         </Button>
       </div>
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[800px]">
+      <div className="w-max min-w-full rounded-lg border border-border">
+          <table className="w-full text-sm min-w-[900px]">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                {["Received", "Yacht", "Tracking #", "Carrier", "Description", "Recipient", "Status", "Billing", "Invoice Ref", "Amount", "Actions"].map(col => (
-                  <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
-                ))}
+              <tr>
+                {columns.map(c => <th key={c.key} className={TH}>{cf.header(c.key)}</th>)}
+                <th className={TH}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={11} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={11} className="px-3 py-10 text-center text-sm text-muted-foreground">No packages match the current filters.</td></tr>
-              ) : filtered.map(pkg => {
+                <tr><td colSpan={12} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              ) : cf.rows.length === 0 ? (
+                <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-muted-foreground">No packages match the current filters.</td></tr>
+              ) : cf.rows.map(pkg => {
                 const isEditing = editingRow === pkg.id;
                 const isSaving = saving === pkg.id;
                 const bs = (pkg.billing_status ?? "pending_review") as BillingStatus;
@@ -743,6 +798,7 @@ function PackagesTracker() {
                     <td className="px-3 py-2"><BillingBadge status={bs} /></td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (pkg.invoice_ref ?? "—")}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (pkg.invoice_amount ? `AED ${pkg.invoice_amount.toLocaleString()}` : "—")}</td>
+                    <td className="px-3 py-2 text-xs max-w-[200px]"><div className="truncate text-muted-foreground" title={pkg.notes ?? undefined}>{oneLine(pkg.notes) || "—"}</div></td>
                     <td className="px-3 py-2">
                       <BillingActions
                         id={pkg.id} bs={bs} saving={isSaving} isEditing={isEditing}
@@ -762,12 +818,7 @@ function PackagesTracker() {
               })}
             </tbody>
           </table>
-        </div>
-        {filtered.length > 0 && (
-          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {items.length} packages
-          </div>
-        )}
+        <TrackerCount shown={cf.rows.length} total={items.length} noun="packages" onClear={cf.activeCount > 0 ? cf.clearAll : undefined} />
       </div>
     </div>
   );
@@ -792,7 +843,7 @@ function YachtItTracker() {
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("yacht_it_contracts")
-      .select("id, service_name, vendor, category, charge_amount, billing_cycle, expiry_date, status, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .select("id, service_name, vendor, category, charge_amount, billing_cycle, expiry_date, notes, status, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) toast.error(error.message);
@@ -811,11 +862,27 @@ function YachtItTracker() {
     if (filterCategory !== "all" && i.category !== filterCategory) return false;
     if (q.trim()) {
       const qq = q.toLowerCase();
-      const hay = [i.service_name, i.vendor, i.category, i.yacht?.vessel_name, i.invoice_ref].filter(Boolean).join(" ").toLowerCase();
+      const hay = [i.service_name, i.vendor, i.category, i.yacht?.vessel_name, i.invoice_ref, i.notes].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(qq)) return false;
     }
     return true;
   }), [items, filterBilling, filterCategory, q]);
+
+  const columns = useMemo<FilterColumn<TrackerItContract>[]>(() => [
+    { key: "service", label: "Service", value: c => c.service_name },
+    { key: "yacht", label: "Yacht", value: c => c.yacht?.vessel_name },
+    { key: "vendor", label: "Vendor", value: c => c.vendor },
+    { key: "category", label: "Category", value: c => c.category?.replace(/_/g, " ") },
+    { key: "charge", label: "Charge", value: c => aedText(c.charge_amount), sortValue: c => c.charge_amount },
+    { key: "cycle", label: "Cycle", value: c => c.billing_cycle },
+    { key: "expiry", label: "Expiry", value: c => monthOf(c.expiry_date), sortValue: c => c.expiry_date },
+    { key: "status", label: "Status", value: c => c.status },
+    { key: "billing", label: "Billing", value: c => BILLING_LABEL[c.billing_status ?? "pending_review"] },
+    { key: "ref", label: "Invoice Ref", value: c => c.invoice_ref },
+    { key: "amount", label: "Amount", value: c => aedText(c.invoice_amount), sortValue: c => c.invoice_amount },
+    { key: "notes", label: "Remarks", value: c => oneLine(c.notes).slice(0, 80) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
 
   async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
     setSaving(id);
@@ -867,43 +934,42 @@ function YachtItTracker() {
             <SelectItem value="not_billable">Not Billable</SelectItem>
           </SelectContent>
         </Select>
-        {(q || filterBilling !== "all" || filterCategory !== "all") && (
-          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterBilling("all"); setFilterCategory("all"); }}>
+        {(q || filterBilling !== "all" || filterCategory !== "all" || cf.activeCount > 0 || cf.sorted) && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterBilling("all"); setFilterCategory("all"); cf.clearAll(); }}>
             <RotateCcw className="h-3 w-3" /> Clear
           </Button>
         )}
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 ml-auto" onClick={() => {
-          const rows = filtered.map(c => ({
+          const rows = cf.rows.map(c => ({
             Service: c.service_name, Vendor: c.vendor ?? "", Category: c.category,
             Yacht: c.yacht?.vessel_name ?? "", "Charge (AED)": c.charge_amount ?? "",
             "Billing Cycle": c.billing_cycle, "Expiry Date": c.expiry_date ?? "",
             Status: c.status, "Billing Status": c.billing_status ?? "",
             "Invoice Ref": c.invoice_ref ?? "", "Amount (AED)": c.invoice_amount ?? "",
+            Remarks: oneLine(c.notes),
           }));
           downloadCSV(`it-tracker-${new Date().toISOString().slice(0,10)}.csv`, rows);
-        }} disabled={filtered.length === 0}>
+        }} disabled={cf.rows.length === 0}>
           <Download className="h-3 w-3" /> Export
         </Button>
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={load} disabled={loading}>
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh
         </Button>
       </div>
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[900px]">
+      <div className="w-max min-w-full rounded-lg border border-border">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                {["Service", "Yacht", "Vendor", "Category", "Charge", "Cycle", "Expiry", "Status", "Billing", "Invoice Ref", "Amount", "Actions"].map(col => (
-                  <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
-                ))}
+              <tr>
+                {columns.map(c => <th key={c.key} className={TH}>{cf.header(c.key)}</th>)}
+                <th className={TH}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-muted-foreground">No IT contracts match the current filters.</td></tr>
-              ) : filtered.map(c => {
+                <tr><td colSpan={13} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              ) : cf.rows.length === 0 ? (
+                <tr><td colSpan={13} className="px-3 py-10 text-center text-sm text-muted-foreground">No IT contracts match the current filters.</td></tr>
+              ) : cf.rows.map(c => {
                 const isEditing = editingRow === c.id;
                 const isSaving = saving === c.id;
                 const bs = (c.billing_status ?? "pending_review") as BillingStatus;
@@ -926,6 +992,7 @@ function YachtItTracker() {
                     <td className="px-3 py-2"><BillingBadge status={bs} /></td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (c.invoice_ref ?? "—")}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (c.invoice_amount ? `AED ${c.invoice_amount.toLocaleString()}` : "—")}</td>
+                    <td className="px-3 py-2 text-xs max-w-[200px]"><div className="truncate text-muted-foreground" title={c.notes ?? undefined}>{oneLine(c.notes) || "—"}</div></td>
                     <td className="px-3 py-2">
                       <BillingActions
                         id={c.id} bs={bs} saving={isSaving} isEditing={isEditing}
@@ -945,12 +1012,7 @@ function YachtItTracker() {
               })}
             </tbody>
           </table>
-        </div>
-        {filtered.length > 0 && (
-          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {items.length} contracts
-          </div>
-        )}
+        <TrackerCount shown={cf.rows.length} total={items.length} noun="contracts" onClear={cf.activeCount > 0 ? cf.clearAll : undefined} />
       </div>
     </div>
   );
@@ -975,7 +1037,7 @@ function ProcurementTracker() {
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("procurement_items")
-      .select("id, item_name, vendor, category, quantity, unit_price, total_amount, status, requested_date, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .select("id, item_name, vendor, category, quantity, unit_price, total_amount, status, requested_date, notes, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
       .order("requested_date", { ascending: false })
       .limit(500);
     if (error) toast.error(error.message);
@@ -988,11 +1050,27 @@ function ProcurementTracker() {
     if (filterStatus !== "all" && i.status !== filterStatus) return false;
     if (q.trim()) {
       const qq = q.toLowerCase();
-      const hay = [i.item_name, i.vendor, i.category, i.yacht?.vessel_name].filter(Boolean).join(" ").toLowerCase();
+      const hay = [i.item_name, i.vendor, i.category, i.yacht?.vessel_name, i.notes].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(qq)) return false;
     }
     return true;
   }), [items, filterBilling, filterStatus, q]);
+
+  const columns = useMemo<FilterColumn<TrackerProcurement>[]>(() => [
+    { key: "requested", label: "Requested", value: p => monthOf(p.requested_date), sortValue: p => p.requested_date },
+    { key: "item", label: "Item", value: p => p.item_name },
+    { key: "yacht", label: "Yacht", value: p => p.yacht?.vessel_name },
+    { key: "vendor", label: "Vendor", value: p => p.vendor },
+    { key: "qty", label: "Qty", value: p => p.quantity },
+    { key: "unit", label: "Unit Price", value: p => aedText(p.unit_price), sortValue: p => p.unit_price },
+    { key: "total", label: "Total", value: p => aedText(p.total_amount), sortValue: p => p.total_amount },
+    { key: "status", label: "Status", value: p => p.status },
+    { key: "billing", label: "Billing", value: p => BILLING_LABEL[p.billing_status ?? "pending_review"] },
+    { key: "ref", label: "Invoice Ref", value: p => p.invoice_ref },
+    { key: "amount", label: "Inv. Amount", value: p => aedText(p.invoice_amount), sortValue: p => p.invoice_amount },
+    { key: "notes", label: "Remarks", value: p => oneLine(p.notes).slice(0, 80) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
 
   async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
     setSaving(id);
@@ -1056,44 +1134,42 @@ function ProcurementTracker() {
             <SelectItem value="not_billable">Not Billable</SelectItem>
           </SelectContent>
         </Select>
-        {(q || filterBilling !== "all" || filterStatus !== "all") && (
-          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterBilling("all"); setFilterStatus("all"); }}>
+        {(q || filterBilling !== "all" || filterStatus !== "all" || cf.activeCount > 0 || cf.sorted) && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterBilling("all"); setFilterStatus("all"); cf.clearAll(); }}>
             <RotateCcw className="h-3 w-3" /> Clear
           </Button>
         )}
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 ml-auto" onClick={() => {
-          const rows = filtered.map(p => ({
+          const rows = cf.rows.map(p => ({
             Item: p.item_name, Vendor: p.vendor ?? "", Category: p.category,
             Quantity: p.quantity, "Unit Price (AED)": p.unit_price ?? "",
             "Total (AED)": p.total_amount ?? "", Yacht: p.yacht?.vessel_name ?? "",
             "Requested Date": p.requested_date ?? "", Status: p.status,
             "Billing Status": p.billing_status ?? "", "Invoice Ref": p.invoice_ref ?? "",
-            "Amount (AED)": p.invoice_amount ?? "",
+            "Amount (AED)": p.invoice_amount ?? "", Remarks: oneLine(p.notes),
           }));
           downloadCSV(`procurement-tracker-${new Date().toISOString().slice(0,10)}.csv`, rows);
-        }} disabled={filtered.length === 0}>
+        }} disabled={cf.rows.length === 0}>
           <Download className="h-3 w-3" /> Export
         </Button>
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={load} disabled={loading}>
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Refresh
         </Button>
       </div>
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[900px]">
+      <div className="w-max min-w-full rounded-lg border border-border">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                {["Requested", "Item", "Yacht", "Vendor", "Qty", "Unit Price", "Total", "Status", "Billing", "Invoice Ref", "Inv. Amount", "Actions"].map(col => (
-                  <th key={col} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{col}</th>
-                ))}
+              <tr>
+                {columns.map(c => <th key={c.key} className={TH}>{cf.header(c.key)}</th>)}
+                <th className={TH}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-muted-foreground">No procurement items match the current filters.</td></tr>
-              ) : filtered.map(item => {
+                <tr><td colSpan={13} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              ) : cf.rows.length === 0 ? (
+                <tr><td colSpan={13} className="px-3 py-10 text-center text-sm text-muted-foreground">No procurement items match the current filters.</td></tr>
+              ) : cf.rows.map(item => {
                 const isEditing = editingRow === item.id;
                 const isSaving = saving === item.id;
                 const bs = (item.billing_status ?? "pending_review") as BillingStatus;
@@ -1114,6 +1190,7 @@ function ProcurementTracker() {
                     <td className="px-3 py-2"><BillingBadge status={bs} /></td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (item.invoice_ref ?? "—")}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (item.invoice_amount ? `AED ${item.invoice_amount.toLocaleString()}` : "—")}</td>
+                    <td className="px-3 py-2 text-xs max-w-[200px]"><div className="truncate text-muted-foreground" title={item.notes ?? undefined}>{oneLine(item.notes) || "—"}</div></td>
                     <td className="px-3 py-2">
                       <BillingActions
                         id={item.id} bs={bs} saving={isSaving} isEditing={isEditing}
@@ -1133,12 +1210,7 @@ function ProcurementTracker() {
               })}
             </tbody>
           </table>
-        </div>
-        {filtered.length > 0 && (
-          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {items.length} items
-          </div>
-        )}
+        <TrackerCount shown={cf.rows.length} total={items.length} noun="items" onClear={cf.activeCount > 0 ? cf.clearAll : undefined} />
       </div>
     </div>
   );
@@ -1404,8 +1476,6 @@ function VisaTracker() {
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editRef, setEditRef] = useState("");
   const [editAmount, setEditAmount] = useState("");
-  const [sortKey, setSortKey] = useState<string>("created_at");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [qboPay, setQboPay] = useState<Record<string, { status: string; balance: number }>>({});
 
   useEffect(() => { void load(); }, []);
@@ -1416,7 +1486,7 @@ function VisaTracker() {
     // a plain .limit(2000) still comes back with only 1000.
     const { data, error } = await fetchAllRows(() => (supabase as any)
       .from("visa_applications")
-      .select("id, yacht_id, given_name, surname, nationality, visa_type, visa_number, visa_issuance_date, country_code, status, submitted_at, created_at, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
+      .select("id, yacht_id, given_name, surname, nationality, visa_type, visa_number, visa_issuance_date, country_code, status, submitted_at, created_at, application_notes, billing_status, invoice_ref, invoice_amount, yacht:yachts(vessel_name)")
       .order("created_at", { ascending: false }));
     if (error) toast.error(error.message);
     else setItems((data ?? []) as TrackerVisa[]);
@@ -1433,25 +1503,6 @@ function VisaTracker() {
         setQboPay(map);
       }
     } catch { /* best-effort */ }
-  }
-
-  function toggleSort(key: string) {
-    if (sortKey === key) setSortDir(d => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
-  }
-  function sortVal(i: TrackerVisa, key: string): string {
-    switch (key) {
-      case "crew": return visaName(i).toLowerCase();
-      case "yacht": return (i.yacht?.vessel_name ?? "").toLowerCase();
-      case "nationality": return (i.nationality ?? "").toLowerCase();
-      case "visa_type": return (i.visa_type ?? "").toLowerCase();
-      case "submitted": return i.submitted_at ?? i.created_at ?? "";
-      case "status": return i.status ?? "";
-      case "billing": return i.billing_status ?? "";
-      case "invoice_ref": return i.invoice_ref ?? "";
-      case "amount": return String(i.invoice_amount ?? 0).padStart(12, "0");
-      default: return i.created_at ?? "";
-    }
   }
 
   const yachts = useMemo(() => {
@@ -1472,19 +1523,30 @@ function VisaTracker() {
     if (filterStatus !== "all" && i.status !== filterStatus) return false;
     if (q.trim()) {
       const qq = q.toLowerCase();
-      const hay = [visaName(i), i.nationality, i.visa_number, i.visa_type, i.yacht?.vessel_name, i.invoice_ref].filter(Boolean).join(" ").toLowerCase();
+      const hay = [visaName(i), i.nationality, i.visa_number, i.visa_type, i.yacht?.vessel_name, i.invoice_ref, i.application_notes].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(qq)) return false;
     }
     return true;
   }), [items, filterYacht, filterBilling, filterStatus, q]);
 
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    arr.sort((a, b) => { const av = sortVal(a, sortKey), bv = sortVal(b, sortKey); return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); });
-    return arr;
-  }, [filtered, sortKey, sortDir]);
+  // Excel-style sort + value filter on each column title (replaces the old click-to-sort).
+  const columns = useMemo<FilterColumn<TrackerVisa>[]>(() => [
+    { key: "crew", label: "Crew", value: v => visaName(v) },
+    { key: "yacht", label: "Yacht", value: v => v.yacht?.vessel_name },
+    { key: "nationality", label: "Nationality", value: v => v.nationality },
+    { key: "visa_type", label: "Visa Type", value: v => v.visa_type },
+    { key: "visa_ref", label: "Visa Ref", value: v => v.visa_number },
+    { key: "submitted", label: "Submitted", value: v => monthOf(v.submitted_at ?? v.created_at), sortValue: v => v.submitted_at ?? v.created_at },
+    { key: "status", label: "Status", value: v => v.status?.replace(/_/g, " ") },
+    { key: "billing", label: "Billing", value: v => BILLING_LABEL[v.billing_status ?? "pending_review"] },
+    { key: "invoice_ref", label: "Invoice Ref", value: v => v.invoice_ref },
+    { key: "amount", label: "Amount", value: v => aedText(v.invoice_amount), sortValue: v => v.invoice_amount },
+    { key: "notes", label: "Remarks", value: v => oneLine(v.application_notes).slice(0, 80) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
 
-  const pendingFiltered = useMemo(() => filtered.filter(i => (i.billing_status ?? "pending_review") === "pending_invoice"), [filtered]);
+  // "Select all" ticks only the billable rows on screen.
+  const pendingFiltered = useMemo(() => cf.rows.filter(i => (i.billing_status ?? "pending_review") === "pending_invoice"), [cf.rows]);
   const selectedApps = useMemo(() => items.filter(i => selected.has(i.id)), [items, selected]);
   const selectedVessels = useMemo(() => Array.from(new Set(selectedApps.map(a => a.yacht?.vessel_name ?? "—"))), [selectedApps]);
 
@@ -1538,20 +1600,21 @@ function VisaTracker() {
             <SelectItem value="not_billable">Not Billable</SelectItem>
           </SelectContent>
         </Select>
-        {(q || filterYacht !== "all" || filterBilling !== "all" || filterStatus !== "all") && (
-          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterYacht("all"); setFilterBilling("all"); setFilterStatus("all"); }}>
+        {(q || filterYacht !== "all" || filterBilling !== "all" || filterStatus !== "all" || cf.activeCount > 0 || cf.sorted) && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterYacht("all"); setFilterBilling("all"); setFilterStatus("all"); cf.clearAll(); }}>
             <RotateCcw className="h-3 w-3" /> Clear
           </Button>
         )}
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 ml-auto" onClick={() => {
-          const rows = filtered.map(v => ({
+          const rows = cf.rows.map(v => ({
             "Given Name": v.given_name ?? "", Surname: v.surname ?? "", Nationality: v.nationality ?? "",
             "Visa Type": v.visa_type ?? "", "Visa Ref": v.visa_number ?? "", Yacht: v.yacht?.vessel_name ?? "",
             Status: v.status ?? "", Submitted: v.submitted_at ?? v.created_at ?? "",
             "Billing Status": v.billing_status ?? "", "Invoice Ref": v.invoice_ref ?? "", "Amount (AED)": v.invoice_amount ?? "",
+            Remarks: oneLine(v.application_notes),
           }));
           downloadCSV(`visa-tracker-${new Date().toISOString().slice(0,10)}.csv`, rows);
-        }} disabled={filtered.length === 0}>
+        }} disabled={cf.rows.length === 0}>
           <Download className="h-3 w-3" /> Export
         </Button>
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={load} disabled={loading}>
@@ -1570,12 +1633,11 @@ function VisaTracker() {
           <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelected(new Set())}>Clear</Button>
         </div>
       )}
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[900px]">
+      <div className="w-max min-w-full rounded-lg border border-border">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                <th className="w-8 px-3 py-2.5">
+              <tr>
+                <th className={`${TH} w-8`}>
                   <input type="checkbox" aria-label="Select all billable"
                     checked={pendingFiltered.length > 0 && pendingFiltered.every(p => selected.has(p.id))}
                     onChange={e => {
@@ -1587,20 +1649,16 @@ function VisaTracker() {
                       });
                     }} />
                 </th>
-                {([["Crew", "crew"], ["Yacht", "yacht"], ["Nationality", "nationality"], ["Visa Type", "visa_type"], ["Visa Ref", null], ["Submitted", "submitted"], ["Status", "status"], ["Billing", "billing"], ["Invoice Ref", "invoice_ref"], ["Amount", "amount"], ["Actions", null]] as [string, string | null][]).map(([col, key]) => (
-                  <th key={col} onClick={() => key && toggleSort(key)}
-                    className={`px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap ${key ? "cursor-pointer select-none hover:text-foreground" : ""}`}>
-                    <span className="inline-flex items-center gap-1">{col}{key && sortKey === key && <span className="text-primary">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
-                  </th>
-                ))}
+                {columns.map(c => <th key={c.key} className={TH}>{cf.header(c.key)}</th>)}
+                <th className={TH}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
-              ) : sorted.length === 0 ? (
-                <tr><td colSpan={12} className="px-3 py-10 text-center text-sm text-muted-foreground">No visa applications match the current filters.</td></tr>
-              ) : sorted.map(v => {
+                <tr><td colSpan={13} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr>
+              ) : cf.rows.length === 0 ? (
+                <tr><td colSpan={13} className="px-3 py-10 text-center text-sm text-muted-foreground">No visa applications match the current filters.</td></tr>
+              ) : cf.rows.map(v => {
                 const isEditing = editingRow === v.id;
                 const isSaving = saving === v.id;
                 const bs = (v.billing_status ?? "pending_review") as BillingStatus;
@@ -1642,6 +1700,7 @@ function VisaTracker() {
                       ) : "—"}
                     </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{isEditing ? null : (v.invoice_amount ? `AED ${v.invoice_amount.toLocaleString()}` : "—")}</td>
+                    <td className="px-3 py-2 text-xs max-w-[200px]"><div className="truncate text-muted-foreground" title={v.application_notes ?? undefined}>{oneLine(v.application_notes) || "—"}</div></td>
                     <td className="px-3 py-2">
                       <BillingActions
                         id={v.id} bs={bs} saving={isSaving} isEditing={isEditing}
@@ -1661,12 +1720,7 @@ function VisaTracker() {
               })}
             </tbody>
           </table>
-        </div>
-        {filtered.length > 0 && (
-          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
-            Showing {filtered.length} of {items.length} visa applications
-          </div>
-        )}
+        <TrackerCount shown={cf.rows.length} total={items.length} noun="visa applications" onClear={cf.activeCount > 0 ? cf.clearAll : undefined} />
       </div>
       {showGen && selectedApps.length > 0 && (
         <GenerateInvoiceDialog
@@ -1707,6 +1761,16 @@ function OrbitTracker() {
     if (q.trim() && ![r.name, r.yacht?.vessel_name, r.invoice_ref].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   }), [rows, filterYacht, filterBilling, q]);
+  const columns = useMemo<FilterColumn<any>[]>(() => [
+    { key: "project", label: "Project", value: r => r.name },
+    { key: "yacht", label: "Yacht", value: r => r.yacht?.vessel_name },
+    { key: "status", label: "Status", value: r => r.status?.replace(/_/g, " ") },
+    { key: "charge", label: "Charge", value: r => aedText(r.charge_amount), sortValue: r => (r.charge_amount == null ? null : Number(r.charge_amount)) },
+    { key: "billing", label: "Billing", value: r => BILLING_LABEL[(r.billing_status ?? "pending_review") as BillingStatus] },
+    { key: "ref", label: "Invoice Ref", value: r => r.invoice_ref },
+    { key: "amount", label: "Amount", value: r => aedText(r.invoice_amount), sortValue: r => (r.invoice_amount == null ? null : Number(r.invoice_amount)) },
+  ], []);
+  const cf = useColumnFilters(filtered, columns);
   async function updateBilling(id: string, billing_status: BillingStatus, invoice_ref?: string, invoice_amount?: number | null) {
     setSaving(id);
     const patch: any = { billing_status };
@@ -1728,14 +1792,29 @@ function OrbitTracker() {
         <Select value={filterBilling} onValueChange={setFilterBilling}><SelectTrigger className="h-8 text-xs w-40"><SelectValue placeholder="All billing" /></SelectTrigger><SelectContent>
           <SelectItem value="all">All Billing</SelectItem><SelectItem value="pending_review">Pending Review</SelectItem><SelectItem value="pending_invoice">Needs Invoice</SelectItem><SelectItem value="invoiced">Invoiced</SelectItem><SelectItem value="not_billable">Not Billable</SelectItem>
         </SelectContent></Select>
+        {(q || filterYacht !== "all" || filterBilling !== "all" || cf.activeCount > 0 || cf.sorted) && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1" onClick={() => { setQ(""); setFilterYacht("all"); setFilterBilling("all"); cf.clearAll(); }}>
+            <RotateCcw className="h-3 w-3" /> Clear
+          </Button>
+        )}
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 ml-auto" onClick={() => {
+          const out = cf.rows.map(r => ({
+            Project: r.name ?? "", Yacht: r.yacht?.vessel_name ?? "", Status: r.status ?? "",
+            "Charge (AED)": r.charge_amount ?? "", "Billing Status": r.billing_status ?? "",
+            "Invoice Ref": r.invoice_ref ?? "", "Amount (AED)": r.invoice_amount ?? "",
+          }));
+          downloadCSV(`orbit-tracker-${new Date().toISOString().slice(0,10)}.csv`, out);
+        }} disabled={cf.rows.length === 0}>
+          <Download className="h-3 w-3" /> Export
+        </Button>
       </div>
-      <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
+      <div className="w-max min-w-full rounded-lg border border-border">
         <table className="w-full text-sm min-w-[820px]">
-          <thead><tr className="bg-muted/40 border-b border-border">{["Project", "Yacht", "Status", "Charge", "Billing", "Invoice Ref", "Amount", "Actions"].map(c => <th key={c} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap">{c}</th>)}</tr></thead>
+          <thead><tr>{columns.map(c => <th key={c.key} className={TH}>{cf.header(c.key)}</th>)}<th className={TH}>Actions</th></tr></thead>
           <tbody className="divide-y divide-border/50">
             {loading ? <tr><td colSpan={8} className="px-3 py-10 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></td></tr> :
-              filtered.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">No projects match the filters.</td></tr> :
-              filtered.map(r => {
+              cf.rows.length === 0 ? <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">No projects match the filters.</td></tr> :
+              cf.rows.map(r => {
                 const bs = (r.billing_status ?? "pending_review") as BillingStatus;
                 const isEditing = editingRow === r.id;
                 return (
@@ -1761,6 +1840,7 @@ function OrbitTracker() {
               })}
           </tbody>
         </table>
+        <TrackerCount shown={cf.rows.length} total={rows.length} noun="projects" onClear={cf.activeCount > 0 ? cf.clearAll : undefined} />
       </div>
     </div>
   );
@@ -1992,18 +2072,19 @@ function QboDocsTab({ docType, realm }: { docType: "invoices" | "proforma" | "qu
         </Select>
       </div>
 
-      <div className="rounded-lg border border-border overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* Sorted and filtered on the server (it pages through thousands), so no
+          column-title value filters here, but the header row still stays in view. */}
+      <div className="w-max min-w-full rounded-lg border border-border">
           <table className="w-full text-sm min-w-[820px]">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
+              <tr>
                 {([["doc_number", "#"], ["customer_name", "Customer / Vessel"], ["txn_date", "Date"], ["due_date", dueLabel], ["total_amt", "Amount"], ["status", "Status"]] as [SortCol, string][]).map(([col, label]) => (
                   <th key={col} onClick={() => toggleSort(col)}
-                    className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap cursor-pointer select-none hover:text-foreground">
+                    className={`${TH} cursor-pointer select-none hover:text-foreground`}>
                     <span className="inline-flex items-center gap-1">{label}{sortCol === col && <span className="text-primary">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
                   </th>
                 ))}
-                <th className="px-3 py-2.5" />
+                <th className={TH} />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -2048,7 +2129,6 @@ function QboDocsTab({ docType, realm }: { docType: "invoices" | "proforma" | "qu
               ))}
             </tbody>
           </table>
-        </div>
         <div className="flex items-center justify-between border-t border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
           <span>Showing {rows.length.toLocaleString()} of {total.toLocaleString()}</span>
           {rows.length < total && (

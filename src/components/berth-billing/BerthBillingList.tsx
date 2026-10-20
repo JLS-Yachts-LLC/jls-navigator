@@ -13,6 +13,7 @@ import {
   Skeleton,
 } from "@/components/polaris-ui/primitives";
 import { StatCard } from "@/components/polaris-ui/cards";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 import type { DashboardRow } from "./types";
 
 const currency = (n: number) =>
@@ -21,6 +22,26 @@ const currency = (n: number) =>
     currency: "AED",
     maximumFractionDigits: 0,
   }).format(n ?? 0);
+
+const invoiceLabel = (r: DashboardRow) => (r.invoice_raised ? (r.invoice_sent ? "Sent" : "Raised") : "Not raised");
+const supplierLabel = (r: DashboardRow) => (!r.supplier_invoice_received ? "None received" : r.supplier_paid ? "Paid" : "Unpaid");
+const dateText = (d: string | null) => (d ? new Date(d).toLocaleDateString() : null);
+
+// Excel-style sort + value filter on each column title. Dates filter by month.
+const COLUMNS: FilterColumn<DashboardRow>[] = [
+  { key: "vessel", label: "Vessel", value: (r) => r.vessel },
+  { key: "client", label: "Client", value: (r) => r.client },
+  { key: "berth", label: "Marina / Berth", value: (r) => `${r.marina} · ${r.berth}` },
+  { key: "arrival", label: "Arrival", value: (r) => r.arrival?.slice(0, 7), sortValue: (r) => r.arrival },
+  { key: "departure", label: "Departure", value: (r) => r.departure?.slice(0, 7), sortValue: (r) => r.departure },
+  { key: "days", label: "Days", value: (r) => r.days_occupied },
+  { key: "revenue", label: "Revenue", value: (r) => currency(r.revenue_earned), sortValue: (r) => r.revenue_earned },
+  { key: "invoice", label: "Invoice", value: invoiceLabel },
+  { key: "paid", label: "Client Paid", value: (r) => (r.client_paid ? "Paid" : "Unpaid") },
+  { key: "supplier", label: "Supplier", value: supplierLabel },
+  { key: "outstanding", label: "Outstanding", value: (r) => currency(r.outstanding_balance), sortValue: (r) => r.outstanding_balance },
+  { key: "margin", label: "Margin", value: (r) => currency(r.margin), sortValue: (r) => r.margin },
+];
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -77,6 +98,28 @@ export function BerthBillingList({
       return rows.filter((r) => (r.age_of_invoice_days ?? 0) > 30 && !r.client_paid);
     return rows;
   }, [rows, filter]);
+  const cf = useColumnFilters(filteredRows, COLUMNS);
+
+  function exportCsv() {
+    // Exactly what's on screen: the filter chips, column filters and sort.
+    const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = ["Vessel", "Client", "Marina", "Berth", "Arrival", "Departure", "Days", "Revenue (AED)", "Invoice", "Client Paid", "Supplier", "Outstanding (AED)", "Margin (AED)", "Responsible"];
+    const lines = cf.rows.map((r) => [
+      r.vessel, r.client, r.marina, r.berth, r.arrival?.slice(0, 10), r.departure?.slice(0, 10), r.days_occupied, r.revenue_earned,
+      invoiceLabel(r), r.client_paid ? "Paid" : "Unpaid", supplierLabel(r), r.outstanding_balance, r.margin, r.responsible_team_member,
+    ].map(esc).join(","));
+    const url = URL.createObjectURL(new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8;" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `berth-billing-${new Date().toISOString().slice(0, 10)}.csv` });
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Header cell that stays in view while the page scrolls (solid background, or rows show through).
+  const th: React.CSSProperties = {
+    position: "sticky", top: 0, zIndex: 10, background: "var(--pds-navy-mid, var(--card))",
+    boxShadow: "inset 0 -1px 0 0 rgba(233,204,114,0.24)",
+    padding: "6px 12px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap",
+  };
 
   const kpis = useMemo(() => {
     const occupied = rows.filter((r) => !r.departure).length;
@@ -147,7 +190,7 @@ export function BerthBillingList({
         />
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {(["all", "unbilled", "overdue"] as const).map((f) => (
           <button
             key={f}
@@ -166,6 +209,15 @@ export function BerthBillingList({
             {f === "all" ? "All" : f === "unbilled" ? "Not Yet Invoiced" : "Overdue (30d+)"}
           </button>
         ))}
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.6)" }}>
+          {cf.rows.length !== rows.length ? `${cf.rows.length} of ${rows.length}` : rows.length} record{rows.length !== 1 ? "s" : ""}
+        </span>
+        {cf.activeCount > 0 && (
+          <button onClick={cf.clearAll} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#E9CC72", textDecoration: "underline" }}>
+            Clear column filters
+          </button>
+        )}
+        <PolarisButton variant="ghost" icon="download" label="Export CSV" onClick={exportCsv} disabled={cf.rows.length === 0} />
       </div>
 
       {error && (
@@ -196,32 +248,25 @@ export function BerthBillingList({
           action={{ label: "Assign Berth", onClick: onNewOccupancy }}
         />
       ) : (
-        <div style={{ overflowX: "auto" }}>
+        // No overflow wrapper: the page's scroll box must be the nearest scroller,
+        // or the header row stops sticking.
+        <div style={{ width: "max-content", minWidth: "100%" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "rgba(233,204,114,0.7)" }}>
-                {[
-                  "Vessel",
-                  "Client",
-                  "Marina / Berth",
-                  "Arrival",
-                  "Departure",
-                  "Days",
-                  "Revenue",
-                  "Invoice",
-                  "Client Paid",
-                  "Supplier",
-                  "Outstanding",
-                  "Margin",
-                ].map((h) => (
-                  <th key={h} style={{ padding: "6px 12px", fontWeight: 500, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    {h}
-                  </th>
+                {COLUMNS.map((c) => (
+                  <th key={c.key} style={th}>{cf.header(c.key)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((r, i) => (
+              {cf.rows.length === 0 && (
+                <tr><td colSpan={COLUMNS.length} style={{ padding: "24px 12px", textAlign: "center", color: "rgba(255,255,255,0.6)" }}>
+                  No occupancies match the column filters ·{" "}
+                  <button onClick={cf.clearAll} style={{ background: "none", border: "none", cursor: "pointer", color: "#E9CC72", textDecoration: "underline" }}>Clear column filters</button>
+                </td></tr>
+              )}
+              {cf.rows.map((r, i) => (
                 <tr
                   key={r.occupancy_id}
                   onClick={() => onOpenOccupancy(r.occupancy_id)}
