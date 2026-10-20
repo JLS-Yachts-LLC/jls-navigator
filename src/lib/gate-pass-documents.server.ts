@@ -434,21 +434,70 @@ export async function gatePassDocumentsAttach(list: Array<{ id: string; file: st
 }
 
 /**
+ * The words printed in a PDF, roughly: every content stream is inflated and the
+ * strings shown by its text operators (Tj / TJ / ' / ") are collected. Enough to
+ * read the holder's name off a pass; no layout, and nothing from scanned images.
+ */
+async function pdfText(bytes: ArrayBuffer): Promise<string> {
+  const raw = new Uint8Array(bytes)
+  const latin1 = (b: Uint8Array) => { let s = ''; for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode(...b.subarray(i, i + 8192)); return s }
+  const src = latin1(raw)
+  const inflate = async (b: Uint8Array) =>
+    new Uint8Array(await new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer())
+  const unescape = (s: string) => s.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_, c: string) =>
+    /^[0-7]+$/.test(c) ? String.fromCharCode(parseInt(c, 8)) : ({ n: '\n', r: '', t: ' ', b: '', f: '' } as Record<string, string>)[c] ?? c)
+  const hex = (h: string) => {
+    const b = (h.replace(/\s+/g, '').match(/../g) ?? []).map((x) => parseInt(x, 16))
+    // Two-byte strings are often UTF-16 or glyph ids; keep only what reads as text.
+    const one = String.fromCharCode(...b)
+    if (b.length % 2 === 0 && b.filter((_, i) => i % 2 === 0).every((x) => x === 0)) return String.fromCharCode(...b.filter((_, i) => i % 2 === 1))
+    return /^[\x20-\x7e]*$/.test(one) ? one : ''
+  }
+  const parts: string[] = []
+  const re = /stream\r?\n/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    const start = m.index + m[0].length
+    const end = src.indexOf('endstream', start)
+    if (end < 0) break
+    const dict = src.slice(Math.max(0, m.index - 400), m.index)
+    const head = dict.slice(dict.lastIndexOf('<<'))
+    let content = ''
+    try {
+      let data = raw.subarray(start, end)
+      while (data.length && (data[data.length - 1] === 0x0a || data[data.length - 1] === 0x0d)) data = data.subarray(0, data.length - 1)
+      content = /FlateDecode/.test(head) ? latin1(await inflate(data)) : /Filter/.test(head) ? '' : latin1(data)
+    } catch { content = '' }
+    re.lastIndex = end
+    for (const block of content.match(/BT[\s\S]*?ET/g) ?? []) {
+      const line: string[] = []
+      for (const t of block.match(/\((?:\\.|[^\\)])*\)|<[0-9A-Fa-f\s]+>/g) ?? []) {
+        line.push(t.startsWith('(') ? unescape(t.slice(1, -1)) : hex(t.slice(1, -1)))
+      }
+      const s = line.join('').replace(/\s+/g, ' ').trim()
+      if (s) parts.push(s)
+    }
+  }
+  return parts.join(' | ').slice(0, 2500)
+}
+
+/**
  * Copy attachments into a private review folder and hand back 15-minute links,
  * so a person can open the pass and read the name on it. Attaches nothing.
  */
 export async function gatePassDocumentsReview(list: Array<{ itemId: string; file: string }>) {
   const { site, spToken } = await gatePassSite()
-  const results: Array<{ itemId: string; file: string; url?: string; reason?: string }> = []
+  const results: Array<{ itemId: string; file: string; url?: string; text?: string; reason?: string }> = []
   for (const { itemId, file } of list.slice(0, 20)) {
     try {
       const { bytes, contentType } = await downloadItemAttachment(site, spToken, itemId, file)
+      const text = contentType === 'application/pdf' ? await pdfText(bytes).catch((e) => `(could not read text: ${e instanceof Error ? e.message : e})`) : undefined
       const path = `_review/gate-pass/${Number(itemId)}-${safeName(file)}`
       const { error } = await supabaseAdmin.storage.from(BUCKET).upload(path, bytes, { upsert: true, contentType })
       if (error) throw new Error(`upload: ${error.message}`)
       const { data, error: sErr } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(path, 900)
       if (sErr || !data?.signedUrl) throw new Error(`sign: ${sErr?.message ?? 'no link'}`)
-      results.push({ itemId, file, url: data.signedUrl })
+      results.push({ itemId, file, url: data.signedUrl, text })
     } catch (e) {
       results.push({ itemId, file, reason: e instanceof Error ? e.message : String(e) })
     }
