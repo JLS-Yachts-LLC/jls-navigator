@@ -18,12 +18,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Search, Send, Loader2, Check, CheckCheck, AlertCircle, Clock, Paperclip, Reply, X, Lock, MessageSquarePlus,
-  CircleCheck, RotateCcw, UserRound, Zap,
+  CircleCheck, RotateCcw, UserRound, Zap, Pencil, Copy, UserPlus, Contact as ContactIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem } from "@/components/ui/context-menu";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, placeholderContext, recipientOf } from "@/lib/whatsapp/shared";
@@ -88,7 +89,15 @@ interface ThreadItem {
   fromPhone?: boolean;
   /** Imported from the Business app's chat history when the number was connected. */
   imported?: boolean;
+  /** Contact cards the client shared (WhatsApp "contacts" message). */
+  shared?: SharedContact[];
 }
+
+/** One contact card from a shared-contacts message, as Meta sends it. */
+type SharedContact = {
+  name?: { formatted_name?: string; first_name?: string; last_name?: string };
+  phones?: Array<{ phone?: string; wa_id?: string; type?: string }>;
+};
 
 /** The thread on screen: one contact, on one number. */
 export type Active = { contactId: string; lineId: string };
@@ -245,7 +254,8 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
         {active && activeLine ? (
           <Thread key={`${active.contactId}:${active.lineId}`} contactId={active.contactId} line={activeLine} showLine={lines.length > 1}
             conv={activeConv} canEdit={activeLine.level === "send"} staff={staff} me={me}
-            onBack={() => setActive(null)} onChanged={loadConvs} />
+            onBack={() => setActive(null)} onChanged={loadConvs}
+            onOpen={(contactId) => { setActive({ contactId, lineId: active.lineId }); void loadConvs(); }} />
         ) : (
           <div className="grid h-full place-items-center p-6">
             <Empty title={counts.unread ? `${counts.unread} unread message${counts.unread === 1 ? "" : "s"}` : "Choose a conversation"}>
@@ -265,10 +275,12 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
 
 // ─── One conversation ─────────────────────────────────────────────────────────
 
-function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, onChanged }: {
+function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, onChanged, onOpen }: {
   contactId: string; line: MyLine; showLine: boolean; conv: Conversation | null; canEdit: boolean;
   staff: Array<{ id: string; display_name: string | null }>; me: string | null;
   onBack: () => void; onChanged: () => void;
+  /** Open another contact's thread on this number (a shared contact card's Message button). */
+  onOpen: (contactId: string) => void;
 }) {
   const [contact, setContact] = useState<WaContact | null>(conv?.contact ?? null);
   const [items, setItems] = useState<ThreadItem[] | null>(null);
@@ -289,7 +301,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   const load = useCallback(async () => {
     const [{ data: c }, { data: ins }, { data: outs }] = await Promise.all([
       db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle(),
-      db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at, source")
+      db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at, source, shared:raw->contacts")
         .eq("contact_id", contactId).eq("line_id", line.id).order("received_at", { ascending: false }).limit(300),
       db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, media_type, media_mime, media_name, media_path, media_id, from_phone, source, campaign:wa_campaigns(name)")
         .eq("contact_id", contactId).eq("line_id", line.id).neq("status", "skipped").order("queued_at", { ascending: false }).limit(300),
@@ -300,6 +312,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
         key: `i${m.id}`, dir: "in", at: m.received_at, body: m.body, inboundId: m.id, type: m.type,
         hasMedia: !!m.media_id, mediaMime: m.media_mime, action: m.action, contextWamid: m.context_wamid, wamid: m.wa_message_id,
         imported: m.source === "history",
+        shared: m.type === "contacts" && Array.isArray(m.shared) ? m.shared : undefined,
       })),
       ...((outs ?? []) as any[]).map((m): ThreadItem => ({
         key: `o${m.id}`, dir: "out", at: m.sent_at ?? m.queued_at, body: m.body, kind: m.kind, auto: !!m.auto_reply, status: m.status,

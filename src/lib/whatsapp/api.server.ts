@@ -8,6 +8,7 @@
  *   POST /api/whatsapp/campaigns/send       send the next batch of a campaign (edit)
  *   POST /api/whatsapp/reply                message one contact: text or template (edit)
  *   POST /api/whatsapp/conversations/read   mark a thread read (+ blue ticks)  (view)
+ *   POST /api/whatsapp/contacts/save        save / rename a contact on a number (send on that number)
  *   GET  /api/whatsapp/media?inbound=…      a file a client sent               (view)
  *   POST /api/whatsapp/optin/invite         email opt-in invitations          (edit)
  *   GET  /api/whatsapp/optin?token=…        public: what the invitation shows
@@ -664,6 +665,79 @@ export async function whatsappConversationReadHandler(request: Request): Promise
   return json({ ok: true });
 }
 
+/**
+ * Save someone to the contacts of a number — from a contact card a client shared,
+ * a new number typed in, or renaming whoever is in a thread. Anyone who can send
+ * from that number may do it, so line-only staff (Angela on Training) can keep
+ * their own contacts without the Communications permission.
+ *
+ *   { lineId, contactId, name, email?, notes? }   rename / add details to a contact in a thread
+ *   { lineId, phone, name, open? }                a number: found or created, and given a thread
+ *
+ * Saving is never consent: a new contact has none, and messaging them first still
+ * needs an approved template and their agreement (wa_record_consent).
+ */
+export async function whatsappContactSaveHandler(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as {
+    lineId?: string; contactId?: string; phone?: string; name?: string; email?: string | null; notes?: string | null; open?: boolean;
+  };
+  const access = await requireLine(request, body.lineId, "send");
+  if (!access.ok) return access.response;
+  const { db, line, userId } = access;
+  const name = String(body.name ?? "").trim().slice(0, 120);
+  if (!name) return json({ error: "Give the contact a name." }, 400);
+  const { data: isEditor } = await db.rpc("has_module_permission", { p_user_id: userId, p_module_name: "communications", p_min_level: "edit" });
+
+  // A thread on this number is what lets line-only staff see the contact (row-level security).
+  const ensureThread = async (contactId: string, open: boolean) => {
+    const { data: conv } = await db.from("wa_conversations").select("id, status").eq("contact_id", contactId).eq("line_id", line.id).maybeSingle();
+    if (!conv) await db.from("wa_conversations").insert({ contact_id: contactId, line_id: line.id, status: open ? "open" : "closed" });
+    else if (open && conv.status !== "open") await db.from("wa_conversations").update({ status: "open" }).eq("id", conv.id);
+  };
+  const onThisLine = async (contactId: string) => {
+    const { data } = await db.from("wa_conversations").select("id").eq("contact_id", contactId).eq("line_id", line.id).maybeSingle();
+    return !!data;
+  };
+
+  if (body.contactId) {
+    // Only a contact this person can already see on this number — or anyone, for Communications editors.
+    if (!isEditor && !(await onThisLine(body.contactId))) return json({ error: "That contact isn't on this number." }, 403);
+    const patch: Record<string, unknown> = { name, updated_at: new Date().toISOString() };
+    if (body.email !== undefined) patch.email = String(body.email ?? "").trim() || null;
+    if (body.notes !== undefined) patch.notes = String(body.notes ?? "").trim().slice(0, 2000) || null;
+    const { error } = await db.from("wa_contacts").update(patch).eq("id", body.contactId);
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true, contactId: body.contactId });
+  }
+
+  // A shared contact card gives the WhatsApp id ("971564873593") — a full number without the "+".
+  const raw = String(body.phone ?? "").trim();
+  const phone = toE164(raw.startsWith("+") || raw.startsWith("00") ? raw : `+${raw}`, await dialCodes(db));
+  if (!phone || !/^\+[1-9][0-9]{6,14}$/.test(phone)) {
+    return json({ error: "That doesn't look like a full phone number — include the country code, e.g. +971 50 123 4567." }, 400);
+  }
+  const { data: existing } = await db.from("wa_contacts").select("id, name, phone_e164").eq("phone_e164", phone)
+    .order("created_at").limit(1).maybeSingle();
+  let contactId: string;
+  if (existing) {
+    contactId = existing.id;
+    // Rename only a contact that's already this number's (or a bare number) — never one another team keeps.
+    const bare = !existing.name || existing.name === existing.phone_e164;
+    if (bare || isEditor || (await onThisLine(contactId))) {
+      await db.from("wa_contacts").update({ name, updated_at: new Date().toISOString() }).eq("id", contactId);
+    }
+  } else {
+    const { data: created, error } = await db.from("wa_contacts").insert({
+      name, phone_e164: phone, source: "manual", created_by: userId,
+      notes: `Added from WhatsApp (${line.label})`,
+    }).select("id").single();
+    if (error || !created) return json({ error: error?.message ?? "Couldn't save the contact" }, 500);
+    contactId = created.id;
+  }
+  await ensureThread(contactId, !!body.open);
+  return json({ ok: true, contactId, existed: !!existing });
+}
+
 /** A photo, document or voice note from a client, fetched through Meta on demand. */
 export async function whatsappMediaHandler(request: Request): Promise<Response> {
   // A file we sent: our own copy, from the private bucket.
@@ -1190,6 +1264,9 @@ function describeMessage(m: any): { text: string | null; media: any } {
     m.text?.body ?? m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title
     ?? m.reaction?.emoji ?? media?.caption ?? media?.filename
     ?? (m.location ? [m.location.name, m.location.address, `${m.location.latitude}, ${m.location.longitude}`].filter(Boolean).join(" — ") : null)
+    ?? (Array.isArray(m.contacts) && m.contacts.length
+      ? `Contact card: ${m.contacts.map((c: any) => [c?.name?.formatted_name, c?.phones?.[0]?.phone].filter(Boolean).join(" ")).join(", ")}`
+      : null)
     ?? (m.type === "template" ? "[template]" : null)
     ?? (m.type === "media_placeholder" ? "[photo or file — not kept in the history import]" : null)
     ?? null;

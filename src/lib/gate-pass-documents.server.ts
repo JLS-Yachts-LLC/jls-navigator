@@ -38,6 +38,7 @@ interface SpFile { name: string; rel: string }
 
 type Outcome =
   | 'ready' | 'attachment_unreadable' | 'no_attachment' | 'sp_item_missing' | 'conflict' | 'copy' | 'mismatch' | 'ambiguous' | 'no_usable_file'
+  | 'receipt_only' | 'name_mismatch'
 
 export interface GatePassDocPlanRow {
   id: string
@@ -77,10 +78,41 @@ async function readAttachments(siteAbsoluteUrl: string, creds: { tenantId: strin
   return { spToken, attachments: out }
 }
 
+/** A payment receipt is often attached beside the pass ("printPaymentReceipt-…pdf"); it is not the pass. */
+const RECEIPT = /receipt|payment|invoice/i
+
+/** Words in a file name that are not a person's name. */
+const NOT_NAME = new Set([
+  'pass', 'gate', 'gatepass', 'one', 'two', 'day', 'days', 'week', 'weeks', 'month', 'monthly', 'weekly', 'daily',
+  'capt', 'captain', 'chef', 'mr', 'mrs', 'ms', 'copy', 'final', 'new', 'scan', 'scanned', 'pdf', 'jpg', 'jpeg', 'png',
+  'jan', 'feb', 'mar', 'march', 'apr', 'april', 'may', 'jun', 'june', 'jul', 'july', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+  'january', 'february', 'august', 'september', 'october', 'november', 'december', 'and', 'the', 'for', 'crew', 'yacht',
+])
+const nameWords = (v: unknown) =>
+  String(v ?? '').toLowerCase().replace(/\.[a-z0-9]+$/, '').split(/[^a-z]+/).filter((w) => w.length >= 3 && !NOT_NAME.has(w))
+
+/**
+ * Does the file name name somebody else? Pass files are named for the holder
+ * ("pass-ANDREA D'AMATO (07-13 MAY 2024).pdf"), so a file naming another person
+ * means the Polaris row and the item's attachment are different passes — the row
+ * was overwritten before Sept. A file with no name in it is not a mismatch.
+ * Close spellings count ("GUOLD" / "Gould"): same first four letters.
+ */
+function fileNamesSomeoneElse(fileName: string, holder: unknown): string | null {
+  const f = nameWords(fileName)
+  const h = nameWords(holder)
+  if (!f.length || !h.length) return null
+  const close = (a: string, b: string) => a === b || (a.length >= 4 && b.length >= 4 && a.slice(0, 4) === b.slice(0, 4))
+  return f.some((a) => h.some((b) => close(a, b))) ? null : `file "${fileName}" names someone other than ${String(holder)}`
+}
+
 /** The one obvious file for this pass, or why there isn't one. */
-function pickFile(files: SpFile[], permitNumber: unknown): { pick?: SpFile; outcome?: Outcome; why?: string } {
-  const usable = files.filter((f) => USABLE.has(ext(f.name)))
-  if (!usable.length) return { outcome: 'no_usable_file', why: files.map((f) => f.name).join(', ') }
+function pickFile(all: SpFile[], permitNumber: unknown): { pick?: SpFile; outcome?: Outcome; why?: string } {
+  const usableAll = all.filter((f) => USABLE.has(ext(f.name)))
+  if (!usableAll.length) return { outcome: 'no_usable_file', why: all.map((f) => f.name).join(', ') }
+  const files = usableAll.filter((f) => !RECEIPT.test(f.name))
+  if (!files.length) return { outcome: 'receipt_only', why: usableAll.map((f) => f.name).join(', ') }
+  const usable = files
   const pdfs = usable.filter((f) => ext(f.name) === 'pdf')
   const num = norm(permitNumber)
   if (num.length >= 4) {
@@ -132,6 +164,8 @@ async function buildPlan() {
     if (attachmentsError) { plan.push({ ...base, outcome: flagged(item) ? 'attachment_unreadable' : 'no_attachment', files: [] }); continue }
     if (!files.length) { plan.push({ ...base, outcome: 'no_attachment', files: [] }); continue }
     const p = pickFile(files, r.permit_number)
+    const someoneElse = p.pick ? fileNamesSomeoneElse(p.pick.name, r.holder_name) : null
+    if (someoneElse) { plan.push({ ...base, outcome: 'name_mismatch', why: someoneElse, files: names, pick: p.pick }); continue }
     plan.push({ ...base, outcome: p.pick ? 'ready' : p.outcome!, why: p.why, files: names, pick: p.pick })
   }
 
@@ -235,6 +269,8 @@ export async function gatePassDocumentsDryRun(opts: { libraries?: boolean; folde
       mismatch: sample(plan, 'mismatch', 40),
       ambiguous: sample(plan, 'ambiguous', 30),
       no_usable_file: sample(plan, 'no_usable_file'),
+      receipt_only: sample(plan, 'receipt_only', 30),
+      name_mismatch: sample(plan, 'name_mismatch', 60),
       sp_item_missing: sample(plan, 'sp_item_missing'),
       no_attachment: sample(plan, 'no_attachment', 10),
       attachment_unreadable: sample(plan, 'attachment_unreadable', 10),

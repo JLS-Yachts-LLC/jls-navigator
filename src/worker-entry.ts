@@ -1410,6 +1410,7 @@ export default {
         case 'POST /api/whatsapp/reply':return wa.whatsappReplyHandler(request)
         case 'POST /api/whatsapp/reply-media': return wa.whatsappReplyMediaHandler(request)
         case 'POST /api/whatsapp/conversations/read': return wa.whatsappConversationReadHandler(request)
+        case 'POST /api/whatsapp/contacts/save': return wa.whatsappContactSaveHandler(request)
         case 'GET /api/whatsapp/media': return wa.whatsappMediaHandler(request)
         case 'POST /api/whatsapp/optin/invite': return wa.whatsappOptinInviteHandler(request)
         case 'GET /api/whatsapp/optin': return wa.whatsappOptinGetHandler(request)
