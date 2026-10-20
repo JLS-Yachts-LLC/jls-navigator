@@ -9,14 +9,17 @@
  *   - restore — a Polaris permit is linked to this item and differs from what it
  *     holds. Polaris still has the original, so it is written back (the regular
  *     push, with empty columns blanked).
- *   - delete  — nothing in Polaris is linked to it. The item is deleted; SharePoint
- *     keeps it in the site recycle bin for 93 days.
+ *   - delete  — nothing in Polaris is linked to it, and its home item holds
+ *     everything it does. The item is deleted; SharePoint keeps it in the site
+ *     recycle bin for 93 days.
  *   - person  — anything that cannot be decided safely, listed for staff.
  *
  * Safety rule: an item is only restored or deleted when the permit it holds now
  * also sits, verified, in its HOME list — the list where a Polaris permit linked to
- * that item matches it, or for a DMA "PRMT…" number the DMA Permits list. So nothing
- * that exists only in this item is ever lost.
+ * that item matches it, or for a DMA "PRMT…" permit the DMA Permits list. "The same
+ * permit" means the same holder, vessel and date (or the same number and holder):
+ * a shared name is not enough, because one person — or a JLS agent like "Leneve" —
+ * holds many permits of different kinds on the same vessel.
  *
  * planPermitRepairs() reads only. applyPermitRepairs() re-plans and carries out only
  * the actions the caller previewed (matched by key), in small batches.
@@ -25,7 +28,6 @@ import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import {
   loadPermitListsForRepair,
   permitItemSignature,
-  permitSigsMatch,
   polarisPermitSignature,
   pushRecordToSharePoint,
 } from '@/lib/sharepoint-sync.server'
@@ -46,9 +48,39 @@ export type PermitRepairAction = {
   why: string
 }
 
-type Sig = { vessel: string; holder: string; number: string }
+/** What identifies a permit here: holder, vessel, number (normalised) and issue date. */
+type Sig = { vessel: string; holder: string; number: string; date: string }
 
 const fieldOf = (mapping: Record<string, string>, db: string) => Object.entries(mapping).find(([, d]) => d === db)?.[0]
+const isoDay = (v: unknown) => { const d = String(v ?? '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '' }
+/** Within a day: SharePoint dates read back a day off until the 15 Sept fix. */
+const dayClose = (a: string, b: string) => !!a && !!b && Math.abs(Date.parse(a) - Date.parse(b)) <= 86_400_000
+
+function itemSig(fields: Record<string, any>, mapping: Record<string, string>): Sig {
+  const get = (db: string) => { const c = fieldOf(mapping, db); return c ? fields[c] : null }
+  return { ...permitItemSignature(fields, mapping), date: isoDay(get('issue_date') ?? get('expiry_date')) }
+}
+const rowSig = (r: Record<string, any>): Sig =>
+  ({ ...polarisPermitSignature(r, r.yachts?.vessel_name), date: isoDay(r.issue_date ?? r.expiry_date) })
+
+/** The same permit's details: same holder, vessel and date — or the same number and holder. */
+function sameContent(a: Sig, b: Sig): boolean {
+  if (a.holder && a.holder === b.holder && a.vessel && a.vessel === b.vessel && dayClose(a.date, b.date)) return true
+  return !!a.number && a.number === b.number && !!a.holder && a.holder === b.holder
+}
+
+/** Safe to delete `a` because `b` holds everything it does — its own permit number too? */
+function holdsNothingMore(a: Sig, b: Sig): boolean {
+  return sameContent(a, b) && (!a.number || a.number === b.number)
+}
+
+/** Does the Polaris permit linked to an item match what the item holds? */
+function ownMatch(row: Sig, item: Sig): boolean {
+  if (row.number && item.number && row.number !== item.number) return false
+  if (row.vessel && item.vessel && row.vessel !== item.vessel) return false
+  if (row.holder && item.holder) return row.holder === item.holder || row.holder.includes(item.holder) || item.holder.includes(row.holder)
+  return !!row.number && row.number === item.number
+}
 
 function describeItem(fields: Record<string, any>, mapping: Record<string, string>): string {
   const get = (db: string) => { const c = fieldOf(mapping, db); return c ? fields[c] : null }
@@ -61,7 +93,7 @@ function describeRow(r: Record<string, any>): string {
     .map((v) => String(v ?? '').trim()).filter(Boolean).join(' · ') || '(empty)'
 }
 
-const sigKey = (s: Sig) => `${s.vessel}|${s.holder}|${s.number}`
+const sigKey = (s: Sig) => `${s.vessel}|${s.holder}|${s.number}|${s.date}`
 
 export async function planPermitRepairs(): Promise<{ actions: PermitRepairAction[]; checkedAt: string }> {
   const { actions } = await _plan()
@@ -89,22 +121,22 @@ async function _plan(): Promise<{ actions: PermitRepairAction[]; token: string; 
     const list = r.sharepoint_list_name ?? listByType.get(r.permit_type) ?? null
     if (list) linked.set(`${list}#${r.sharepoint_item_id}`, r)
   }
-  const rowSig = (r: Record<string, any>): Sig => polarisPermitSignature(r, r.yachts?.vessel_name)
 
   // Every item's signature, per list.
   const sigs = new Map<string, Map<string, { sig: Sig; fields: Record<string, any> }>>()
   for (const l of lists) {
     const m = new Map<string, { sig: Sig; fields: Record<string, any> }>()
-    for (const i of l.items) m.set(String(i.id), { sig: permitItemSignature(i.fields ?? {}, l.fieldMapping), fields: i.fields ?? {} })
+    for (const i of l.items) m.set(String(i.id), { sig: itemSig(i.fields ?? {}, l.fieldMapping), fields: i.fields ?? {} })
     sigs.set(l.listName, m)
   }
   const dmaList = lists.find((l) => l.permitType === 'dma')?.listName ?? null
+  const isPrmt = (s: Sig | undefined) => !!s?.number.startsWith('prmt')
 
-  /** Does this list's item <id> verifiably hold its OWN permit? */
+  /** Does this list's item <id> verifiably hold its OWN permit (the Polaris one linked to it)? */
   const holdsOwn = (list: string, id: string): boolean => {
     const it = sigs.get(list)?.get(id)
     const row = linked.get(`${list}#${id}`)
-    return !!it && !!row && permitSigsMatch(rowSig(row), it.sig)
+    return !!it && !!row && ownMatch(rowSig(row), it.sig)
   }
 
   const actions: PermitRepairAction[] = []
@@ -112,35 +144,33 @@ async function _plan(): Promise<{ actions: PermitRepairAction[]; token: string; 
     for (const [id, it] of sigs.get(l.listName)!) {
       if (holdsOwn(l.listName, id)) continue
       const row = linked.get(`${l.listName}#${id}`) ?? null
-      // Lists whose item <id> holds the same permit as this one.
+      const holds = describeItem(it.fields, l.fieldMapping)
+      const person = (why: string) => actions.push({
+        key: `person|${l.listName}|${id}|${sigKey(it.sig)}`, kind: 'person', list: l.listName, itemId: id, holds, home: null,
+        ...(row ? { polarisId: row.id, restoreTo: describeRow(row) } : {}), why,
+      })
+      // A DMA "PRMT…" permit in the DMA list is in its own list.
+      if (l.listName === dmaList && isPrmt(it.sig)) {
+        if (row) person('holds a different DMA permit from the one Polaris has linked — check by hand')
+        continue
+      }
+      // Lists whose item <id> holds this same permit.
       const sameIn = lists.filter((o) => {
         if (o.listName === l.listName) return false
         const other = sigs.get(o.listName)?.get(id)
-        return !!other && permitSigsMatch(it.sig, other.sig)
+        return !!other && sameContent(it.sig, other.sig)
       }).map((o) => o.listName)
       if (!sameIn.length) {
         // Not a cross-list copy. Linked but different = overwritten by something we
-        // cannot trace, so it may exist nowhere else: a person decides.
-        if (row) {
-          actions.push({
-            key: `person|${l.listName}|${id}|${sigKey(it.sig)}`, kind: 'person', list: l.listName, itemId: id,
-            holds: describeItem(it.fields, l.fieldMapping), home: null, polarisId: row.id, restoreTo: describeRow(row),
-            why: 'holds a different permit from Polaris, and no other list has it — check by hand',
-          })
-        }
+        // can't trace, so it may exist nowhere else: a person decides.
+        if (row) person('holds a different permit from Polaris, and no other list has it — check by hand')
         continue
       }
-      // Where does this permit really live? Verified by Polaris, else DMA for a PRMT number.
+      // Where does it really live? Verified by Polaris, else the DMA list for a DMA permit.
       let homes = sameIn.filter((o) => holdsOwn(o, id))
-      if (!homes.length && dmaList && it.sig.number.startsWith('prmt') && sameIn.includes(dmaList)) homes = [dmaList]
-      if (!homes.length && dmaList && l.listName === dmaList && it.sig.number.startsWith('prmt')) continue // this IS the home
-      const holds = describeItem(it.fields, l.fieldMapping)
+      if (!homes.length && dmaList && sameIn.includes(dmaList) && isPrmt(sigs.get(dmaList)?.get(id)?.sig)) homes = [dmaList]
       if (homes.length !== 1) {
-        actions.push({
-          key: `person|${l.listName}|${id}|${sigKey(it.sig)}`, kind: 'person', list: l.listName, itemId: id, holds,
-          home: null, ...(row ? { polarisId: row.id, restoreTo: describeRow(row) } : {}),
-          why: `same permit as ${sameIn.map((o) => `${o} item ${id}`).join(', ')}, but which list it belongs to can't be told — check by hand`,
-        })
+        person(`same details as ${sameIn.map((o) => `${o} item ${id}`).join(', ')}, but which list it belongs to can't be told — check by hand`)
         continue
       }
       const home = `${homes[0]} item ${id}`
@@ -150,11 +180,13 @@ async function _plan(): Promise<{ actions: PermitRepairAction[]; token: string; 
           polarisId: row.id, restoreTo: describeRow(row),
           why: `holds a copy of ${home}; Polaris still has this item's own permit`,
         })
-      } else {
+      } else if (holdsNothingMore(it.sig, sigs.get(homes[0])!.get(id)!.sig)) {
         actions.push({
           key: `delete|${l.listName}|${id}|${sigKey(it.sig)}`, kind: 'delete', list: l.listName, itemId: id, holds, home,
           why: `a copy of ${home}; nothing in Polaris is linked to it`,
         })
+      } else {
+        person(`same holder, vessel and date as ${home}, but its own permit number differs — check by hand`)
       }
     }
   }
