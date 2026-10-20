@@ -9,6 +9,7 @@ import {
   daysUntil, expiryVariant, effectiveExpiry, displayStatus, datesConflict, gatePassValidityOf,
 } from "@/lib/permit-types";
 import { SignedAnchor } from "@/components/ui/signed-file";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -142,6 +143,26 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
   const isGatePass = permitType === "gate_pass";
 
   const yachtName = (id: string | null) => yachts.find((y) => y.id === id)?.vessel_name ?? "—";
+
+  // Excel-style sort + value filter on every column header.
+  const columns = useMemo<FilterColumn<Permit>[]>(() => {
+    const names = new Map(yachts.map((y) => [y.id, y.vessel_name]));
+    return [
+      { key: "number", label: "Permit #", value: (r) => r.permit_number },
+      { key: "yacht", label: "Yacht", value: (r) => (r.yacht_id ? names.get(r.yacht_id) : null) },
+      { key: "holder", label: "Holder", value: (r) => r.holder_name },
+      { key: "authority", label: "Authority", value: (r) => r.issuing_authority },
+      { key: "phase", label: "Phase", value: (r) => r.dma_phase },
+      { key: "pass", label: "Pass", value: (r) => GATE_PASS_VALIDITY.find((v) => v.value === gatePassValidityOf(r.issue_date, r.expiry_date))?.label },
+      { key: "issued", label: "Issued", value: (r) => r.issue_date },
+      { key: "expiry", label: "Expiry", value: (r) => r.expiry_date },
+      { key: "status", label: "Status", value: (r) => PERMIT_STATUSES.find((s) => s.value === displayStatus(r))?.label },
+      { key: "remarks", label: "Remarks", value: (r) => r.notes?.replace(/\s+/g, " ").slice(0, 80) },
+      { key: "document", label: "Document", value: (r) => (r.document_url ? "Attached" : "None") },
+    ];
+  }, [yachts]);
+  const cf = useColumnFilters(filtered, columns);
+  const H = cf.Header;
 
   return (
     <div className="flex h-full flex-col">
@@ -286,26 +307,37 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
-            <table className="data-table">
+          // No overflow wrapper here: the page's own scroll box (above) has to be
+          // the nearest scroller, or the sticky header row stops sticking.
+          <div className="w-max min-w-full rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+            <table className="data-table sticky-head">
               <thead>
                 <tr>
-                  <th>Permit #</th>
-                  <th>Yacht</th>
-                  <th>Holder</th>
-                  <th>Authority</th>
-                  {meta.showDmaPhase && <th>Phase</th>}
-                  {isGatePass && <th>Pass</th>}
-                  <th>Issued</th>
-                  <th>Expiry</th>
-                  <th>Status</th>
-                  <th>Document</th>
+                  <th><H k="number" /></th>
+                  <th><H k="yacht" /></th>
+                  <th><H k="holder" /></th>
+                  <th><H k="authority" /></th>
+                  {meta.showDmaPhase && <th><H k="phase" /></th>}
+                  {isGatePass && <th><H k="pass" /></th>}
+                  <th><H k="issued" /></th>
+                  <th><H k="expiry" /></th>
+                  <th><H k="status" /></th>
+                  <th><H k="remarks" /></th>
+                  <th><H k="document" /></th>
                   <th>Email</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => {
+                {cf.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={20} className="py-10 text-center text-sm text-muted-foreground">
+                      No rows match the column filters.{" "}
+                      <button type="button" className="text-primary hover:underline" onClick={cf.clearAll}>Clear column filters</button>
+                    </td>
+                  </tr>
+                )}
+                {cf.rows.map((r) => {
                   const conflict = datesConflict(r);
                   // A gate pass with no expiry still counts down from its entry
                   // date (see effectiveExpiry); the chip only shows a real expiry.
@@ -351,6 +383,9 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                         >
                           <StatusPill status={PERMIT_STATUSES.find((s) => s.value === status)?.label ?? status} />
                         </span>
+                      </td>
+                      <td className="max-w-[16rem] truncate text-foreground/70" title={r.notes ?? undefined}>
+                        {r.notes?.trim() ? r.notes.replace(/\s+/g, " ") : <span className="text-muted-foreground/50">—</span>}
                       </td>
                       <td>
                         {r.document_url ? (

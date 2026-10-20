@@ -361,6 +361,14 @@
     color: var(--muted-foreground);
     font-family: var(--font-sans);
   }
+  /* Header row stays put while the list scrolls. Needs the nearest scrolling
+     box to be the one that scrolls vertically (no overflow-x wrapper between). */
+  .data-table.sticky-head thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: oklch(0.256 0.071 240);
+  }
   .data-table tbody tr {
     border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
     transition: background 120ms ease;
