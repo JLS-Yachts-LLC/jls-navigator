@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { UserRow } from './UserRow'
 import { InviteUserModal } from './InviteUserModal'
+import { useAuth } from '@/lib/auth'
+import { toast } from 'sonner'
 import type { UserRole, RoleOption } from '@/lib/admin/types'
 
 interface Props {
@@ -15,6 +17,31 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
   const [inviteOpen,  setInviteOpen]  = useState(false)
   const [search,      setSearch]      = useState('')
   const [roleFilter,  setRoleFilter]  = useState('')
+  const [syncing,     setSyncing]     = useState(false)
+  const { session } = useAuth()
+
+  // Copies each person's Microsoft 365 photo into their avatar. Pictures people
+  // chose themselves are left alone (the server decides that, not this button).
+  async function syncPhotos() {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/admin/users/sync-photos', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${(session as any)?.access_token ?? ''}` },
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j?.error ?? `Sync failed (${res.status})`)
+      const parts = [`${j.updated} updated`, `${j.unchanged} already current`, `${j.noPhoto} with no photo in Microsoft`]
+      if (j.keptOwn) parts.push(`${j.keptOwn} kept their own picture`)
+      toast.success(`Profile pictures: ${parts.join(', ')}`)
+      if (j.errors?.length) toast.error(`${j.errors.length} could not be fetched: ${j.errors[0]}`)
+      onRefresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not sync profile pictures')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const roleOptions = [{ value: '', label: 'All roles' },
     ...roles.map(r => ({ value: r.name, label: r.display_name }))]
@@ -53,6 +80,15 @@ export function UserTable({ users, total, roles, departments = [], onRefresh }: 
             <option key={o.value} value={o.value} style={{ backgroundColor: "#0e1c26", color: "#e6edf3" }}>{o.label}</option>
           ))}
         </select>
+        <button
+          onClick={() => void syncPhotos()}
+          disabled={syncing}
+          title="Use each person's Microsoft 365 profile photo. Pictures people uploaded themselves are kept."
+          className="rounded-md border border-border text-muted-foreground text-xs px-3 py-1.5
+                     hover:bg-muted hover:text-foreground transition-colors whitespace-nowrap disabled:opacity-60"
+        >
+          {syncing ? 'Syncing photos…' : 'Sync photos from Microsoft'}
+        </button>
         <button
           onClick={() => setInviteOpen(true)}
           className="rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-600 dark:text-cyan-400

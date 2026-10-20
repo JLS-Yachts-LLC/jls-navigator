@@ -62,7 +62,7 @@ const handlers = {
     let query = sb
       .from('user_profiles')
       .select(
-        'user_id, email, display_name, active, mfa_enabled, last_login, created_at, org_id, location_id, department, role_id, roles:role_id(name, display_name, scope)',
+        'user_id, email, display_name, avatar_url, active, mfa_enabled, last_login, created_at, org_id, location_id, department, role_id, roles:role_id(name, display_name, scope)',
         { count: 'exact' },
       )
       .order('created_at', { ascending: false })
@@ -120,6 +120,7 @@ const handlers = {
         status,
         granted_at:   p.created_at,
         display_name: p.display_name ?? null,
+        avatar_url:   p.avatar_url ?? null,
         first_name:   nameByUser.get(p.user_id)?.first ?? null,
         last_name:    nameByUser.get(p.user_id)?.last ?? null,
         user: { id: p.user_id, email: p.email ?? p.user_id, last_sign_in_at: p.last_login ?? null, created_at: p.created_at ?? null },
@@ -287,4 +288,33 @@ export async function adminUsersHandler(request: Request): Promise<Response> {
   if (request.method === 'GET')  return handlers.GET({ request })
   if (request.method === 'POST') return handlers.POST({ request })
   return json({ error: 'Method not allowed' }, 405)
+}
+
+/**
+ * POST /api/admin/users/sync-photos — copy staff photos from Microsoft Entra
+ * into Polaris avatars now (the Worker also does this daily). Never replaces a
+ * picture someone chose themselves; see entra-photos.server.ts.
+ */
+export async function adminUsersSyncPhotosHandler(request: Request): Promise<Response> {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const session = await requireAdminAccess(request)
+  if (!session.ok) return session.response
+  try {
+    const { syncEntraPhotos } = await import('@/lib/entra-photos.server')
+    const result = await syncEntraPhotos()
+    await logAuditEvent({
+      event_type:  'PERM',
+      actor_id:    session.user.id,
+      actor_email: session.user.email,
+      actor_role:  session.user.role,
+      target_type: 'user',
+      target_label: 'staff photos',
+      detail:      `Profile pictures synced from Microsoft: ${result.updated} updated, ${result.unchanged} unchanged, ${result.noPhoto} without a photo, ${result.keptOwn} kept their own`,
+      ip_address:  request.headers.get('x-forwarded-for'),
+      result:      result.errors.length ? 'failed' : 'success',
+    })
+    return json({ success: true, ...result })
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : String(e) }, 500)
+  }
 }

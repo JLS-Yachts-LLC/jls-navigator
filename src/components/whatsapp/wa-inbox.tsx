@@ -91,12 +91,19 @@ interface ThreadItem {
 }
 
 /** The thread on screen: one contact, on one number. */
-type Active = { contactId: string; lineId: string };
+export type Active = { contactId: string; lineId: string };
 
 type Filter = "open" | "mine" | "unassigned" | "closed";
 const POLL_MS = 15_000;
 
-export function WaInbox({ lines, openContactId = null }: { lines: MyLine[]; openContactId?: string | null }) {
+export function WaInbox({ lines, openContactId = null, openThread = null, fill = false }: {
+  lines: MyLine[];
+  openContactId?: string | null;
+  /** Start in this thread (a new-message alert in the Chats app). */
+  openThread?: Active | null;
+  /** Fill the parent edge to edge (the Chats app) instead of sitting in a page. */
+  fill?: boolean;
+}) {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("open");
@@ -108,7 +115,7 @@ export function WaInbox({ lines, openContactId = null }: { lines: MyLine[]; open
   const sendable = lines.filter((l) => l.level === "send" && l.status !== "disconnected");
   // Opened from a contact's Message button: start in their thread (on the office number, or the only one they have).
   const [active, setActive] = useState<Active | null>(
-    openContactId && (defaultLine) ? { contactId: openContactId, lineId: defaultLine.id } : null);
+    openThread ?? (openContactId && (defaultLine) ? { contactId: openContactId, lineId: defaultLine.id } : null));
   const [me, setMe] = useState<string | null>(null);
   const [staff, setStaff] = useState<Array<{ id: string; display_name: string | null }>>([]);
   const [starting, setStarting] = useState(false);
@@ -159,7 +166,8 @@ export function WaInbox({ lines, openContactId = null }: { lines: MyLine[]; open
   const staffName = (id: string | null | undefined) => staff.find((s) => s.id === id)?.display_name ?? null;
 
   return (
-    <div className="grid h-[calc(100vh-15rem)] min-h-[520px] grid-cols-1 overflow-hidden rounded-xl border border-border md:grid-cols-[320px_1fr]">
+    <div className={cn("grid grid-cols-1 overflow-hidden md:grid-cols-[320px_1fr]",
+      fill ? "h-full min-h-0" : "h-[calc(100vh-15rem)] min-h-[520px] rounded-xl border border-border")}>
       {/* ── Conversation list ── */}
       <aside className={cn("flex min-h-0 flex-col border-r border-border", active && "hidden md:flex")}>
         <div className="space-y-2 border-b border-border p-3">

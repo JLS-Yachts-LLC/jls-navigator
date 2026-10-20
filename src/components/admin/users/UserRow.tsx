@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth'
 import { RoleBadge } from './RoleBadge'
 import { EditRoleModal } from './EditRoleModal'
 import { EditNameModal } from './EditNameModal'
+import { ProfileAvatar } from '@/components/profile/profile-menu'
 import type { UserRole, RoleOption } from '@/lib/admin/types'
 
 function relativeTime(iso: string | null): string {
@@ -158,10 +159,12 @@ export function UserRow({ userRole, roles, departments = [], onRefresh }: Props)
       <tr className="border-b border-border hover:bg-muted/40 transition-colors">
         <td className="px-3 py-2.5">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full
-                            bg-muted text-[11.5px] font-bold text-muted-foreground">
-              {initials}
-            </div>
+            <ProfileAvatar
+              avatarUrl={(userRole as any).avatar_url ?? null}
+              initials={initials}
+              size={28}
+              className="bg-muted text-[11.5px] font-bold text-muted-foreground"
+            />
             <div className="min-w-0">
               {displayName ? (
                 <>

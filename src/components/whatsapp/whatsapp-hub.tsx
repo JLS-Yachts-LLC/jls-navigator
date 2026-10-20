@@ -10,7 +10,7 @@
  * and only that number's conversations.
  */
 import { useEffect, useState } from "react";
-import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock, ListChecks } from "lucide-react";
+import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock, ListChecks, MessageCircle } from "lucide-react";
 import { useAccess } from "@/lib/auth/useAccess";
 import { useUserPreference } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
@@ -71,12 +71,20 @@ export function WhatsAppHub() {
 
   return (
     <div className="space-y-4 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">WhatsApp</h1>
-        <p className="text-sm text-muted-foreground">
-          Message clients who've opted in, and reply to them — every message, receipt and consent recorded.
-          {!canEdit && " You have view-only access."}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">WhatsApp</h1>
+          <p className="text-sm text-muted-foreground">
+            Message clients who've opted in, and reply to them — every message, receipt and consent recorded.
+            {!canEdit && " You have view-only access."}
+          </p>
+        </div>
+        {/* The inbox on its own, installable like WhatsApp Desktop (see chats-app.tsx). */}
+        <a href="/chats-app" target="_blank" rel="noreferrer"
+          title="Just your WhatsApp conversations in a window of their own, with an alert when a message comes in. Install it from the browser's address bar to get a taskbar icon."
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium hover:bg-muted">
+          <MessageCircle className="h-3.5 w-3.5 text-emerald-500" /> Open Polaris Chats
+        </a>
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-border">

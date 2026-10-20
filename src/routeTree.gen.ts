@@ -15,6 +15,7 @@ import { Route as PortalRouteImport } from './routes/portal'
 import { Route as OrbitAppRouteImport } from './routes/orbit-app'
 import { Route as LogisticsAppRouteImport } from './routes/logistics-app'
 import { Route as GuestRouteImport } from './routes/guest'
+import { Route as ChatsAppRouteImport } from './routes/chats-app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AcademyRouteImport } from './routes/academy'
 import { Route as AppRouteImport } from './routes/_app'
@@ -202,6 +203,11 @@ const LogisticsAppRoute = LogisticsAppRouteImport.update({
 const GuestRoute = GuestRouteImport.update({
   id: '/guest',
   path: '/guest',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatsAppRoute = ChatsAppRouteImport.update({
+  id: '/chats-app',
+  path: '/chats-app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -1028,6 +1034,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
+  '/chats-app': typeof ChatsAppRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
@@ -1193,6 +1200,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
+  '/chats-app': typeof ChatsAppRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
@@ -1345,6 +1353,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/academy': typeof AcademyRoute
   '/auth': typeof AuthRoute
+  '/chats-app': typeof ChatsAppRoute
   '/guest': typeof GuestRoute
   '/logistics-app': typeof LogisticsAppRoute
   '/orbit-app': typeof OrbitAppRoute
@@ -1512,6 +1521,7 @@ export interface FileRouteTypes {
     | '/'
     | '/academy'
     | '/auth'
+    | '/chats-app'
     | '/guest'
     | '/logistics-app'
     | '/orbit-app'
@@ -1677,6 +1687,7 @@ export interface FileRouteTypes {
     | '/'
     | '/academy'
     | '/auth'
+    | '/chats-app'
     | '/guest'
     | '/logistics-app'
     | '/orbit-app'
@@ -1828,6 +1839,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/academy'
     | '/auth'
+    | '/chats-app'
     | '/guest'
     | '/logistics-app'
     | '/orbit-app'
@@ -1995,6 +2007,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AcademyRoute: typeof AcademyRoute
   AuthRoute: typeof AuthRoute
+  ChatsAppRoute: typeof ChatsAppRoute
   GuestRoute: typeof GuestRoute
   LogisticsAppRoute: typeof LogisticsAppRoute
   OrbitAppRoute: typeof OrbitAppRoute
@@ -2055,6 +2068,13 @@ declare module '@tanstack/react-router' {
       path: '/guest'
       fullPath: '/guest'
       preLoaderRoute: typeof GuestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chats-app': {
+      id: '/chats-app'
+      path: '/chats-app'
+      fullPath: '/chats-app'
+      preLoaderRoute: typeof ChatsAppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -3661,6 +3681,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AcademyRoute: AcademyRoute,
   AuthRoute: AuthRoute,
+  ChatsAppRoute: ChatsAppRoute,
   GuestRoute: GuestRoute,
   LogisticsAppRoute: LogisticsAppRoute,
   OrbitAppRoute: OrbitAppRoute,

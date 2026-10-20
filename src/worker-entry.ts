@@ -24,6 +24,7 @@ import { internalServicesRenewalCheckHandler } from './routes/api.internal-servi
 import { fxRateHandler } from './routes/api.fx-rate'
 import { shipsyncPwaHandler } from './lib/shipsync/pwa-assets'
 import { logisticsPwaHandler } from './lib/logistics-pwa'
+import { chatsPwaHandler } from './lib/chats-pwa'
 import { shipsyncApiHandler } from './routes/api.shipsync'
 import { anchorFormsHandler } from './routes/api.anchor-forms'
 import { qbInvoiceHandler } from './routes/api.qb.invoice'
@@ -1436,6 +1437,11 @@ export default {
       const pwa = logisticsPwaHandler(request)
       if (pwa) return pwa
     }
+    // Polaris Chats (WhatsApp-only app) service worker: offline shell + alert clicks.
+    {
+      const pwa = chatsPwaHandler(request)
+      if (pwa) return pwa
+    }
 
     if (url.pathname === '/api/crew-care/alerts') {
       const { crewCareAlertsHandler } = await import('./routes/api.crew-care.alerts')
@@ -1576,6 +1582,10 @@ export default {
     }
     if (url.pathname === '/api/admin/users') {
       return adminUsersHandler(request)
+    }
+    if (url.pathname === '/api/admin/users/sync-photos') {
+      const { adminUsersSyncPhotosHandler } = await import('./routes/api.admin.users')
+      return adminUsersSyncPhotosHandler(request)
     }
     if (url.pathname.startsWith('/api/admin/users/')) {
       const id = decodeURIComponent(url.pathname.slice('/api/admin/users/'.length))
@@ -1939,6 +1949,17 @@ export default {
           .then((m) => m.runCrewDobCheckIfDue())
           .then((r) => { if (r.ran) console.log(`[crew-dob-check] ${JSON.stringify(r.result)}`) })
           .catch((e) => console.error('[crew-dob-check] error:', e))
+      )
+    }
+
+    // ── Daily (04:00 UTC tick): staff profile pictures from Microsoft Entra.
+    //    Unchanged photos cost one metadata call each; own uploads are never replaced. ──
+    if (isHourly && utcHour === 4) {
+      ctx.waitUntil(
+        import('./lib/entra-photos.server')
+          .then((m) => m.syncEntraPhotos())
+          .then((r) => console.log(`[entra-photos] updated=${r.updated} unchanged=${r.unchanged} noPhoto=${r.noPhoto} cleared=${r.cleared} keptOwn=${r.keptOwn} errors=${r.errors.length}`))
+          .catch((e) => console.error('[entra-photos] error:', e instanceof Error ? e.message : String(e)))
       )
     }
 

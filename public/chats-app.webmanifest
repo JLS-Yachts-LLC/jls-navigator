@@ -1,0 +1,16 @@
+{
+  "id": "/chats-app",
+  "name": "Polaris Chats",
+  "short_name": "Chats",
+  "description": "Your WhatsApp conversations in Polaris — read and reply, with an alert when a message comes in.",
+  "start_url": "/chats-app",
+  "scope": "/chats-app",
+  "display": "standalone",
+  "background_color": "#0B1F3A",
+  "theme_color": "#0B1F3A",
+  "icons": [
+    { "src": "/chats-icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/chats-icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/chats-icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
