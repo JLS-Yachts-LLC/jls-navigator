@@ -2175,6 +2175,8 @@ async function _syncPermits(
   // POSTed each DMA permit as a NEW item into every other list (lookup failed → create),
   // so Navigation License, Tenders, Mothership and Gate Pass hold copies at their own
   // item ids, where the same-id check above can't see them. Such an item is never added.
+  // A PRMT number is a DMA permit even when the DMA list doesn't (yet) hold it, so
+  // outside the DMA list it is never added or linked either way (_isDmaPermitNumber).
   const dmaNumbers = new Set<string>()
   if (permitType !== 'dma') {
     const dmaSnap = [...lists.values()].find((l) => _permitTypeFromListName(l.listName) === 'dma')
@@ -2182,6 +2184,18 @@ async function _syncPermits(
       if (i['@removed']) continue
       const n = _permitItemSig(i.fields ?? {}, dmaSnap!.fieldMapping).number
       if (n.startsWith('prmt')) dmaNumbers.add(n)
+    }
+  }
+  // In the DMA list itself: PRMT number → the item already holding it. The old push
+  // also wrote DMA permits into other DMA item ids (PRMT202601409 is items 6 and 11),
+  // so a second item with the same number is a copy, not a second permit.
+  const dmaItemByNumber = new Map<string, string>()
+  if (permitType === 'dma') {
+    for (const p of (existingPermits ?? []) as Record<string, any>[]) {
+      const n = _normRef(p.permit_number)
+      if (p.sharepoint_item_id && p.sharepoint_list_name === cfg.listName && _isDmaPermitNumber(n) && !dmaItemByNumber.has(n)) {
+        dmaItemByNumber.set(n, String(p.sharepoint_item_id))
+      }
     }
   }
 
@@ -2251,8 +2265,17 @@ async function _syncPermits(
         copySkips.push({ itemId: itemKey, holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''), copyOf: copy })
         continue
       }
-      if (numberKey && dmaNumbers.has(numberKey)) {
-        copySkips.push({ itemId: itemKey, holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''), copyOf: 'DMA Permits (same permit number)' })
+      if (numberKey && permitType !== 'dma' && (dmaNumbers.has(numberKey) || _isDmaPermitNumber(numberKey))) {
+        copySkips.push({
+          itemId: itemKey,
+          holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''),
+          copyOf: dmaNumbers.has(numberKey) ? 'DMA Permits (same permit number)' : 'a DMA Foreign Visitor Permit (PRMT number) — belongs in DMA Permits',
+        })
+        continue
+      }
+      const sameNumberItem = numberKey && permitType === 'dma' ? dmaItemByNumber.get(numberKey) : undefined
+      if (sameNumberItem && sameNumberItem !== itemKey) {
+        copySkips.push({ itemId: itemKey, holds: describe(record) + (vesselTitle && !record.yacht_id ? ` · ${vesselTitle}` : ''), copyOf: `DMA Permits item ${sameNumberItem} (same permit number)` })
         continue
       }
       let how = ''
@@ -2317,6 +2340,8 @@ async function _syncPermits(
     } else {
       insertByKey.set(itemKey, { ...record })
       if (!record.yacht_id && vesselTitle) unmatchedVessels.set(vesselTitle, (unmatchedVessels.get(vesselTitle) ?? 0) + 1)
+      // One DMA item per PRMT number: a later item of this run with the same number is a copy.
+      if (permitType === 'dma' && numberKey && _isDmaPermitNumber(numberKey) && !dmaItemByNumber.has(numberKey)) dmaItemByNumber.set(numberKey, itemKey)
     }
   }
 
@@ -3302,6 +3327,14 @@ async function _syncCrew(cfg: SpConfig): Promise<{ synced: number; errors: numbe
  * name a whole crowd rather than one record — matching on them is how unrelated
  * permits ended up on top of each other.
  */
+/**
+ * A DMA Foreign Visitor Permit number ("PRMT202601409", already _normRef'd). Only the
+ * DMA list holds these; in any other permit list such an item is a copy the old push made.
+ */
+function _isDmaPermitNumber(normRef: string): boolean {
+  return /^prmt\d{6,}$/.test(normRef)
+}
+
 function _isRealPermitNumber(v: unknown): boolean {
   const s = String(v ?? '').trim()
   if (s.length < 3) return false
