@@ -21,6 +21,7 @@ import {
 import { Plus, Search, LogIn, LogOut, Trash2, Loader2, FileText, Upload, CheckCircle2, Pencil, BarChart3, Download, CopyPlus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 
 type CrewLite = { id: string; first_name: string; last_name: string; rank: string | null; yacht_id: string | null };
@@ -45,6 +46,12 @@ type SignEvent = {
   crew_contact_number?: string | null;
   driver_name?: string | null;
 };
+
+/** Remarks on one line (the cell's title carries the full text). */
+const oneLine = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+// Header cell that stays in view while the list scrolls. Solid background, or
+// rows show through it; no overflow-hidden wrapper, or it stops sticking.
+const TH = "sticky top-0 z-10 bg-card px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]";
 
 const EMPTY_FORM = {
   yacht_id: "", event_type: "sign_on", event_date: "", port: "", notes: "",
@@ -382,17 +389,35 @@ export function SignOnOffPage() {
     }
     if (q.trim()) {
       const s = q.toLowerCase();
-      if (![crewName(e.crew_member_id), yachtName(e.yacht_id), e.port].join(" ").toLowerCase().includes(s)) return false;
+      if (![crewName(e.crew_member_id), yachtName(e.yacht_id), e.port, e.notes].join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
   }), [events, q, filterType, filterYacht, filterImm, immByYacht, crew, yachts]);
 
+  // Excel-style sort + value filter on each column title, on top of the filters above.
+  const columns = useMemo<FilterColumn<SignEvent>[]>(() => [
+    { key: "event", label: "Event", value: (e) => (e.event_type === "sign_on" ? "Sign On" : "Sign Off") },
+    { key: "crew", label: "Crew Member", value: (e) => crewName(e.crew_member_id) },
+    { key: "vessel", label: "Vessel", value: (e) => yachtName(e.yacht_id) },
+    { key: "date", label: "Date", value: (e) => e.event_date?.slice(0, 7), sortValue: (e) => e.event_date },
+    { key: "port", label: "Port", value: (e) => e.port },
+    { key: "imm", label: "Immigration", value: (e) => [
+      e.yacht_id && immByYacht.dubai.has(e.yacht_id) ? "DXB list" : "DXB missing",
+      e.yacht_id && immByYacht.auh.has(e.yacht_id) ? "AUH done" : "AUH —",
+    ].join(" · ") },
+    { key: "notes", label: "Remarks", value: (e) => oneLine(e.notes).slice(0, 80) },
+  ], [immByYacht, crew, yachts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cf = useColumnFilters(filtered, columns);
+
   const toggleEvent = (id: string) => setSelectedEvents((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  const allSelected = filtered.length > 0 && filtered.every((e) => selectedEvents.includes(e.id));
-  const toggleAll = () => setSelectedEvents(allSelected ? [] : filtered.map((e) => e.id));
+  const allSelected = cf.rows.length > 0 && cf.rows.every((e) => selectedEvents.includes(e.id));
+  const toggleAll = () => setSelectedEvents(allSelected ? [] : cf.rows.map((e) => e.id));
 
   function generateReport() {
-    const rows = events.filter((e) => selectedEvents.includes(e.id));
+    // Selected events in the order shown on screen (column sort included).
+    const pos = new Map(cf.rows.map((e, i) => [e.id, i]));
+    const rows = events.filter((e) => selectedEvents.includes(e.id))
+      .sort((a, b) => (pos.get(a.id) ?? Infinity) - (pos.get(b.id) ?? Infinity));
     if (rows.length === 0) return;
     const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
     const header = ["Event", "Crew Member", "Vessel", "Date", "Port", "Dubai Immigration", "Abu Dhabi Immigration", "Notes"];
@@ -459,7 +484,8 @@ export function SignOnOffPage() {
             {!q && filterType === "all" && <Button onClick={openNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> Record First Event</Button>}
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+          // No overflow-hidden here: it would stop the header row sticking.
+          <div className="rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
             {selectedEvents.length > 0 && (
               <div className="flex items-center justify-between border-b border-border bg-primary/5 px-4 py-2">
                 <span className="text-[12.5px] font-medium">{selectedEvents.length} selected</span>
@@ -470,14 +496,20 @@ export function SignOnOffPage() {
               </div>
             )}
             <table className="w-full text-sm">
-              <thead><tr className="border-b border-border bg-muted/30">
-                <th className="w-10 px-3 py-2.5"><input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-primary" aria-label="Select all" /></th>
-                {["Event", "Crew Member", "Vessel", "Date", "Port", "Immigration", ""].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">{h}</th>
+              <thead><tr>
+                <th className={cn(TH, "w-10 px-3")}><input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-primary" aria-label="Select all shown" /></th>
+                {columns.map((c) => (
+                  <th key={c.key} className={TH}>{cf.header(c.key)}</th>
                 ))}
+                <th className={TH} />
               </tr></thead>
               <tbody>
-                {filtered.map((e) => {
+                {cf.rows.length === 0 && (
+                  <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No events match the column filters · <button onClick={cf.clearAll} className="text-primary hover:underline">Clear column filters</button>
+                  </td></tr>
+                )}
+                {cf.rows.map((e) => {
                   const dxb = e.yacht_id ? immByYacht.dubai.get(e.yacht_id) : undefined;
                   const auh = e.yacht_id ? immByYacht.auh.get(e.yacht_id) : undefined;
                   return (
@@ -504,6 +536,7 @@ export function SignOnOffPage() {
                         ) : <span className="text-[10.5px] text-muted-foreground/60">AUH: —</span>}
                       </div>
                     </td>
+                    <td className="max-w-[16rem] truncate px-4 py-3 text-[12.5px] text-muted-foreground" title={e.notes ?? undefined}>{oneLine(e.notes) || "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-0.5">
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-primary" onClick={() => openDuplicate(e)}
@@ -522,6 +555,10 @@ export function SignOnOffPage() {
                 );})}
               </tbody>
             </table>
+            <div className="flex items-center gap-2 border-t border-border/60 px-4 py-2 text-xs text-muted-foreground">
+              {cf.rows.length !== events.length ? `${cf.rows.length} of ${events.length}` : events.length} record{events.length !== 1 ? "s" : ""}
+              {cf.activeCount > 0 && <button onClick={cf.clearAll} className="font-medium text-primary hover:underline">Clear column filters</button>}
+            </div>
           </div>
         )}
       </div>

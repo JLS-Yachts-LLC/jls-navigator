@@ -7,9 +7,11 @@
  */
 
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { COLORS, FONTS } from '@/lib/tokens'
 import { useAuth } from '@/lib/auth'
+import { useColumnFilters, type FilterColumn } from '@/components/ui/column-filter'
+import { triggerBlobDownload } from '@/lib/visa/documentExport'
 
 export const Route = createFileRoute('/_app/crew-immigration/visas/expiry')({
   component: VisaExpiryReportPage,
@@ -73,7 +75,24 @@ function VisaExpiryReportPage() {
     }
   }
 
+  // Excel-style sort + value filter on each column title. Dates filter by month.
+  const columns = useMemo<FilterColumn<ExpiryRow>[]>(() => [
+    { key: 'crew', label: 'Crew member', value: (r) => r.crew_members?.full_name },
+    { key: 'vessel', label: 'Vessel', value: (r) => r.yachts?.vessel_name ?? r.vessel_name },
+    { key: 'expiry', label: 'Expiry', value: (r) => r.visa_expiry?.slice(0, 7), sortValue: (r) => r.visa_expiry },
+    { key: 'left', label: 'Days left', value: (r) => daysLeft(r.visa_expiry), sortValue: (r) => r.visa_expiry },
+  ], [])
+  const cf = useColumnFilters(rows, columns)
+
   async function exportFile(format: 'csv' | 'pdf') {
+    if (format === 'csv') {
+      // Exactly what's on screen: column filters and sort included.
+      const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+      const out = [['Crew member', 'Vessel', 'Expiry date', 'Days left'],
+        ...cf.rows.map((r) => [r.crew_members?.full_name ?? '', r.yachts?.vessel_name ?? r.vessel_name ?? '', r.visa_expiry ?? '', daysLeft(r.visa_expiry)])]
+      triggerBlobDownload(new Blob([out.map((l) => l.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }), 'uae-visa-expiry.csv')
+      return
+    }
     const res = await fetch(`/api/visa/reports/expiry?days=${days}&format=${format}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -93,10 +112,12 @@ function VisaExpiryReportPage() {
     fontFamily: FONTS.display, fontSize: 13, fontWeight: 600,
     color: active ? COLORS.void : COLORS.muted,
   })
+  // Header row stays in view while the page scrolls; solid background so rows don't show through.
   const th: React.CSSProperties = {
     textAlign: 'left', fontFamily: FONTS.display, fontSize: 10, fontWeight: 700,
     letterSpacing: '0.14em', textTransform: 'uppercase', color: COLORS.steel,
-    padding: '8px 12px', borderBottom: `1px solid var(--border)`,
+    padding: '8px 12px', position: 'sticky', top: 0, zIndex: 10, background: COLORS.abyss,
+    boxShadow: 'inset 0 -1px 0 0 var(--border)', whiteSpace: 'nowrap',
   }
   const td: React.CSSProperties = {
     fontFamily: FONTS.display, fontSize: 13, color: COLORS.frost, padding: '10px 12px',
@@ -111,6 +132,9 @@ function VisaExpiryReportPage() {
           {WINDOWS.map((w) => (
             <button key={w} onClick={() => setDays(w)} style={btn(days === w)}>{w}d</button>
           ))}
+          <span style={{ fontSize: 12, color: COLORS.muted }}>
+            {cf.rows.length !== rows.length ? `${cf.rows.length} of ${rows.length}` : rows.length} record{rows.length !== 1 ? 's' : ''}
+          </span>
           <button onClick={() => exportFile('csv')} style={{ ...btn(false), color: COLORS.signal }}>Export CSV</button>
           <button onClick={() => exportFile('pdf')} style={{ ...btn(false), color: COLORS.signal }}>Export PDF</button>
         </div>
@@ -127,15 +151,21 @@ function VisaExpiryReportPage() {
       ) : rows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: COLORS.muted, fontSize: 13 }}>No UAE visas expiring within {days} days.</div>
       ) : (
-        <div style={{ overflowX: 'auto', background: COLORS.abyss, border: `1px solid var(--border)`, borderRadius: 12 }}>
+        // No overflow wrapper: it would stop the header row sticking.
+        <div style={{ background: COLORS.abyss, border: `1px solid var(--border)`, borderRadius: 12 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={th}>Crew member</th><th style={th}>Vessel</th><th style={th}>Expiry</th><th style={th}>Days left</th>
+                {columns.map((c) => <th key={c.key} style={th}>{cf.header(c.key)}</th>)}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {cf.rows.length === 0 && (
+                <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: COLORS.muted }}>
+                  No visas match the column filters · <button onClick={cf.clearAll} style={{ background: 'none', border: 'none', cursor: 'pointer', color: COLORS.signal, textDecoration: 'underline' }}>Clear column filters</button>
+                </td></tr>
+              )}
+              {cf.rows.map((r) => (
                 <tr key={r.id}>
                   <td style={td}>{r.crew_members?.full_name ?? '—'}</td>
                   <td style={td}>{r.yachts?.vessel_name ?? r.vessel_name ?? '—'}</td>

@@ -17,6 +17,7 @@ import {
 import { Plus, Search, FileText, Trash2, Loader2, Upload, ExternalLink, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 import { uploadCrewDocToSharePoint } from "@/lib/visa-sharepoint.server";
 import { SignedAnchor } from "@/components/ui/signed-file";
 
@@ -44,6 +45,9 @@ type CrewDoc = {
 };
 
 const DOC_TYPES = ["Passport", "Visa", "Seaman's Book", "STCW Certificate", "Medical Certificate", "Contract", "Photo", "Other"];
+
+// Header cell that stays in view while the list scrolls (solid background, or rows show through).
+const TH = "sticky top-0 z-10 bg-card px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border)]";
 
 function daysUntil(d: string | null): number | null {
   if (!d) return null;
@@ -166,10 +170,22 @@ export function CrewDocumentsPage() {
     if (filterCrew !== "all" && d.crew_member_id !== filterCrew) return false;
     if (q.trim()) {
       const s = q.toLowerCase();
-      if (![crewName(d.crew_member_id), d.doc_type, d.title, d.file_name].join(" ").toLowerCase().includes(s)) return false;
+      if (![crewName(d.crew_member_id), d.doc_type, d.title, d.file_name, d.notes].join(" ").toLowerCase().includes(s)) return false;
     }
     return true;
   }), [docs, q, filterCrew, crew]);
+
+  // Excel-style sort + value filter on each column title. Dates filter by month.
+  const columns = useMemo<FilterColumn<CrewDoc>[]>(() => [
+    { key: "crew", label: "Crew Member", value: (d) => crewName(d.crew_member_id) },
+    { key: "type", label: "Type", value: (d) => d.doc_type },
+    { key: "title", label: "Document", value: (d) => d.title },
+    { key: "issued", label: "Issued", value: (d) => d.issue_date?.slice(0, 7), sortValue: (d) => d.issue_date },
+    { key: "expiry", label: "Expiry", value: (d) => d.expiry_date?.slice(0, 7), sortValue: (d) => d.expiry_date },
+    { key: "file", label: "File", value: (d) => (d.file_url ? "Attached" : null) },
+    { key: "notes", label: "Notes", value: (d) => d.notes?.replace(/\s+/g, " ").trim().slice(0, 80) },
+  ], [crew]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cf = useColumnFilters(filtered, columns);
 
   const expiringSoon = docs.filter((d) => { const n = daysUntil(d.expiry_date); return n !== null && n >= 0 && n <= 30; }).length;
   const expired = docs.filter((d) => { const n = daysUntil(d.expiry_date); return n !== null && n < 0; }).length;
@@ -198,7 +214,8 @@ export function CrewDocumentsPage() {
       </header>
 
       <div className="flex items-center gap-4 border-b border-border/40 bg-muted/10 px-6 py-2 text-xs">
-        <span className="text-muted-foreground">{docs.length} documents</span>
+        <span className="text-muted-foreground">{cf.rows.length !== docs.length ? `${cf.rows.length} of ${docs.length}` : docs.length} documents</span>
+        {cf.activeCount > 0 && <button onClick={cf.clearAll} className="font-medium text-primary hover:underline">Clear column filters</button>}
         {expiringSoon > 0 && <span className="text-amber-500 font-medium">{expiringSoon} expiring ≤ 30d</span>}
         {expired > 0 && <span className="text-destructive font-medium">{expired} expired</span>}
       </div>
@@ -214,15 +231,22 @@ export function CrewDocumentsPage() {
             {!q && filterCrew === "all" && <Button onClick={openNew} className="mt-4 gap-1.5"><Plus className="h-4 w-4" /> Add First Document</Button>}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
+          // No overflow wrapper: it would stop the header row sticking.
+          <div className="rounded-xl border border-border bg-card shadow-[0_2px_12px_-4px_rgba(0,0,0,0.4)]">
             <table className="w-full text-sm">
-              <thead><tr className="border-b border-border bg-muted/30">
-                {["Crew Member", "Type", "Document", "Issued", "Expiry", "File", ""].map((h) => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground whitespace-nowrap">{h}</th>
+              <thead><tr>
+                {columns.map((c) => (
+                  <th key={c.key} className={TH}>{cf.header(c.key)}</th>
                 ))}
+                <th className={TH} />
               </tr></thead>
               <tbody>
-                {filtered.map((d) => {
+                {cf.rows.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No documents match the column filters · <button onClick={cf.clearAll} className="text-primary hover:underline">Clear column filters</button>
+                  </td></tr>
+                )}
+                {cf.rows.map((d) => {
                   const days = daysUntil(d.expiry_date);
                   return (
                     <tr key={d.id} className="border-b border-border/40 hover:bg-accent/20 transition-colors">
@@ -242,6 +266,9 @@ export function CrewDocumentsPage() {
                             <ExternalLink className="h-3 w-3" /> View
                           </SignedAnchor>
                         ) : <span className="text-xs text-muted-foreground/40">—</span>}
+                      </td>
+                      <td className="max-w-[16rem] truncate px-4 py-3 text-[12.5px] text-muted-foreground" title={d.notes ?? undefined}>
+                        {d.notes?.replace(/\s+/g, " ").trim() || "—"}
                       </td>
                       <td className="px-4 py-3">
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-destructive" onClick={() => setDeleteTarget(d)}>

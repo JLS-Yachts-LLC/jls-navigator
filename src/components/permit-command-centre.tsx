@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useColumnFilters, type FilterColumn } from "@/components/ui/column-filter";
 
 type Yacht = { id: string; vessel_name: string };
 
@@ -141,6 +142,20 @@ function StatCard({
   );
 }
 
+// Header cell that stays in view while the page scrolls (solid background, or rows show through).
+const TH = "sticky top-0 z-10 bg-card px-4 py-2 font-medium whitespace-nowrap shadow-[inset_0_-1px_0_0_var(--border),inset_0_1px_0_0_var(--border)]";
+
+const BAND_COLUMNS: FilterColumn<EnrichedPermit>[] = [
+  { key: "type", label: "Permit Type", value: (p) => PERMIT_META[p.permit_type as PermitType]?.label ?? p.permit_type },
+  { key: "vessel", label: "Vessel", value: (p) => p.vessel_name },
+  { key: "number", label: "Permit #", value: (p) => p.permit_number },
+  { key: "holder", label: "Holder", value: (p) => p.holder_name },
+  // Dates filter by month, sort on the full date.
+  { key: "expiry", label: "Expiry", value: (p) => p.expiry_date?.slice(0, 7), sortValue: (p) => p.expiry_date },
+  { key: "left", label: "Time Left", value: (p) => dayLabel(p.days), sortValue: (p) => p.days },
+  { key: "remarks", label: "Remarks", value: (p) => p.notes?.replace(/\s+/g, " ").trim().slice(0, 80) },
+];
+
 function BandSection({
   band, permits, defaultOpen,
 }: {
@@ -150,15 +165,19 @@ function BandSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const { Icon } = band;
+  // Excel-style sort + value filter on each column title, per band.
+  const cf = useColumnFilters(permits, BAND_COLUMNS);
 
   if (permits.length === 0) return null;
 
   return (
-    <div className={cn("rounded-xl border overflow-hidden", band.borderAccent)}>
+    // No overflow-hidden: it would stop the header row sticking while the page scrolls.
+    <div className={cn("rounded-xl border", band.borderAccent)}>
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(
           "flex w-full items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/20",
+          open ? "rounded-t-xl" : "rounded-xl",
           band.bgAccent,
         )}
       >
@@ -166,7 +185,7 @@ function BandSection({
         <span className={cn("font-semibold text-sm", band.accent)}>{band.label}</span>
         <span className="text-[11px] text-muted-foreground/70">{band.description}</span>
         <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums", band.bgAccent, band.accent, "border", band.borderAccent)}>
-          {permits.length}
+          {cf.rows.length !== permits.length ? `${cf.rows.length} of ${permits.length}` : permits.length}
         </span>
         {open
           ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50" />
@@ -174,21 +193,23 @@ function BandSection({
       </button>
 
       {open && (
-        <div className="overflow-x-auto">
+        <div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-t border-border/40 bg-card/60 text-[10.5px] uppercase tracking-wider text-muted-foreground/60">
-                <th className="px-4 py-2 text-left font-medium">Permit Type</th>
-                <th className="px-4 py-2 text-left font-medium">Vessel</th>
-                <th className="px-4 py-2 text-left font-medium">Permit #</th>
-                <th className="px-4 py-2 text-left font-medium">Holder</th>
-                <th className="px-4 py-2 text-left font-medium">Expiry</th>
-                <th className="px-4 py-2 text-right font-medium">Time Left</th>
-                <th className="px-4 py-2 text-right font-medium">Go to</th>
+              <tr className="text-[10.5px] uppercase tracking-wider text-muted-foreground/60">
+                {BAND_COLUMNS.map((c) => (
+                  <th key={c.key} className={cn(TH, c.key === "left" ? "text-right" : "text-left")}>{cf.header(c.key)}</th>
+                ))}
+                <th className={cn(TH, "text-right")}>Go to</th>
               </tr>
             </thead>
             <tbody>
-              {permits.map((p) => {
+              {cf.rows.length === 0 && (
+                <tr className="border-t border-border/30"><td colSpan={8} className="px-4 py-6 text-center text-xs text-muted-foreground">
+                  No permits match the column filters · <button onClick={cf.clearAll} className="text-primary hover:underline">Clear column filters</button>
+                </td></tr>
+              )}
+              {cf.rows.map((p) => {
                 const meta = PERMIT_META[p.permit_type as PermitType];
                 const variant = expiryVariant(p.days);
                 return (
@@ -209,6 +230,9 @@ function BandSection({
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <span className={cn("pill", variant)}>{dayLabel(p.days)}</span>
+                    </td>
+                    <td className="max-w-[16rem] truncate px-4 py-2.5 text-[12px] text-muted-foreground" title={p.notes ?? undefined}>
+                      {p.notes?.replace(/\s+/g, " ").trim() || <span className="text-muted-foreground/35">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       {meta && (
