@@ -79,7 +79,8 @@ export function CompassCardPage({ initialEventId }: { initialEventId?: string })
     const [e, s] = await Promise.all([
       db.from("compass_card_events").select("id, event_type, team, occurred_at, received_at, title, summary, status, person_name, person_email, admin_url, data, alert_result")
         .order("received_at", { ascending: false }).limit(500),
-      db.from("user_profiles").select("user_id, display_name, email, department, active").neq("active", false).order("display_name"),
+      // Not filtered on user_profiles.active: it is false for many staff in daily use.
+      db.from("user_profiles").select("user_id, display_name, email, department").order("display_name"),
     ]);
     if (e.error) toast.error(e.error.message);
     setEvents(e.data ?? []);
