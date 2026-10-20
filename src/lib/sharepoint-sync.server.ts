@@ -432,11 +432,49 @@ export async function getGraphToken(tenantId: string, clientId: string, clientSe
 }
 
 // SharePoint file downloads require a SharePoint-scoped token, not the Graph token.
+//
+// SharePoint's own REST API (/_api/…, e.g. list item attachments) REFUSES an
+// app-only token obtained with a client secret — HTTP 401 "invalid_client",
+// 3001000 — and only accepts one obtained with a certificate. So when the Worker
+// has the certificate (secrets SHAREPOINT_CERT_PRIVATE_KEY, a PKCS#8 PEM, and
+// SHAREPOINT_CERT_THUMBPRINT, its SHA-1 hex; the public half is uploaded to the
+// Entra app registration), the SharePoint token is requested with it. Graph
+// accepts the secret, so getGraphToken is unchanged.
 export async function getSharePointToken(tenantId: string, clientId: string, clientSecret: string, spHostname: string): Promise<string> {
-  return _getToken(tenantId, clientId, clientSecret, `https://${spHostname}/.default`)
+  const scope = `https://${spHostname}/.default`
+  const assertion = await _certAssertion(tenantId, clientId).catch((e) => {
+    console.error('[sharepoint] certificate assertion failed, using the client secret:', e instanceof Error ? e.message : e)
+    return null
+  })
+  if (assertion) {
+    try { return await _getToken(tenantId, clientId, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: assertion }, scope) }
+    catch (e) { console.error('[sharepoint] certificate token refused, using the client secret:', e instanceof Error ? e.message : e) }
+  }
+  return _getToken(tenantId, clientId, clientSecret, scope)
 }
 
-async function _getToken(tenantId: string, clientId: string, clientSecret: string, scope: string): Promise<string> {
+const _b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+/** A signed client assertion (RS256 JWT) for the Microsoft token endpoint, or null without a certificate. */
+async function _certAssertion(tenantId: string, clientId: string): Promise<string | null> {
+  // A PEM pasted as one line carries literal "\n"s.
+  const pem = (process.env.SHAREPOINT_CERT_PRIVATE_KEY ?? '').replace(/\\n/g, '\n')
+  const thumb = (process.env.SHAREPOINT_CERT_THUMBPRINT ?? '').replace(/[^0-9a-f]/gi, '')
+  if (!pem.includes('PRIVATE KEY') || thumb.length !== 40) return null
+  const der = Uint8Array.from(atob(pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')), (c) => c.charCodeAt(0))
+  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign'])
+  const now = Math.floor(Date.now() / 1000)
+  const enc = (o: unknown) => _b64url(new TextEncoder().encode(JSON.stringify(o)))
+  const x5t = _b64url(Uint8Array.from(thumb.match(/../g)!.map((h) => parseInt(h, 16))))
+  const unsigned = `${enc({ alg: 'RS256', typ: 'JWT', x5t })}.${enc({
+    aud: `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+    iss: clientId, sub: clientId, jti: crypto.randomUUID(), nbf: now - 60, exp: now + 600,
+  })}`
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned)))
+  return `${unsigned}.${_b64url(sig)}`
+}
+
+async function _getToken(tenantId: string, clientId: string, credential: string | Record<string, string>, scope: string): Promise<string> {
   const res = await fetch(
     `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
@@ -444,7 +482,7 @@ async function _getToken(tenantId: string, clientId: string, clientSecret: strin
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: clientId,
-        client_secret: clientSecret,
+        ...(typeof credential === 'string' ? { client_secret: credential } : credential),
         scope,
         grant_type: 'client_credentials',
       }).toString(),
@@ -937,7 +975,10 @@ export async function pushRecordToSharePoint(
   // create:false = only update items the record is already linked to; never POST a
   // new one. The hourly permits backstop uses it, because a permit made in Polaris
   // may have a hand-keyed twin in SharePoint that only the pull can link.
-  opts: { create?: boolean } = {},
+  // clearEmpty: also blank the SharePoint columns Polaris has no value for, instead of
+  // leaving them as they are. The SharePoint repair uses it to restore an item the old
+  // push overwrote with another permit, so none of that permit's details are left behind.
+  opts: { create?: boolean; clearEmpty?: boolean } = {},
 ): Promise<void> {
   const allowCreate = opts.create !== false;
   const table = TARGET_TABLE[target];
@@ -991,7 +1032,11 @@ export async function pushRecordToSharePoint(
     for (const [spCol, dbField] of Object.entries(sync.fieldMapping)) {
       if (!dbField || dbField === 'vessel_image') continue;
       let v = valueFor(dbField);
-      if (v === null || v === undefined || v === '') continue;
+      if (v === null || v === undefined || v === '') {
+        // Title is required in SharePoint, so it is never blanked.
+        if (opts.clearEmpty && target === 'permits' && spCol !== 'Title') spFields[spCol] = null;
+        continue;
+      }
       // Date-only values go out as 08:00 UTC — local NOON on the Dubai (+04:00)
       // site. A bare date is read by SharePoint as site-local midnight, which
       // Graph then returns as 20:00Z the day BEFORE, and that is how every date
@@ -1780,6 +1825,53 @@ function _permitCopyChecker(lists: Map<string, PermitListSnapshot>, listName: st
     })
     return hits.length ? hits.map((h) => `${h.listName} item ${itemId}`).join(', ') : null
   }
+}
+
+/** The cross-list "same permit?" rule, for jobs outside the sync (the SharePoint repair). */
+export function permitSigsMatch(
+  a: { vessel: string; holder: string; number: string },
+  b: { vessel: string; holder: string; number: string },
+): boolean {
+  const samePermit = (a.holder && a.holder === b.holder) || (a.number && a.number === b.number)
+  return !!samePermit && (!a.vessel || !b.vessel || a.vessel === b.vessel)
+}
+
+/** An item's permit signature (vessel, holder, number) as the copy check sees it. */
+export function permitItemSignature(fields: Record<string, any>, mapping: Record<string, string>) {
+  return _permitItemSig(fields, mapping)
+}
+
+/** A Polaris permit's signature, comparable with permitItemSignature(). */
+export function polarisPermitSignature(row: { holder_name?: unknown; permit_number?: unknown }, vesselName: unknown) {
+  const num = row.permit_number
+  return { vessel: _normVessel(vesselName), holder: _normHolder(row.holder_name), number: _isRealPermitNumber(num) ? _normRef(num) : '' }
+}
+
+/**
+ * Every permit list for the SharePoint repair job: items, column mapping, site and
+ * the permit type the list owns. Reads only.
+ */
+export async function loadPermitListsForRepair(): Promise<{
+  token: string
+  lists: Array<{ listName: string; permitType: string | null; siteId: string; fieldMapping: Record<string, string>; items: any[] }>
+}> {
+  const cfg = await getSpConfig()
+  const token = await getGraphToken(cfg.tenantId, cfg.clientId, cfg.clientSecret)
+  const sites = new Map<string, string>()
+  const lists = []
+  for (const s of (await getSpSyncs()).filter((x) => x.syncTarget === 'permits')) {
+    const siteUrl = s.sitePath ?? cfg.siteUrl
+    if (!sites.has(siteUrl)) sites.set(siteUrl, await resolveSpSite(token, cfg.tenantUrl, siteUrl))
+    const siteId = sites.get(siteUrl)!
+    lists.push({
+      listName: s.listName,
+      permitType: _permitTypeFromListName(s.listName),
+      siteId,
+      fieldMapping: s.fieldMapping,
+      items: (await _fetchPermitListItems(siteId, token, s.listName)).filter((i) => !i['@removed']),
+    })
+  }
+  return { token, lists }
 }
 
 /**
