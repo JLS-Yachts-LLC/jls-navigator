@@ -10,6 +10,38 @@ export const GENERATED_RELEASES: Release[] = [
     "entries": [
       {
         "type": "feature",
+        "title": "Crew Care trips can be marked as Staff Shuttle, for the daily staff runs to and from the office"
+      },
+      {
+        "type": "fix",
+        "title": "Drivers who sign in on their phone now go straight to their Deliveries in the logistics app instead of the office dashboard, and the older driver screen finds a driver who also has a retired entry on the drivers list"
+      },
+      {
+        "type": "fix",
+        "title": "The Dispatched tab's Destination field now offers your saved destinations and Locations (warehouse, office, hotels, vessel berths), so it works even when Google's address suggestions are unavailable; the new-note boat list now includes every vessel and saved place"
+      },
+      {
+        "type": "fix",
+        "title": "Visa report CSVs downloaded from the Visa Reports screen open cleanly in Excel — accented names (e.g. Française) no longer garble, and empty dates are blank instead of a dash"
+      },
+      {
+        "type": "feature",
+        "title": "Yacht Registry export can now include every field on the yacht, not just the columns on screen"
+      },
+      {
+        "type": "feature",
+        "title": "Orbit 2 Bunkering — the request email now attaches a pre-filled Bunkering Request PDF with the deck plan; the client clicks the plan to mark an X on the manifold, fills in sulfur, specs and remarks, and replies with it; Preview form button, spec subject and wording, CC to the bunkering team, replies go to the sender"
+      },
+      {
+        "type": "feature",
+        "title": "WhatsApp contact cards a client shares now show the person's name and number with Save and Message buttons; right-click a name or number (or use the pencil) to add someone to contacts or edit them; Message a contact can add a new number — all available to anyone who can send from that number"
+      },
+      {
+        "type": "feature",
+        "title": "Vessels now has an Export button that downloads every yacht and its status (or just the list on screen) as a spreadsheet that opens in Excel"
+      },
+      {
+        "type": "feature",
         "title": "Orbit 2 Bunkering — new request form with Details, Additional Jobs, Notes and Documents tabs; picking a vessel fills IMO, Flag, Official No., LOA, Draft and Berth; delivery port, camlock, hose, FWD/MID/AFT, fuel grade and L/IG/M³ units as dropdowns; supplier contacts remembered; grid columns per the bunkering spec"
       },
       {
