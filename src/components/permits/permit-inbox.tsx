@@ -221,7 +221,7 @@ export function PermitInbox({ onCountChange }: { onCountChange?: (n: number) => 
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-muted-foreground">
               <Inbox className="h-8 w-8" />
-              {view === "review" ? "Nothing waiting. Vessel entry permits appear here within 5 minutes of arriving." : "Nothing here."}
+              {view === "review" ? "Nothing waiting. Vessel entry and exit permits appear here within 5 minutes of arriving." : "Nothing here."}
             </div>
           ) : rows.map((r) => {
             const vessel = yachts.find((y) => y.id === (r.yacht_id ?? r.suggested_yacht_id))?.vessel_name;
@@ -334,7 +334,7 @@ function InboxDetail({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
               <div className="space-y-2">
                 <div className="text-xs text-destructive">{row.sharepoint_error ? `Not copied to SharePoint: ${row.sharepoint_error}` : "Not copied to SharePoint."}</div>
                 <Button size="sm" variant="outline" disabled={!!busy}
-                  onClick={() => act("refile", { action: "refile", subfolder: row.permit_type === "exit_entry" && row.dma_phase !== "Exit" ? `ENTRY PERMIT ${new Date(row.received_at ?? row.created_at).getFullYear()}` : "Permits" }, "Copied to SharePoint")}>
+                  onClick={() => act("refile", { action: "refile", subfolder: row.permit_type === "exit_entry" ? `${row.dma_phase === "Exit" ? "EXIT" : "ENTRY"} PERMIT ${new Date(row.received_at ?? row.created_at).getFullYear()}` : "Permits" }, "Copied to SharePoint")}>
                   {busy === "refile" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Copy to SharePoint again
                 </Button>
               </div>
@@ -345,7 +345,7 @@ function InboxDetail({ row, yachts, onChanged }: { row: InboxRow; yachts: Yacht[
         {(row.status === "not_permit" || row.status === "rejected") && (
           <div className="space-y-3 rounded-md border border-border p-3 text-sm">
             <div className="flex items-center gap-2 font-medium text-muted-foreground">
-              <XCircle className="h-4 w-4" /> {row.status === "rejected" ? "Rejected" : "Ignored — not a vessel entry permit"}
+              <XCircle className="h-4 w-4" /> {row.status === "rejected" ? "Rejected" : "Ignored — not a vessel entry or exit permit"}
             </div>
             {row.reading?.summary && <div className="text-xs text-muted-foreground">Read as: {row.reading.summary}</div>}
             <Button size="sm" variant="outline" onClick={() => act("reread", { action: "reread" }, "Moved to review")} disabled={!!busy}>

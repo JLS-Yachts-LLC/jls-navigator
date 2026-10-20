@@ -38,7 +38,7 @@ const MAX_READS_PER_TICK = 4
 /** Days looked back on a normal tick; the first run of a new mailbox looks back further. */
 const LOOKBACK_DAYS = 3
 /** Which permits arriving by email go to review. Everything else is ignored. */
-const WANTED_KINDS = new Set<PermitKind>(['vessel_entry'])
+const WANTED_KINDS = new Set<PermitKind>(['vessel_entry', 'vessel_exit'])
 const FIRST_RUN_DAYS = 14
 
 // ── Reading a PDF ────────────────────────────────────────────────────────────
@@ -111,6 +111,7 @@ Permits include: GDRFA / ICP vessel entry or exit permits ("Vessel Entry Permit"
 A permit here is always about a specific vessel / marine craft, or a person's access to a port (gate pass). Anything about the company itself is NOT a permit.
 
 Be careful with "entry permit": kind = vessel_entry ONLY for a permit letting a VESSEL enter / berth in a UAE port (e.g. the GDRFA / ICP "Vessel Entry Permit", which lists the vessel, its flag, IMO / official number, port and crew). A PERSON's entry permit is a visa — that is not_a_permit.
+Likewise kind = vessel_exit ONLY for a permit for a VESSEL to leave / depart a UAE port (e.g. the GDRFA / ICP "Vessel Exit Permit").
 
 NOT permits (kind = not_a_permit, is_permit = false): company trade / commercial licences, commercial registers, chamber of commerce certificates, signboard permits, invoices, quotations, receipts, crew lists on their own, passports, visas, insurance certificates, letters (including letters about cancelling a craft's registration), contracts, reports, brochures.
 
@@ -593,10 +594,12 @@ export function suggestSubfolder(subfolders: string[], permitType: string | null
   const keys = subfolders.map(s => ({ s, k: nameKey(s) }))
   const has = (k: string, words: string[]) => words.every(w => k.split(' ').some(part => part.startsWith(w)))
 
-  if (permitType === 'exit_entry' && dmaPhase !== 'Exit') {
+  if (permitType === 'exit_entry') {
+    // Exit permits mirror the entry convention: "EXIT PERMIT {year}".
+    const word = dmaPhase === 'Exit' ? 'exit' : 'entry'
     const y = String(year)
-    const hit = keys.find(({ k }) => has(k, ['entry']) && k.split(' ').includes(y))
-    return hit?.s ?? `ENTRY PERMIT ${y}`
+    const hit = keys.find(({ k }) => has(k, [word]) && k.split(' ').includes(y))
+    return hit?.s ?? `${word.toUpperCase()} PERMIT ${y}`
   }
   for (const words of FOLDER_HINTS[permitType ?? ''] ?? []) {
     const hit = keys.find(({ k }) => has(k, words))
