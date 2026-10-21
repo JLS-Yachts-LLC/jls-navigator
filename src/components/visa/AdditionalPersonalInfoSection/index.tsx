@@ -5,6 +5,7 @@ import { COLORS, FONTS } from '@/lib/tokens'
 import { VisaOccupationSelect } from '@/components/visa/VisaOccupationSelect'
 import { formatName } from '@/lib/formatName'
 import { COUNTRY_NAMES } from '@/lib/countries'
+import { supabase } from '@/integrations/supabase/client'
 
 // Country <option> list: placeholder + a fallback for a stored value that isn't
 // in the canonical list (so existing free-text entries aren't lost), then all
@@ -237,6 +238,15 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
 
   const headers = { Authorization: `Bearer ${authToken}` }
 
+  // The authToken prop is captured once when the parent mounts; access tokens
+  // expire after an hour, so a user who sits on this step past expiry got
+  // "Unauthorized" on Continue (SD-0076). Read the live session at save time —
+  // getSession() refreshes an expired token — and fall back to the prop.
+  async function freshHeaders(): Promise<Record<string, string>> {
+    const { data } = await supabase.auth.getSession()
+    return { Authorization: `Bearer ${data.session?.access_token ?? authToken}` }
+  }
+
   // ── Load personal info + OCR on mount ────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -428,10 +438,12 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
         ? fields.religionOther.value.trim()
         : fields.religion.value
 
+      const authHeaders = await freshHeaders()
+
       // 1. Save personal info
       const piRes = await fetch(`/api/crew/${crewId}/personal-info`, {
         method:  'PATCH',
-        headers: { ...headers, 'Content-Type': 'application/json' },
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nationalityCitizenship: fields.nationalityCitizenship.value || null,
           placeOfBirth:           fields.placeOfBirth.value           || null,
@@ -461,7 +473,7 @@ export const AdditionalPersonalInfoSection = forwardRef<AdditionalPersonalInfoHa
       if (applicationId && selectedPassportId) {
         const ppRes = await fetch(`/api/visa/${applicationId}/passport`, {
           method:  'PATCH',
-          headers: { ...headers, 'Content-Type': 'application/json' },
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({ passport_id: selectedPassportId }),
         })
         if (!ppRes.ok) {

@@ -575,9 +575,12 @@ function CrewVerificationPanel({ state, onUpdate, authToken }: { state: WizardSt
     if (!vessel) { setErr('Enter the vessel name first.'); return }
     setStatus('running'); setErr(null)
     try {
+      // Live session token — the prop can be past its 1-hour expiry (SD-0076).
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ?? authToken
       const r = await fetch('/api/crew/verification-letter', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           crewId: state.crew!.id, passportId: passport.id, fullName,
           passportNumber: passport.passport_number ?? '', nationality: passport.nationality ?? '',
