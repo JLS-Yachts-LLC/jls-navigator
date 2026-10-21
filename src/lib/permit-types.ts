@@ -17,8 +17,8 @@ export const PERMIT_META: Record<
 > = {
   exit_entry: { label: "Exit & Entry Permits", route: "/permits/exit-entry", breadcrumb: "Port & Operations / Permits" },
   sanitation: { label: "Sanitation", route: "/permits/sanitation", breadcrumb: "Port & Operations / Permits" },
-  cruising_mothership: { label: "Cruising Permit — Mothership", route: "/permits/cruising-mothership", breadcrumb: "Port & Operations / Permits" },
-  cruising_tenders: { label: "Cruising Permit — Tenders & Appurtenances", route: "/permits/cruising-tenders", breadcrumb: "Port & Operations / Permits" },
+  cruising_mothership: { label: "Cruising Permit â Mothership", route: "/permits/cruising-mothership", breadcrumb: "Port & Operations / Permits" },
+  cruising_tenders: { label: "Cruising Permit â Tenders & Appurtenances", route: "/permits/cruising-tenders", breadcrumb: "Port & Operations / Permits" },
   gate_pass: { label: "Gate Pass", route: "/permits/gate-pass", breadcrumb: "Port & Operations / Permits" },
   tdra: { label: "TDRA", route: "/permits/tdra", breadcrumb: "Port & Operations / Permits" },
   navigation_license: { label: "Navigation License", route: "/permits/navigation-license", breadcrumb: "Port & Operations / Permits" },
@@ -49,7 +49,7 @@ export type Permit = {
   id: string;
   yacht_id: string | null;
   permit_type: PermitType;
-  /** The authority's permit reference. Also the SharePoint permits sync match key —
+  /** The authority's permit reference. Also the SharePoint permits sync match key â
    *  never store anything else here (see migration 20260814090000). */
   permit_number: string | null;
   /** Who applied for the permit. Previously overloaded onto permit_number. */
@@ -100,12 +100,27 @@ export const GATE_PASS_VALIDITY: { value: GatePassValidity; label: string }[] = 
   { value: "monthly", label: "Monthly" },
 ];
 
+/**
+ * Permit types whose renewal reminder email must match the manual process JLS
+ * already follows for the FMA Cruising Permit (SD-0070, Polaris feedback
+ * 7b1b7291-b771-4c42-8189-a9529526321f): the client email must quote a JLS
+ * quotation number for the renewal and state the permit's expiry date, so
+ * neither can be left blank when the reminder is sent. Add a permit type here
+ * if the same format is wanted elsewhere.
+ */
+export const PERMIT_RENEWAL_REMINDER_TYPES: PermitType[] = ["cruising_mothership", "cruising_tenders"];
+
+/** True when this permit type's renewal reminder must carry a JLS quotation number and expiry date before it can be sent. */
+export function requiresQuotationForEmail(permitType: PermitType): boolean {
+  return PERMIT_RENEWAL_REMINDER_TYPES.includes(permitType);
+}
+
 /** Last valid day of a gate pass of this length that starts on `issue`. */
 export function gatePassExpiry(issue: string, validity: GatePassValidity): string {
   if (validity === "daily") return issue;
   if (validity === "weekly") return addDays(issue, 6);
-  // Day before the same date next month (30 May → 29 Jun); a start date the
-  // next month doesn't have ends on that month's last day (31 Jan → 28 Feb).
+  // Day before the same date next month (30 May â 29 Jun); a start date the
+  // next month doesn't have ends on that month's last day (31 Jan â 28 Feb).
   const [y, m, d] = issue.split("-").map(Number);
   const lastNext = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
   if (d > lastNext) return new Date(Date.UTC(y, m, lastNext)).toISOString().slice(0, 10);
