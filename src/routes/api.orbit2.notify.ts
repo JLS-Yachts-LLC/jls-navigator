@@ -21,6 +21,8 @@ import { logOrbit2Outbound } from "@/lib/orbit2/orbit2-mail.server";
 import { buildBunkerRequestPdf, bunkerRequestFileName, type BunkerRequestRecord } from "@/lib/orbit2/bunker-request-pdf.server";
 import { fmtDMY } from "@/lib/format-date";
 import { BUNKER_CC } from "@/components/orbit2/orbit2-constants";
+import { jlsSignatureHtml, type SignatureSender } from "@/lib/brand/jls-signature";
+import { signatureSender } from "@/lib/brand/jls-signature.server";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -63,7 +65,7 @@ function toBase64(bytes: Uint8Array): string {
  * It goes with the pre-filled request form (deck plan included) for the client
  * to check, mark the manifold on, and send back.
  */
-function bunkerEmail(p: BunkerRequestRecord, senderName: string): { subject: string; html: string } {
+function bunkerEmail(p: BunkerRequestRecord, sender: SignatureSender): { subject: string; html: string } {
   const port = p.delivery_port === "Others" ? (p.delivery_port_other || "Others") : (p.delivery_port || p.location || "—");
   const qty = p.quantity != null ? `${p.quantity} ${p.quantity_unit === "M3" ? "M³" : p.quantity_unit ?? ""}`.trim() : "—";
   const rows: [string, string][] = [
@@ -87,7 +89,8 @@ function bunkerEmail(p: BunkerRequestRecord, senderName: string): { subject: str
       <p>Please review the attached PDF to verify that all information is correct. Additionally,
          please mark an (X) on the diagram in the attached PDF to indicate your bunker manifold location.</p>
       <p>To proceed with your request, please reply to this email with your confirmation and attach the completed PDF.</p>
-      <p>Thank you,<br/>${esc(senderName)}</p>
+      <p>Thank you,</p>
+      ${jlsSignatureHtml(sender)}
     </div>`;
   return { subject, html };
 }
@@ -139,11 +142,10 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
   const to = (project.email ?? "").trim();
   if (to && EMAIL.test(to) && bunkering) {
     try {
-      const { data: me } = await sb.from("user_profiles").select("display_name")
-        .eq("user_id", access.claims.userId).maybeSingle();
-      const senderName = (me as { display_name?: string } | null)?.display_name || "Our Port & Agency Team";
+      const sender = await signatureSender(sb, access.claims.userId, access.claims.email);
+      const senderName = sender.name;
       const pdf = await buildBunkerRequestPdf(project as BunkerRequestRecord);
-      const { subject, html } = bunkerEmail(project as BunkerRequestRecord, senderName);
+      const { subject, html } = bunkerEmail(project as BunkerRequestRecord, sender);
       const self = access.claims.email.toLowerCase();
       const cc = [...new Set([...BUNKER_CC, ...extraCc])].filter((a) => a !== self && a !== to.toLowerCase());
       const mailbox = ((process.env.MAIL_SENDER as string | undefined) ?? "polaris@jlsyachts.com").toLowerCase();

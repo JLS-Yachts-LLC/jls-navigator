@@ -10,6 +10,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { pollOrbit2Mail, replyOnOrbit2Thread } from "@/lib/orbit2/orbit2-mail.server";
+import { signatureSender } from "@/lib/brand/jls-signature.server";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -56,14 +57,12 @@ export async function orbit2EmailHandler(request: Request): Promise<Response> {
     const fileIds = Array.isArray(body.file_ids) ? body.file_ids.map(String).slice(0, 10) : [];
 
     const sb = createClient(process.env.SUPABASE_URL ?? "", process.env.SUPABASE_SERVICE_ROLE_KEY ?? "", { auth: { persistSession: false } });
-    const { data: me } = await sb.from("user_profiles").select("display_name")
-      .eq("user_id", access.claims.userId).maybeSingle();
-    const senderName = (me as { display_name?: string } | null)?.display_name || "Our Port & Agency Team";
+    const sender = await signatureSender(sb, access.claims.userId, access.claims.email ?? "");
 
     try {
       const sent = await replyOnOrbit2Thread({
         projectId: body.project_id, emailId: body.email_id ?? null, text, cc, fileIds,
-        userId: access.claims.userId, userEmail: access.claims.email ?? "", senderName,
+        userId: access.claims.userId, userEmail: access.claims.email ?? "", sender,
       });
       await sb.from("audit_log").insert({
         user_id: access.claims.userId,

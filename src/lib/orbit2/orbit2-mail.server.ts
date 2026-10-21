@@ -27,6 +27,7 @@ import { guardRecipients, ClientEmailDisabledError } from '@/lib/mail-guard.serv
 import { extractReplyText } from '@/lib/ticket-mail-inbound.server'
 import { storageRef, parseStorageRefOrPath } from '@/lib/signed-url'
 import { BUNKER_CC } from '@/components/orbit2/orbit2-constants'
+import { jlsSignatureHtml, type SignatureSender } from '@/lib/brand/jls-signature'
 
 const db = () => supabaseAdmin as any
 const GRAPH = 'https://graph.microsoft.com/v1.0'
@@ -284,7 +285,8 @@ export async function replyOnOrbit2Thread(opts: {
   fileIds?: string[]
   userId: string
   userEmail: string
-  senderName: string
+  /** Who is replying — for the JLS signature at the foot of the reply. */
+  sender: SignatureSender
 }): Promise<{ id: string | null; to: string[]; cc: string[] }> {
   // The message being answered: the one picked, or the client's latest.
   let q = db().from('orbit2_emails').select('*').eq('project_id', opts.projectId).not('graph_message_id', 'is', null)
@@ -344,7 +346,8 @@ export async function replyOnOrbit2Thread(opts: {
   const html = `
     <div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5">
       <p>${ours}</p>
-      <p>Thank you,<br/>${esc(opts.senderName)}</p>
+      <p>Thank you,</p>
+      ${jlsSignatureHtml(opts.sender)}
     </div>
     <hr style="border:none;border-top:1px solid #ccc;margin:16px 0"/>
     <div style="font-family:Arial,sans-serif;font-size:13px;color:#555">
@@ -368,7 +371,7 @@ export async function replyOnOrbit2Thread(opts: {
   const subject = /^re:/i.test(original.subject ?? '') ? original.subject : `RE: ${original.subject ?? ''}`
   const { data: logged } = await db().from('orbit2_emails').insert({
     project_id: opts.projectId, direction: 'out', mailbox,
-    conversation_id: target.conversation_id, from_address: mailbox, from_name: opts.senderName,
+    conversation_id: target.conversation_id, from_address: mailbox, from_name: opts.sender.name,
     to_addresses: guard.to, cc_addresses: guard.cc, subject, body_text: opts.text.trim(),
     sent_by: opts.userId,
   }).select('id').single()
