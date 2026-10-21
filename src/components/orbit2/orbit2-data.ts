@@ -97,6 +97,8 @@ export type Orbit2File = {
   file_name: string;
   storage_ref: string;
   created_at: string;
+  /** Set when the file arrived on, or went out with, an email on the record's thread. */
+  email_id?: string | null;
 };
 
 export type Orbit2NocStatus = "To be Invoiced" | "Invoiced";

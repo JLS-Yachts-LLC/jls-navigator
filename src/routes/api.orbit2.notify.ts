@@ -17,6 +17,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
 import { sendGraphEmail } from "@/lib/graph-mail.server";
+import { logOrbit2Outbound } from "@/lib/orbit2/orbit2-mail.server";
 import { buildBunkerRequestPdf, bunkerRequestFileName, type BunkerRequestRecord } from "@/lib/orbit2/bunker-request-pdf.server";
 import { fmtDMY } from "@/lib/format-date";
 import { BUNKER_CC } from "@/components/orbit2/orbit2-constants";
@@ -145,17 +146,25 @@ export async function orbit2NotifyHandler(request: Request): Promise<Response> {
       const { subject, html } = bunkerEmail(project as BunkerRequestRecord, senderName);
       const self = access.claims.email.toLowerCase();
       const cc = [...new Set([...BUNKER_CC, ...extraCc])].filter((a) => a !== self && a !== to.toLowerCase());
+      const mailbox = ((process.env.MAIL_SENDER as string | undefined) ?? "polaris@jlsyachts.com").toLowerCase();
       await sendGraphEmail({
         to: [to],
         cc,
-        // Sent from the platform mailbox; the client's reply goes to whoever pressed Send.
-        replyTo: self ? [self] : undefined,
+        // Sent from the platform mailbox; the client's reply comes back to it —
+        // where Polaris files it on this record (lib/orbit2/orbit2-mail.server) —
+        // and to whoever pressed Send.
+        replyTo: [mailbox, ...(self && self !== mailbox ? [self] : [])],
         subject,
         html,
         attachments: [{ filename: bunkerRequestFileName(project), contentBase64: toBase64(pdf), contentType: "application/pdf" }],
       });
       emailSent = true;
       ccSent = cc;
+      // The request starts the record's email thread (Email Threads tab).
+      await logOrbit2Outbound({
+        project_id: project.id, mailbox, to: [to], cc, subject, sent_by: access.claims.userId, from_name: senderName,
+        body_text: `Bunkering request sent with the request form (${bunkerRequestFileName(project)}) for the client to check, mark the manifold on and send back.`,
+      }).catch(() => null);
     } catch (e) {
       problems.push(`Email: ${e instanceof Error ? e.message : "send failed"}`);
     }

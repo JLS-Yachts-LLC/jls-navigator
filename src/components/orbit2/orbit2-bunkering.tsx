@@ -29,6 +29,7 @@ import {
 } from "./orbit2-constants";
 import { type Orbit2Project, type Orbit2Note, type Orbit2File, minutesToHhmm, hhmmToMinutes } from "./orbit2-data";
 import { Field, inputCls, Typeahead, TeamPicker, FileSlot, NoteLog, stamp } from "./orbit2-fields";
+import { EmailThread } from "./orbit2-email-thread";
 
 const sb = supabase as any;
 
@@ -114,18 +115,19 @@ export function bunkeringDraftOf(p: Orbit2Project): Draft {
   return d;
 }
 
-type Tab = "details" | "jobs" | "notes" | "documents";
+type Tab = "details" | "jobs" | "notes" | "documents" | "emails";
 const TABS: { key: Tab; label: string }[] = [
   { key: "details", label: "Details" },
   { key: "jobs", label: "Additional Jobs" },
   { key: "notes", label: "Notes" },
   { key: "documents", label: "Documents" },
+  { key: "emails", label: "Email Threads" },
 ];
 
 export function BunkeringPanel({
   creating, draft, setDraft, selected, saving, isAdmin, notes, files, yachts, history,
   clientOptions, supplierOptions, statusControl, notify,
-  onSave, onCancel, onDelete, onAddNote, onEditNote, onAttach, onDetach,
+  onSave, onCancel, onDelete, onAddNote, onEditNote, onAttach, onDetach, onReloadFiles,
 }: {
   creating: boolean;
   draft: Draft;
@@ -150,6 +152,8 @@ export function BunkeringPanel({
   onEditNote: (id: string, body: string) => Promise<void>;
   onAttach: (slot: Orbit2File["slot"], file: File, ref: string, docName?: string) => Promise<void>;
   onDetach: (f: { id: string }) => void;
+  /** Email replies bring files in from the server — re-read the record's files. */
+  onReloadFiles: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<Tab>("details");
   useEffect(() => { setTab("details"); }, [selected?.id, creating]);
@@ -198,6 +202,7 @@ export function BunkeringPanel({
           onAddNote={onAddNote} onEditNote={onEditNote} onAttach={onAttach} onDetach={onDetach} />
       )}
       {tab === "documents" && saved && <DocumentsTab files={files} onAttach={onAttach} onDetach={onDetach} />}
+      {tab === "emails" && saved && <EmailThread projectId={selected.id} files={files} onFilesChanged={onReloadFiles} />}
 
       {/* Delete | Cancel | Save, per spec. Delete sits apart on the far left. */}
       {tab === "details" && (
@@ -744,7 +749,7 @@ function DocumentsTab({
                   {f.doc_name || f.file_name}
                 </SignedAnchor>
                 <div className="truncate text-[14px] text-muted-foreground">
-                  {f.doc_name ? `${f.file_name} · ` : ""}{fmtDMY(f.created_at)}
+                  {f.doc_name ? `${f.file_name} · ` : ""}{fmtDMY(f.created_at)}{f.email_id ? " · by email" : ""}
                 </div>
               </div>
               <button onClick={() => onDetach(f)} title="Remove document"

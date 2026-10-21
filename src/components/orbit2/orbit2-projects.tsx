@@ -326,6 +326,12 @@ export function Orbit2Projects({
     setFiles((data ?? []) as Orbit2File[]);
   }
 
+  async function reloadFiles() {
+    if (!selected) return;
+    const { data } = await sb.from("orbit2_files").select("*").eq("project_id", selected.id).order("created_at");
+    setFiles((data ?? []) as Orbit2File[]);
+  }
+
   // Only the id is needed, so this accepts the lighter shape FileSlot hands back.
   async function detach(f: { id: string }) {
     const { error } = await sb.from("orbit2_files").delete().eq("id", f.id);
@@ -418,6 +424,7 @@ export function Orbit2Projects({
               onAddNote={addNote}
               onEditNote={editNote}
               onAttach={attach}
+              onReloadFiles={reloadFiles}
               onDetach={detach}
             />
           ) : (
@@ -986,7 +993,7 @@ function ClientNotify({ project, onSent }: { project: Orbit2Project; onSent: () 
             />
           </div>
           <p className="mt-1 text-[14px] text-muted-foreground/80">
-            The grey addresses are always copied. Anyone you add is copied on this email only. Your own address is left off; replies come to you.
+            The grey addresses are always copied. Anyone you add is copied on this email only. Your own address is left off. The client's reply comes to you and lands on this record (Email Threads tab), attachments included.
           </p>
         </div>
       )}

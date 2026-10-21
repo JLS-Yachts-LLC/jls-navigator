@@ -1618,6 +1618,11 @@ export default {
     if (url.pathname === '/api/orbit2/bunker-form' && request.method === 'GET') {
       return orbit2BunkerFormHandler(request)
     }
+    // Orbit 2: the client email thread on a record — check for replies, reply-all
+    if (url.pathname === '/api/orbit2/email' && request.method === 'POST') {
+      const { orbit2EmailHandler } = await import('./routes/api.orbit2.email')
+      return orbit2EmailHandler(request)
+    }
 
     // ââ Admin Panel API (TanStack API routes aren't dispatched by the CF handler,
     //    so each is wired here). Order: more-specific paths first. ââ
@@ -1768,6 +1773,16 @@ export default {
           .then((m) => m.pollPermitInbox())
           .then((r) => { if (r?.some((x) => x.read || x.error)) console.log('[permit-inbox]', JSON.stringify(r)) })
           .catch((e) => console.error('[permit-inbox] error:', e instanceof Error ? e.message : String(e)))
+      );
+
+      // ── Every 5 min: client replies to Orbit 2 emails (bunkering requests) ──
+      //    Filed on the record by the Task ID in the subject, attachments copied
+      //    to its Documents. See lib/orbit2/orbit2-mail.server.
+      ctx.waitUntil(
+        import('./lib/orbit2/orbit2-mail.server')
+          .then((m) => m.pollOrbit2Mail())
+          .then((r) => { if (r?.some((x) => x.filed || x.error)) console.log('[orbit2-mail]', JSON.stringify(r)) })
+          .catch((e) => console.error('[orbit2-mail] error:', e instanceof Error ? e.message : String(e)))
       );
 
       // ââ Every 5 min: email staff about new Client Portal activity ââ

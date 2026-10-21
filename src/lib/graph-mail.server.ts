@@ -22,7 +22,7 @@ const MAIL_TENANT_ID = process.env.MAIL_GRAPH_TENANT_ID ?? '428f2dd0-7a0b-431d-9
 
 /** Acquire a Graph token for sending mail. Uses the dedicated mail app when its
  *  secret is configured; otherwise falls back to the SharePoint integration app. */
-async function getMailGraphToken(): Promise<string> {
+export async function getMailGraphToken(): Promise<string> {
   // Accept the truncated secret name (…_SECRE) that was created in Cloudflare too,
   // so a one-character naming slip doesn't silently fall back to the wrong app.
   const secret = process.env.MAIL_GRAPH_CLIENT_SECRET ?? process.env.MAIL_GRAPH_CLIENT_SECRE
