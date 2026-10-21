@@ -2,12 +2,12 @@
  * Resolve the PolarisRole that drives shell nav visibility.
  *
  * Restricted roles (logistics_team, hr) get a scoped nav; every other
- * role keeps the current full-nav behaviour ("global_admin" preview default —
+ * role keeps the current full-nav behaviour ("global_admin" preview default â
  * real per-role enforcement for the rest lands with the RBAC rollout).
  *
  * Order of precedence:
  *  1. An active "View as" preview whose role is a restricted role.
- *  2. A "View as" preview of a staff member — their restricted role, if any.
+ *  2. A "View as" preview of a staff member â their restricted role, if any.
  *  3. The signed-in user's own user_profiles role.
  *  4. Fallback: global_admin (unchanged behaviour).
  */
@@ -45,10 +45,59 @@ export function usePolarisRole(): PolarisRole {
 
   // Admin previewing a restricted role sees that role's scoped nav.
   if (viewAs && (RESTRICTED_ROLES as string[]).includes(viewAs)) return viewAs as PolarisRole;
-  // Admin previewing a staff member (View as → a person) gets their role's nav.
+  // Admin previewing a staff member (View as â a person) gets their role's nav.
   if (previewing) {
     const r = claims.roleName;
     return r && (RESTRICTED_ROLES as string[]).includes(r) ? (r as PolarisRole) : "global_admin";
   }
   return ownRole;
+}
+
+
+  // Admin previewing a restricted role sees that role's scoped nav.
+  if (viewAs && (RESTRICTED_ROLES as string[]).includes(viewAs)) return viewAs as PolarisRole;
+  // Admin previewing a staff member (View as â a person) gets their role's nav.
+  if (previewing) {
+    const r = claims.roleName;
+    return r && (RESTRICTED_ROLES as string[]).includes(r) ? (r as PolarisRole) : "global_admin";
+  }
+  return ownRole;
+}
+
+/**
+ * Is the signed-in user Polaris staff at all (do they have a user_profiles
+ * row)? Submit-time "staff only" authorization gates (e.g. the Logistics
+ * screen's request-submit handler, SD-0074) should check this â or a
+ * specific role/module grant pulled live from the DB â instead of a
+ * hardcoded allowlist of staff identifiers, which silently excludes any
+ * legitimately provisioned staff member who isn't on that list.
+ */
+export function usePolarisStaffStatus(): { loading: boolean; isStaff: boolean; error: unknown } {
+  const { user } = useAuth();
+  const [state, setState] = useState<{ loading: boolean; isStaff: boolean; error: unknown }>({
+    loading: true,
+    isStaff: false,
+    error: null,
+  });
+
+  useEffect(() => {
+    let on = true;
+    if (!user?.id) {
+      setState({ loading: false, isStaff: false, error: null });
+      return;
+    }
+    setState((s) => ({ ...s, loading: true }));
+    (supabase as any)
+      .from("user_profiles")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data, error }: any) => {
+        if (!on) return;
+        setState({ loading: false, isStaff: !!data && !error, error: error ?? null });
+      });
+    return () => { on = false; };
+  }, [user?.id]);
+
+  return state;
 }
