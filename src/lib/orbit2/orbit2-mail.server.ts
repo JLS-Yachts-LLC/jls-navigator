@@ -25,7 +25,7 @@ import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { getMailGraphToken, getMailGraphTokenForRead } from '@/lib/graph-mail.server'
 import { guardRecipients, ClientEmailDisabledError } from '@/lib/mail-guard.server'
 import { extractReplyText } from '@/lib/ticket-mail-inbound.server'
-import { storageRef, parseStorageRef } from '@/lib/signed-url'
+import { storageRef, parseStorageRefOrPath } from '@/lib/signed-url'
 import { BUNKER_CC } from '@/components/orbit2/orbit2-constants'
 
 const db = () => supabaseAdmin as any
@@ -258,7 +258,7 @@ export async function logOrbit2Outbound(row: {
 }
 
 async function storageBytes(stored: string): Promise<Uint8Array> {
-  const ref = parseStorageRef(stored, BUCKET)
+  const ref = parseStorageRefOrPath(stored, BUCKET)
   if (!ref) throw new Error('File reference not understood')
   const { data, error } = await supabaseAdmin.storage.from(ref.bucket).download(ref.path)
   if (error || !data) throw new Error(`Could not read the file: ${error?.message ?? 'missing'}`)
