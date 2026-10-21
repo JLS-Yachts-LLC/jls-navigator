@@ -6,8 +6,8 @@
  * 24-hour window staff reply in free text; outside it the composer switches to
  * an approved template, which also needs the client's consent.
  *
- * In the window the reply box can also send a file (photo, PDF/Office document,
- * video, audio — /api/whatsapp/reply-media) and drop in a saved quick reply
+ * In the window the reply box can also send files (photos, PDF/Office documents,
+ * video, audio — /api/whatsapp/reply-media), several at once, and drop in a saved quick reply
  * (the ⚡ button, or type "/" — see wa-quick-replies).
  *
  * Several numbers: a thread is one contact on one number (the office number,
@@ -46,6 +46,9 @@ async function sendMediaReply(form: FormData): Promise<void> {
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(out?.error ?? `Not sent (${res.status})`);
 }
+
+/** Most files one send takes — each goes as its own WhatsApp message (there's no album send). */
+const MAX_FILES = 10;
 
 const fileSize = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
@@ -288,7 +291,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   const [replyTo, setReplyTo] = useState<ThreadItem | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [qrOpen, setQrOpen] = useState(false);
   const [qrQuery, setQrQuery] = useState("");
   const [manageQr, setManageQr] = useState(false);
@@ -352,21 +355,38 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   const byWamid = useMemo(() => new Map((items ?? []).filter((i) => i.wamid).map((i) => [i.wamid!, i])), [items]);
   const staffName = (id: string | null | undefined) => staff.find((s) => s.id === id)?.display_name ?? null;
 
+  function addFiles(picked: File[]) {
+    if (!picked.length) return;
+    const all = [...files, ...picked];
+    if (all.length > MAX_FILES) toast.error(`Up to ${MAX_FILES} files at a time — the first ${MAX_FILES} are attached`);
+    setFiles(all.slice(0, MAX_FILES));
+  }
+
   async function send() {
     const body = text.trim();
-    if (!body && !file) return;
+    if (!body && !files.length) return;
     setSending(true);
     try {
-      if (file) {
-        // The text goes as the file's caption.
-        const form = new FormData();
-        form.append("contactId", contactId);
-        form.append("lineId", line.id);
-        form.append("file", file);
-        if (body) form.append("caption", body);
-        if (replyTo?.wamid) form.append("replyTo", replyTo.wamid);
-        await sendMediaReply(form);
-        setFile(null);
+      if (files.length) {
+        // One message per file, in order; the text goes as the first one's caption.
+        // A file that fails stops the run and stays in the list with those after it.
+        for (let i = 0; i < files.length; i++) {
+          const form = new FormData();
+          form.append("contactId", contactId);
+          form.append("lineId", line.id);
+          form.append("file", files[i]);
+          if (i === 0 && body) form.append("caption", body);
+          if (i === 0 && replyTo?.wamid) form.append("replyTo", replyTo.wamid);
+          try {
+            await sendMediaReply(form);
+          } catch (e) {
+            const left = files.slice(i);
+            setFiles(left);
+            if (i > 0) { setText(""); setReplyTo(null); }
+            throw new Error(`${files[i].name}: ${e instanceof Error ? e.message : "not sent"}${i > 0 ? ` — ${i} sent, ${left.length} left to send` : ""}`);
+          }
+        }
+        setFiles([]);
       } else {
         await waApi("reply", { contactId, lineId: line.id, text: body, replyTo: replyTo?.wamid ?? null });
       }
@@ -559,7 +579,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
           <div className="border-t border-border p-3">
             <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> Reply window open for {fmtLeft(remaining)}</span>
-              <span>{text.length}/{file ? 1024 : 4096}</span>
+              <span>{text.length}/{files.length ? 1024 : 4096}</span>
             </div>
             {replyTo && (
               <div className="mb-2 flex items-start gap-2 rounded-md border-l-2 border-emerald-500 bg-muted px-2 py-1 text-xs">
@@ -567,35 +587,35 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
                 <button onClick={() => setReplyTo(null)}><X className="h-3.5 w-3.5" /></button>
               </div>
             )}
-            {file && (
-              <div className="mb-2 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs">
+            {files.map((f, i) => (
+              <div key={`${f.name}-${f.size}-${f.lastModified}`} className="mb-1 flex items-center gap-2 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs last:mb-2">
                 <Paperclip className="h-3.5 w-3.5" />
-                <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                <span className="text-muted-foreground">{fileSize(file.size)} · your text goes as its caption</span>
-                <button onClick={() => setFile(null)} aria-label="Remove the file"><X className="h-3.5 w-3.5" /></button>
+                <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                <span className="text-muted-foreground">{fileSize(f.size)}{i === 0 ? " · your text goes as its caption" : ""}</span>
+                <button onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))} aria-label="Remove the file"><X className="h-3.5 w-3.5" /></button>
               </div>
-            )}
+            ))}
             <div className="relative flex items-end gap-2">
               <QuickReplyMenu open={qrOpen} query={qrQuery} onClose={() => setQrOpen(false)} onPick={pickQuickReply}
                               onManage={() => { setQrOpen(false); setManageQr(true); }} />
-              <input ref={fileRef} type="file" accept={ATTACH_ACCEPT} className="hidden"
-                     onChange={(e) => { const f = e.target.files?.[0] ?? null; e.target.value = ""; if (f) setFile(f); }} />
+              <input ref={fileRef} type="file" accept={ATTACH_ACCEPT} multiple className="hidden"
+                     onChange={(e) => { const picked = Array.from(e.target.files ?? []); e.target.value = ""; addFiles(picked); }} />
               <div className="flex flex-col gap-1">
                 <Button type="button" variant="outline" size="icon" className="h-[21px] w-9" title="Quick replies (or type /)"
                         onClick={() => { setQrQuery(""); setQrOpen((o) => !o); }}>
                   <Zap className="h-3.5 w-3.5" />
                 </Button>
-                <Button type="button" variant="outline" size="icon" className="h-[21px] w-9" title="Attach a photo, PDF, video or audio file"
+                <Button type="button" variant="outline" size="icon" className="h-[21px] w-9" title="Attach photos, PDFs, videos or audio files (up to 10 at once)"
                         onClick={() => fileRef.current?.click()}>
                   <Paperclip className="h-3.5 w-3.5" />
                 </Button>
               </div>
               <Textarea value={text} onChange={(e) => onType(e.target.value)} rows={2}
-                placeholder={file ? "Add a caption (optional) — Enter to send" : "Type a reply, or / for quick replies — Enter to send, Shift+Enter for a new line"}
+                placeholder={files.length ? "Add a caption (optional) — Enter to send" : "Type a reply, or / for quick replies — Enter to send, Shift+Enter for a new line"}
                 onKeyDown={(e) => { if (qrOpen) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
                 className="min-h-[44px] resize-none" />
-              <Button onClick={() => void send()} disabled={sending || (!text.trim() && !file) || (!!file && text.length > 1024)} className="h-11 gap-1.5">
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send
+              <Button onClick={() => void send()} disabled={sending || (!text.trim() && !files.length) || (!!files.length && text.length > 1024)} className="h-11 gap-1.5">
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send{files.length > 1 ? ` ${files.length}` : ""}
               </Button>
             </div>
           </div>
