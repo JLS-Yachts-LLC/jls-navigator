@@ -27,6 +27,7 @@ import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { getMailGraphTokenForRead } from '@/lib/graph-mail.server'
 import { storageRef, parseStorageRef } from '@/lib/signed-url'
 import { nameKey } from '@/lib/crew-name-match'
+import { permitFileName } from '@/lib/permits/permit-file-name'
 
 const db = () => supabaseAdmin as any
 
@@ -611,26 +612,6 @@ export function suggestSubfolder(subfolders: string[], permitType: string | null
   return keys.find(({ k }) => has(k, ['permit']))?.s ?? 'Permits'
 }
 
-const PERMIT_FILE_LABEL: Record<string, string> = {
-  exit_entry: 'Entry-Exit Permit', cruising_mothership: 'Cruising Permit', cruising_tenders: 'Cruising Permit (Tenders)',
-  sanitation: 'Sanitation Certificate', navigation_license: 'Navigation Licence', tdra: 'TDRA Licence',
-  dma: 'DMA Permit', gate_pass: 'Gate Pass', abu_dhabi: 'Abu Dhabi Permit',
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-/**
- * The team's naming, "Madame Gu - Entry Permit - 23Sep2026.pdf" (vessel as its
- * SharePoint folder is named, the permit, its issue date) — the emailed names
- * ("3.pdf") say nothing.
- */
-export function permitFileName(vesselFolder: string, p: { permit_type: string; dma_phase: string | null; issue_date: string | null }, fallbackDate: string): string {
-  const label = p.permit_type === 'exit_entry' ? `${p.dma_phase === 'Exit' ? 'Exit' : 'Entry'} Permit` : (PERMIT_FILE_LABEL[p.permit_type] ?? 'Permit')
-  const iso = p.issue_date ?? fallbackDate.slice(0, 10)
-  const [y, m, d] = iso.split('-')
-  return `${vesselFolder} - ${label} - ${d}${MONTHS[Number(m) - 1] ?? m}${y}.pdf`
-}
-
 export type ConfirmInput = {
   id: string
   yachtId: string
@@ -711,7 +692,8 @@ export async function confirmInboxPermit(input: ConfirmInput, userId: string): P
   }
 
   const fileName = (folder: string) => permitFileName(folder, {
-    permit_type: input.permitType, dma_phase: phased ? input.dmaPhase : null, issue_date: input.issueDate,
+    permit_type: input.permitType, dma_phase: phased ? input.dmaPhase : null,
+    issue_date: input.issueDate, expiry_date: input.expiryDate,
   }, row.received_at ?? row.created_at)
   const sharepoint = input.fileToSharePoint
     ? await copyToVesselFolder(row.document_url, yacht.vessel_name, input.subfolder, fileName)
