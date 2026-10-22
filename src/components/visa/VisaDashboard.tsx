@@ -56,6 +56,9 @@ interface VisaApplication {
   yachts: { vessel_name: string } | null
 }
 
+/** How many compliance alerts the dashboard lists (most urgent first); the header counts them all. */
+const ALERTS_SHOWN = 30
+
 interface ComplianceAlert {
   id: string
   crew_id: string
@@ -67,6 +70,8 @@ interface ComplianceAlert {
   due_date: string | null
   resolved: boolean
   crew_members?: { full_name: string | null; first_name: string | null; last_name: string | null } | null
+  /** The name typed on the application — many visas aren't linked to a crew record. */
+  visa_applications?: { given_name: string | null; surname: string | null } | null
 }
 
 // ── Status config (covers EVERY status in the table) ───────────────────────────
@@ -657,11 +662,12 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
     void applyToSelected({ [which]: bulkDate }, `given a ${label} date of ${bulkDate}`)
   }
 
-  /** Name for a compliance alert, from the joined crew member. */
+  /** Name for a compliance alert, from the joined crew member, else the application. */
   const alertCrewName = (a: ComplianceAlert): string | null => {
     const c = a.crew_members
-    if (!c) return null
-    return c.full_name?.trim() || [c.first_name, c.last_name].filter(Boolean).join(' ').trim() || null
+    const v = a.visa_applications
+    return c?.full_name?.trim() || [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim()
+      || [v?.given_name, v?.surname].filter(Boolean).join(' ').trim() || null
   }
 
   /**
@@ -675,11 +681,14 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       .eq('id', a.id)
     if (error) { toast.error(`Could not resolve the alert: ${error.message}`); return }
     setAlerts(prev => prev.filter(x => x.id !== a.id))
+    setAlertTotal(n => Math.max(0, n - 1))
     toast.success('Alert resolved')
   }
 
   const [applications, setApplications] = useState<VisaApplication[]>([])
   const [alerts, setAlerts]             = useState<ComplianceAlert[]>([])
+  // How many are open in all — the list shows the most urgent ALERTS_SHOWN.
+  const [alertTotal, setAlertTotal]     = useState(0)
   const [loading, setLoading]           = useState(true)
   const [alertsOpen, setAlertsOpen]     = useState(false)
   const [emailing, setEmailing]         = useState(false)
@@ -805,14 +814,15 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
       // read "AE visa for  expires …" and gave no way to find the record.
       (supabase as any)
         .from('compliance_alerts')
-        .select('*, crew_members(full_name, first_name, last_name)')
+        .select('*, crew_members(full_name, first_name, last_name), visa_applications(given_name, surname)', { count: 'exact' })
         .eq('resolved', false)
         .in('severity', ['warn', 'critical'])
         .order('due_date', { ascending: true })
-        .limit(5),
+        .limit(ALERTS_SHOWN),
     ])
     setApplications((appsRes.data ?? []) as VisaApplication[])
     setAlerts((alertsRes.data ?? []) as ComplianceAlert[])
+    setAlertTotal(alertsRes.count ?? (alertsRes.data ?? []).length)
     setLoading(false)
   }
   useEffect(() => { void loadAll() }, [])
@@ -1254,11 +1264,16 @@ export default function VisaDashboard({ embedded = false }: { embedded?: boolean
               fontFamily: FONTS.display, fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
             }}
           >
-            <span>⚠ {alerts.length} compliance alert{alerts.length !== 1 ? 's' : ''} require attention</span>
+            <span>⚠ {alertTotal} compliance alert{alertTotal !== 1 ? 's' : ''} need{alertTotal === 1 ? 's' : ''} attention</span>
             <span style={{ fontSize: 11, opacity: 0.7 }}>{alertsOpen ? '▲ Hide' : '▼ Show'}</span>
           </button>
           {alertsOpen && (
             <div style={{ border: `1px solid ${COLORS.warn}44`, borderTop: 'none', borderRadius: '0 0 8px 8px', background: '#180a00', padding: 8 }}>
+              <p style={{ margin: '2px 6px 8px', fontFamily: FONTS.body, fontSize: 12, color: COLORS.muted, lineHeight: 1.5 }}>
+                Visas expiring in the next 30 days and passports expiring in the next 6 months, soonest first
+                {alertTotal > alerts.length ? ` — the ${alerts.length} most urgent of ${alertTotal}` : ''}.
+                An alert clears itself once the visa is cancelled, renewed or has expired, or the passport is replaced. Use Resolve only for one you've dealt with some other way.
+              </p>
               {alerts.map((a) => (
                 <ComplianceAlertBanner
                   key={a.id}

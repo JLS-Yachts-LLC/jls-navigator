@@ -16,6 +16,16 @@ interface ComplianceAlertBannerProps {
   onOpen?: () => void;
 }
 
+/** What the alert is asking for — staff couldn't tell from the message alone (SD-0078). */
+const WHAT_TO_DO: Record<string, string> = {
+  visa_expiry:
+    "If they're staying in the UAE, start a renewal. If they've signed off or left, set the visa to Cancelled. Either way the alert clears itself.",
+  passport_expiry:
+    'Ask the crew member for their new passport and add it to their crew record. The alert clears itself when the passport is replaced.',
+  missing_document:
+    'Chase the missing documents, or move the application on.',
+};
+
 function formatDueDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -142,6 +152,20 @@ export function ComplianceAlertBanner({ alert, onResolve, onOpen }: ComplianceAl
             }}
           >
             Due: {formatDueDate(alert.due_date)}
+          </p>
+        )}
+
+        {WHAT_TO_DO[alert.alert_type] && (
+          <p
+            style={{
+              margin: '4px 0 0',
+              fontSize: '12px',
+              color: COLORS.muted,
+              fontStyle: 'italic',
+              fontFamily: "'Space Grotesk', sans-serif",
+            }}
+          >
+            {WHAT_TO_DO[alert.alert_type]}
           </p>
         )}
       </div>

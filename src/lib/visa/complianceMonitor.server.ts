@@ -2,6 +2,11 @@
  * Polaris — Daily Visa Compliance Monitor
  * Run server-side (Cloudflare Worker cron, every 24h).
  * Writes results to compliance_alerts table.
+ *
+ * Each run first clears alerts that no longer apply — the visa has expired,
+ * been cancelled or re-dated, the passport was replaced — so the Visa
+ * dashboard only lists things someone can still act on
+ * (resolve_stale_compliance_alerts, migration 20261022120000, SD-0078).
  */
 import { addMonths, addDays, subDays } from 'date-fns'
 import { createClient } from '@supabase/supabase-js'
@@ -17,6 +22,27 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000)
 }
 
+/** "11 Jul 2026" — how the team reads a date. */
+function fmtDate(dateStr: string): string {
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+const inDays = (days: number) => (days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`)
+
+/**
+ * The crew member's name — from the linked crew record, else the name typed on
+ * the application itself (113 visas aren't linked to a crew member, and their
+ * alerts used to read "AE visa for  expires …").
+ */
+function crewName(row: any): string {
+  const c = row?.crew_members
+  return (c?.full_name?.trim()
+    || [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim()
+    || [row?.given_name, row?.surname].filter(Boolean).join(' ').trim()
+    || 'an unnamed crew member')
+}
+
 async function upsertAlert(
   sb: ReturnType<typeof getAdmin>,
   alert: {
@@ -29,7 +55,10 @@ async function upsertAlert(
     due_date?:       string | null
   },
 ) {
-  // De-duplicate: one open alert per (crew_id, alert_type, due_date).
+  // De-duplicate: one open alert per (alert_type, the record it's about, due_date).
+  // The record is the application, else the passport, else the crew member — it
+  // used to be the crew member alone, so every visa without a linked crew
+  // member that expired on the same day shared one alert.
   //
   // A null has to be matched with .is(), not .eq(): supabase-js turns
   // `.eq(col, null)` into `col=eq.null`, and PostgREST then casts the literal
@@ -42,20 +71,22 @@ async function upsertAlert(
     .select('id')
     .eq('alert_type', alert.alert_type)
     .eq('resolved',   false)
-  q = alert.crew_id  ? q.eq('crew_id',  alert.crew_id)  : q.is('crew_id',  null)
+  if (alert.application_id)   q = q.eq('application_id', alert.application_id)
+  else if (alert.passport_id) q = q.eq('passport_id', alert.passport_id).is('application_id', null)
+  else q = (alert.crew_id ? q.eq('crew_id', alert.crew_id) : q.is('crew_id', null)).is('application_id', null).is('passport_id', null)
   q = alert.due_date ? q.eq('due_date', alert.due_date) : q.is('due_date', null)
   const existing = await q.limit(1)
 
   if (existing.data?.length) {
-    // Update severity if escalated
+    // Update severity if escalated, and the "in N days" wording
     await (sb as any)
       .from('compliance_alerts')
       .update({ severity: alert.severity, message: alert.message })
       .eq('id', existing.data[0].id)
   } else {
     const { error } = await (sb as any).from('compliance_alerts').insert(alert)
-    // `compliance_alerts_open_identity_uniq` is the backstop for the lookup
-    // above — a partial unique index on (crew_id, alert_type, due_date) with
+    // `compliance_alerts_open_subject_uniq` is the backstop for the lookup
+    // above — a partial unique index on (alert_type, record, due_date) with
     // NULLS NOT DISTINCT, where the alert is still open. A conflict means the
     // alert is already raised, which is the desired end state, not a failure.
     if (error && error.code !== '23505') {
@@ -65,6 +96,7 @@ async function upsertAlert(
 }
 
 export async function runDailyComplianceChecks(): Promise<{
+  cleared:   number
   passports: number
   visas:     number
   staleDocs: number
@@ -77,6 +109,10 @@ export async function runDailyComplianceChecks(): Promise<{
 
   let passports = 0, visas = 0, staleDocs = 0
 
+  // ── 0. Clear alerts that no longer apply ──────────────────
+  const { data: cleared, error: clearErr } = await (sb as any).rpc('resolve_stale_compliance_alerts')
+  if (clearErr) console.error('[compliance] could not clear stale alerts:', clearErr.message)
+
   // ── 1. Passport expiry within 6 months ────────────────────
   const { data: expiringPassports } = await (sb as any)
     .from('crew_passports')
@@ -85,8 +121,7 @@ export async function runDailyComplianceChecks(): Promise<{
     .gte('expiry_date', todayStr)
 
   for (const p of expiringPassports ?? []) {
-    const name    = p.crew_members?.full_name
-      ?? `${p.crew_members?.first_name ?? ''} ${p.crew_members?.last_name ?? ''}`.trim()
+    const name    = crewName(p)
     const days    = daysUntil(p.expiry_date)
     const sev     = days <= 30 ? 'critical' : 'warn'
     await upsertAlert(sb, {
@@ -94,7 +129,7 @@ export async function runDailyComplianceChecks(): Promise<{
       passport_id:p.id,
       alert_type: 'passport_expiry',
       severity:   sev as 'warn' | 'critical',
-      message:    `Passport ${p.passport_number} for ${name} expires ${p.expiry_date} (${days} days)`,
+      message:    `Passport ${p.passport_number} for ${name} expires ${fmtDate(p.expiry_date)} (${inDays(days)})`,
       due_date:   p.expiry_date,
     })
     passports++
@@ -109,8 +144,7 @@ export async function runDailyComplianceChecks(): Promise<{
     .gte('visa_expiry', todayStr)
 
   for (const v of expiringVisas ?? []) {
-    const name = v.crew_members?.full_name
-      ?? `${v.crew_members?.first_name ?? ''} ${v.crew_members?.last_name ?? ''}`.trim()
+    const name = crewName(v)
     const days = daysUntil(v.visa_expiry)
     const sev  = days <= 7 ? 'critical' : 'warn'
     await upsertAlert(sb, {
@@ -118,7 +152,7 @@ export async function runDailyComplianceChecks(): Promise<{
       application_id: v.id,
       alert_type:     'visa_expiry',
       severity:       sev as 'warn' | 'critical',
-      message:        `${v.country_code ?? ''} visa for ${name} expires ${v.visa_expiry} (${days} days)`,
+      message:        `${v.country_code ?? ''} visa for ${name}${v.vessel_name ? ` (${v.vessel_name})` : ''} expires ${fmtDate(v.visa_expiry)} (${inDays(days)})`.trim(),
       due_date:       v.visa_expiry,
     })
     visas++
@@ -132,8 +166,7 @@ export async function runDailyComplianceChecks(): Promise<{
     .lte('updated_at', subDays(today, 3).toISOString())
 
   for (const a of stale ?? []) {
-    const name = a.crew_members?.full_name
-      ?? `${a.crew_members?.first_name ?? ''} ${a.crew_members?.last_name ?? ''}`.trim()
+    const name = crewName(a)
     await upsertAlert(sb, {
       crew_id:        a.crew_member_id ?? a.crew_id,
       application_id: a.id,
@@ -145,5 +178,5 @@ export async function runDailyComplianceChecks(): Promise<{
     staleDocs++
   }
 
-  return { passports, visas, staleDocs }
+  return { cleared: Number(cleared ?? 0), passports, visas, staleDocs }
 }

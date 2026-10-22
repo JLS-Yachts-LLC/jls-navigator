@@ -2204,8 +2204,8 @@ export default {
     if (utcHour === 7) {
       ctx.waitUntil(
         runDailyComplianceChecks()
-          .then(({ passports, visas, staleDocs }) =>
-            console.log(`[visa-compliance] passports=${passports} visas=${visas} staleDocs=${staleDocs}`))
+          .then(({ cleared, passports, visas, staleDocs }) =>
+            console.log(`[visa-compliance] cleared=${cleared} passports=${passports} visas=${visas} staleDocs=${staleDocs}`))
           .catch((e) => console.error('[visa-compliance] error:', e))
       )
     }
