@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { storageRef } from "@/lib/signed-url";
+import { guardUploadFile, uploadContentType } from "@/lib/upload-guard";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
 import {
@@ -6,12 +8,13 @@ import {
   type AbuDhabiPermitType, type Permit, type PermitStatus,
 } from "@/lib/permit-types";
 import { Button } from "@/components/ui/button";
+import { SignedAnchor } from "@/components/ui/signed-file";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Paperclip, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Yacht = { id: string; vessel_name: string };
@@ -28,6 +31,8 @@ export function AbuDhabiDialog({
   onSaved: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<Partial<Permit>>(() =>
     editing ?? { permit_type: "abu_dhabi", status: "active" }
   );
@@ -39,6 +44,30 @@ export function AbuDhabiDialog({
   function set<K extends keyof Permit>(k: K, v: Permit[K] | string | null) {
     setForm(f => ({ ...f, [k]: v as Permit[K] }));
   }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!guardUploadFile(file)) { e.target.value = ""; return; }
+    setUploading(true);
+    try {
+      const path = `permits/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from("permit-documents")
+        .upload(path, file, { contentType: uploadContentType(file) });
+      if (error) throw error;
+      set("document_url", storageRef("permit-documents", path));
+      toast.success("File attached");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  const attachmentName = form.document_url
+    ? decodeURIComponent(form.document_url.split("/").pop() ?? "attachment")
+    : null;
 
   async function doSave() {
     if (!userId) return;
@@ -59,6 +88,7 @@ export function AbuDhabiDialog({
         notes: form.notes || null,
         // dma_phase stores the Abu Dhabi permit sub-type
         dma_phase: form.dma_phase || null,
+        document_url: form.document_url || null,
         created_by: userId,
       };
       // Cast to any — Supabase generated types may not include abu_dhabi yet
@@ -188,10 +218,49 @@ export function AbuDhabiDialog({
           <Label className="text-xs">Notes / Location</Label>
           <Textarea value={form.notes ?? ""} onChange={e => set("notes", e.target.value)} className="text-sm min-h-[60px] resize-none" placeholder="Location, work description, anchorage details…" />
         </div>
+
+        {/* Document / Attachment */}
+        <div className="space-y-1">
+          <Label className="text-xs">Document / Attachment</Label>
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center space-y-2">
+            {attachmentName ? (
+              <div className="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <SignedAnchor stored={form.document_url} className="truncate text-primary hover:underline">
+                    {attachmentName}
+                  </SignedAnchor>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => set("document_url", null)}
+                  className="ml-2 text-muted-foreground hover:text-destructive"
+                  aria-label="Remove attachment"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                There is <span className="font-semibold text-warning">nothing</span> attached.
+              </p>
+            )}
+            <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition"
+            >
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              {uploading ? "Uploading…" : "Attach file"}
+            </button>
+          </div>
+        </div>
       </div>
 
       <DialogFooter>
-        <Button onClick={doSave} disabled={busy} className="gap-1.5">
+        <Button onClick={doSave} disabled={busy || uploading} className="gap-1.5">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {editing ? "Save Changes" : "Create Permit"}
         </Button>
