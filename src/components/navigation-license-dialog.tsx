@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { updateOrThrow } from "@/lib/db-write";
 import { type Permit, type PermitStatus } from "@/lib/permit-types";
 import { PermitStatusField } from "@/components/permits/permit-status-field";
+import { SeamanCardsPanel } from "@/components/permits/seaman-cards-panel";
 import {
   DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -189,7 +190,7 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
   const isBusy = busy || emailBusy || uploading;
 
   return (
-    <DialogContent className="max-w-4xl">
+    <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
       <DialogHeader>
         <DialogTitle>
           {editing ? "Edit" : "New"} Navigation License
@@ -404,6 +405,9 @@ export function NavigationLicenseDialog({ yachts, editing, userId, onSaved }: Pr
           </Button>
         </div>
       </form>
+
+      {/* SD-0079 — the FMA seaman's cards issued/cancelled under this licence. */}
+      <SeamanCardsPanel permitId={editing?.id ?? null} userId={userId} />
     </DialogContent>
   );
 }

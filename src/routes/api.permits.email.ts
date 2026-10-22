@@ -155,3 +155,48 @@ export async function permitsEmailBatchHandler(request: Request): Promise<Respon
     return json({ error: String(e?.message ?? e).slice(0, 300) }, /one type|one vessel|needs a yacht|not found/.test(String(e?.message)) ? 400 : 500)
   }
 }
+
+/**
+ * POST /api/permits/seaman-cards-email — a Navigation Licence's seaman's cards
+ * (issued, cancelled or both) to the client in one email (SD-0079):
+ * { permitId, cardIds, preview?, to?, cc?, attachments? }.
+ */
+export async function permitsSeamanCardsEmailHandler(request: Request): Promise<Response> {
+  const session = await requireAdminAccess(request, ['global_admin', 'org_admin', 'jls_staff'])
+  if (!session.ok) return session.response
+  if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+
+  let permitId = '', cardIds: string[] = [], preview = false, to: string[] = [], cc: string[] = [], extra: Attachment[] = []
+  try {
+    const body = await request.json() as any
+    permitId = String(body.permitId ?? '')
+    cardIds = Array.isArray(body.cardIds) ? [...new Set(body.cardIds.filter(Boolean).map(String))] as string[] : []
+    preview = !!body.preview
+    to = parseEmailList(body.to)
+    cc = parseEmailList(body.cc)
+    const parsed = parseAttachments(body.attachments)
+    if (typeof parsed === 'string') return json({ error: parsed }, 400)
+    extra = parsed
+  } catch { return json({ error: 'Invalid request body' }, 400) }
+  if (!permitId) return json({ error: 'permitId is required' }, 400)
+  if (!cardIds.length) return json({ error: 'Pick at least one card' }, 400)
+
+  const { previewSeamanCards, sendSeamanCardsToClient, MAX_SEAMAN_CARDS } = await import('@/lib/permits/seaman-cards.server')
+  if (cardIds.length > MAX_SEAMAN_CARDS) return json({ error: `At most ${MAX_SEAMAN_CARDS} cards per email` }, 400)
+
+  try {
+    if (preview) return json({ ok: true, preview: true, ...(await previewSeamanCards(permitId, cardIds)) })
+    const r = await sendSeamanCardsToClient({
+      permitId, cardIds, to, cc, extra,
+      actor: {
+        id: session.user.id, email: session.user.email, role: session.user.role,
+        ip: request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for'),
+        userAgent: request.headers.get('user-agent'),
+      },
+    })
+    return json({ ok: true, sent: true, ...r, to: r.to.join(', ') })
+  } catch (e: any) {
+    if (e instanceof PermitSendError) return json({ error: e.message, blocked: e.blocked }, e.status)
+    return json({ error: String(e?.message ?? e).slice(0, 300) }, 500)
+  }
+}

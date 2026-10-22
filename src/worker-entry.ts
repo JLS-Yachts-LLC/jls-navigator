@@ -1266,6 +1266,12 @@ export default {
       return permitsEmailBatchHandler(request)
     }
 
+    // A Navigation Licence's seaman's cards to the client in one email (SD-0079)
+    if (url.pathname === '/api/permits/seaman-cards-email') {
+      const { permitsSeamanCardsEmailHandler } = await import('./routes/api.permits.email')
+      return permitsSeamanCardsEmailHandler(request)
+    }
+
     // Permit Inbox â emailed permits awaiting Agency review (staff only)
     if (url.pathname === '/api/permits/inbox') {
       const { permitInboxHandler } = await import('./routes/api.permits.inbox')

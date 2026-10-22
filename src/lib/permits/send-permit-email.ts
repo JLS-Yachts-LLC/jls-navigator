@@ -134,3 +134,33 @@ export const previewPermitBatchEmail = (permitIds: string[]): Promise<PermitBatc
 /** Send these permits to the vessel in one email. */
 export const sendPermitBatchEmail = (permitIds: string[], to: string, files: File[] = []): Promise<PermitBatchResult> =>
   callBatch({ permitIds, to }, files);
+
+// ── Seaman's cards on a Navigation Licence (SD-0079) ─────────────────────────
+
+async function callSeamanCards(body: Record<string, unknown>, files: File[] = []): Promise<any> {
+  const { data: { session } } = await (supabase as any).auth.getSession();
+  const attachments = await Promise.all(files.map(async (f) => ({
+    filename: f.name,
+    contentType: f.type || "application/octet-stream",
+    contentBase64: await toBase64(f),
+  })));
+  const res = await fetch("/api/permits/seaman-cards-email", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({ ...body, ...(attachments.length ? { attachments } : {}) }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out?.error ?? `Request failed (${res.status})`);
+  return out;
+}
+
+/** Render the seaman's cards email for this licence, without sending it. */
+export const previewSeamanCardsEmail = (permitId: string, cardIds: string[]): Promise<PermitBatchPreview> =>
+  callSeamanCards({ permitId, cardIds, preview: true });
+
+/** Send these seaman's cards to the client in one email. */
+export const sendSeamanCardsEmail = (permitId: string, cardIds: string[], to: string, files: File[] = []): Promise<PermitBatchResult> =>
+  callSeamanCards({ permitId, cardIds, to }, files);

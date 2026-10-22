@@ -316,3 +316,103 @@ export async function loadPermitsForBatchEmail(permitIds: string[]): Promise<{
     delivery: y?.preferred_document_delivery === 'portal' ? 'portal' : 'secure_link',
   }
 }
+
+// ── Seaman's cards on a Navigation Licence (SD-0079) ─────────────────────────
+
+/** One card in the email; `documentLink` is its secure link, or null when none. */
+export type SeamanCardEmailItem = {
+  card: Record<string, any>
+  documentLink?: { url: string } | null
+}
+
+/**
+ * The vessel's seaman's cards in one email: the issued cards, the cancelled
+ * cards, or both, each with a secure link to the card (or, for a cancelled one,
+ * the cancellation). Issued and cancelled are listed in separate tables so the
+ * client can't mistake one for the other.
+ */
+export function renderSeamanCardsEmail(opts: {
+  items: SeamanCardEmailItem[]
+  permit: Record<string, any>
+  vesselName: string
+  delivery: 'secure_link' | 'portal'
+  linkExpiresAt?: string | null
+}): { subject: string; html: string } {
+  const { items, permit, vesselName, delivery } = opts
+  const issued = items.filter(i => i.card.status !== 'cancelled')
+  const cancelled = items.filter(i => i.card.status === 'cancelled')
+  const anyDocument = items.some(i => i.documentLink)
+  const showLinks = anyDocument && delivery === 'secure_link'
+
+  const what = issued.length && cancelled.length ? "Issued & Cancelled Seaman's Cards"
+    : cancelled.length ? `Cancelled Seaman's Card${cancelled.length === 1 ? '' : 's'}`
+    : `Issued Seaman's Card${issued.length === 1 ? '' : 's'}`
+  const subject = `${vesselName} — ${what}`
+  const licence = String(permit.license_no ?? permit.permit_number ?? '').trim()
+
+  const th = (s: string) =>
+    `<th style="padding:8px 10px;border:1px solid #dfe5ea;background:#f6f8fa;text-align:left;font-weight:600">${esc(s)}</th>`
+  const td = (s: string) => `<td style="padding:8px 10px;border:1px solid #dfe5ea;vertical-align:top">${s}</td>`
+
+  const table = (rows: SeamanCardEmailItem[], isCancelled: boolean) => {
+    if (!rows.length) return ''
+    const head = [
+      'Crew member', 'Card no.', 'Nationality',
+      isCancelled ? 'Cancelled on' : 'Issued on',
+      ...(isCancelled ? [] : ['Expiry']),
+      ...(showLinks ? ['Document'] : []),
+    ].map(th).join('')
+    const body = rows.map(({ card: c, documentLink }) => `<tr>${[
+      td(esc(String(c.crew_name ?? '').trim() || '—') + (c.position ? `<div style="color:#7d8b96;font-size:12px">${esc(c.position)}</div>` : '')),
+      td(esc(String(c.card_number ?? '').trim() || '—')),
+      td(esc(String(c.nationality ?? '').trim() || '—')),
+      td(esc(fmtDate(isCancelled ? c.cancelled_on : c.issued_on))),
+      ...(isCancelled ? [] : [td(esc(fmtDate(c.expiry_date)))]),
+      ...(showLinks ? [td(documentLink
+        ? `<a href="${esc(documentLink.url)}" style="color:#07435e;font-weight:600;text-decoration:underline">View securely</a>`
+        : '<span style="color:#7d8b96">—</span>')] : []),
+    ].join('')}</tr>`).join('')
+    const heading = isCancelled
+      ? `Cancelled seaman's card${rows.length === 1 ? '' : 's'} (${rows.length})`
+      : `Issued seaman's card${rows.length === 1 ? '' : 's'} (${rows.length})`
+    return `<p style="margin:18px 0 6px;font-weight:600;color:${isCancelled ? '#9a3412' : '#166534'}">${esc(heading)}</p>
+      <table style="border-collapse:collapse;width:100%;margin:0 0 8px;font-size:13px">
+        <thead><tr>${head}</tr></thead><tbody>${body}</tbody>
+      </table>`
+  }
+
+  const expiry = opts.linkExpiresAt
+    ? new Date(opts.linkExpiresAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
+  const documentNote = !anyDocument ? ''
+    : delivery === 'portal'
+      ? `<p style="margin:12px 0;line-height:1.55">The cards are filed under <strong>Documents</strong> in your JLS Yachts portal.</p>`
+      : `<p style="margin:12px 0;line-height:1.55;font-size:12.5px;color:#7d8b96">The document links are for you only${expiry ? ` and expire on ${esc(expiry)}` : ''}. If a link has expired, reply to this email and we will send a new one.</p>`
+
+  const holder = String(permit.holder_name ?? '').trim()
+  const html = `<!doctype html>
+<html><body style="margin:0;padding:0;background:#eef2f5">
+  <div style="max-width:720px;margin:0 auto;padding:24px 16px;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#1d2b36;font-size:14px">
+    <div style="background:${BRAND};color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+      ${emailBrandLockup(`<div style="font-size:17px;font-weight:600;letter-spacing:.2px;color:#fff">JLS Yachts</div>
+      <div style="font-size:12.5px;opacity:.8;margin-top:2px;color:#fff">Seaman's Cards — Navigation Licence</div>`, 34)}
+    </div>
+    <div style="background:#fff;padding:20px;border:1px solid #dfe5ea;border-top:none;border-radius:0 0 8px 8px">
+      <p style="margin:0 0 12px;line-height:1.55">Dear ${esc(holder || `${vesselName} team`)},</p>
+      <p style="margin:0 0 12px;line-height:1.55">Greetings from JLS Yachts!</p>
+      <p style="margin:0 0 12px;line-height:1.55">
+        Please find below the ${esc(what.toLowerCase())} for ${esc(vesselName)}${licence ? `, under Navigation Licence ${esc(licence)}` : ''}${permit.issuing_authority ? ` (${esc(permit.issuing_authority)})` : ''}${showLinks ? ', each with a secure link to its document' : ''}.
+      </p>
+      ${table(issued, false)}
+      ${table(cancelled, true)}
+      ${documentNote}
+      <p style="margin:18px 0 0;line-height:1.55">Best regards,<br><strong>JLS Yachts</strong></p>
+    </div>
+    <div style="text-align:center;color:#7d8b96;font-size:11.5px;padding:14px 8px">
+      Sent by JLS Yachts · Port &amp; Operations
+    </div>
+  </div>
+</body></html>`
+
+  return { subject, html }
+}

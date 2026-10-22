@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import {
   previewPermitBatchEmail, sendPermitBatchEmail,
   MAX_PERMIT_ATTACHMENT_BYTES, MAX_PERMIT_ATTACHMENTS,
-  type PermitBatchPreview,
+  type PermitBatchPreview, type PermitBatchResult,
 } from "@/lib/permits/send-permit-email";
 import { Loader2, Mail, Paperclip, X, FileText, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -27,12 +27,18 @@ const fmtSize = (n: number) =>
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function PermitBatchEmailDialog({
-  permitIds, noun, onClose, onSent,
+  permitIds, noun, nounPlural = `${noun}es`, api, onClose, onSent,
 }: {
   /** The permits to send together; null keeps the dialog closed. */
   permitIds: string[] | null;
   /** What one of them is called, e.g. "gate pass". */
   noun: string;
+  nounPlural?: string;
+  /** Another batch endpoint with the same shapes (e.g. seaman's cards, SD-0079). */
+  api?: {
+    preview: (ids: string[]) => Promise<PermitBatchPreview>;
+    send: (ids: string[], to: string, files: File[]) => Promise<PermitBatchResult>;
+  };
   onClose: () => void;
   onSent: () => void;
 }) {
@@ -51,13 +57,14 @@ export function PermitBatchEmailDialog({
     setTo("");
     if (!permitIds?.length) return;
     let live = true;
-    previewPermitBatchEmail(permitIds)
+    (api?.preview ?? previewPermitBatchEmail)(permitIds)
       .then((p) => { if (live) { setPreview(p); setTo(p.to); } })
       .catch((e) => { if (live) setLoadError(e instanceof Error ? e.message : "Could not build the email"); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  const plural = (n: number) => `${n} ${n === 1 ? noun : nounPlural}`;
   const recipients = to.split(/[\s;,]+/).map((s) => s.trim()).filter(Boolean);
   const badRecipient = recipients.find((r) => !EMAIL_RE.test(r));
 
@@ -83,14 +90,14 @@ export function PermitBatchEmailDialog({
     if (!permitIds?.length || !preview || !recipients.length || badRecipient) return;
     setSending(true);
     try {
-      const res = await sendPermitBatchEmail(permitIds, recipients.join("; "), files);
+      const res = await (api?.send ?? sendPermitBatchEmail)(permitIds, recipients.join("; "), files);
       const extra = res.attachments ? ` with ${res.attachments} attachment${res.attachments === 1 ? "" : "s"}` : "";
-      toast.success(`${res.count} ${noun}${res.count === 1 ? "" : "es"} sent to ${res.to} in one email${extra}`, {
+      toast.success(`${plural(res.count)} sent to ${res.to} in one email${extra}`, {
         description: res.delivery === "portal"
           ? "The documents are waiting in the client's portal — no links were emailed, as they requested."
           : res.secureLinks
-            ? `${res.secureLinks} document${res.secureLinks === 1 ? "" : "s"} went as secure links, and each pass is logged against the vessel.`
-            : "Each pass is logged against the vessel.",
+            ? `${res.secureLinks} document${res.secureLinks === 1 ? "" : "s"} went as secure links, and the send is logged against the vessel.`
+            : "The send is logged against the vessel.",
       });
       onSent();
     } catch (e) {
@@ -101,7 +108,6 @@ export function PermitBatchEmailDialog({
     }
   }
 
-  const plural = (n: number) => `${n} ${noun}${n === 1 ? "" : "es"}`;
   const documentLine = !preview ? null
     : preview.withDocument === 0 ? "None of these has a document on file — the email has the details only."
     : preview.delivery === "portal" ? "Documents: waiting in the client's portal (no links emailed)."
@@ -141,7 +147,7 @@ export function PermitBatchEmailDialog({
                 {badRecipient ? (
                   <p className="mt-1 text-sm text-destructive">"{badRecipient}" isn't a valid email address</p>
                 ) : !recipients.length ? (
-                  <p className="mt-1 text-sm text-amber-400">None of these passes has a client email — add one here</p>
+                  <p className="mt-1 text-sm text-amber-400">No client email on file — add one here</p>
                 ) : null}
               </dd>
               <dt className="text-muted-foreground">Subject</dt>
