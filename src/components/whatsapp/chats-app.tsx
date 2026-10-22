@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, BellOff, Loader2, LogOut, MessageCircle, Volume2, VolumeX, ExternalLink } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { db, loadMyLines, type MyLine } from "./wa-common";
 import { WaInbox, type Active } from "./wa-inbox";
@@ -119,7 +120,15 @@ function useNewMessageAlerts(enabled: boolean, lines: MyLine[], sound: boolean, 
     void tick();
     // Runs even when the window is hidden — that's when the alert matters.
     const t = window.setInterval(() => void tick(), POLL_MS);
-    return () => { stopped = true; window.clearInterval(t); };
+    // New messages are also pushed the moment they land (the poll is the fallback).
+    let soon: number | undefined;
+    const ch = supabase.channel(`wa-alerts:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "wa_conversations" }, () => {
+        window.clearTimeout(soon);
+        soon = window.setTimeout(() => void tick(), 250);
+      })
+      .subscribe();
+    return () => { stopped = true; window.clearInterval(t); window.clearTimeout(soon); void supabase.removeChannel(ch); };
   }, [enabled, alert]);
 
   // Unread count on the taskbar / dock icon and in the window title.

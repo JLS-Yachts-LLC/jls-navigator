@@ -93,7 +93,7 @@ export async function waApi<T = any>(path: string, body?: unknown): Promise<T> {
 }
 
 /** Fetch a file through the API (it needs the session header, so no plain <img src>). */
-export async function waBlobUrl(path: string): Promise<string> {
+export async function waBlob(path: string): Promise<Blob> {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(`/api/whatsapp/${path}`, {
     headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
@@ -102,7 +102,7 @@ export async function waBlobUrl(path: string): Promise<string> {
     const out = await res.json().catch(() => ({}));
     throw new Error(out?.error ?? `Request failed (${res.status})`);
   }
-  return URL.createObjectURL(await res.blob());
+  return res.blob();
 }
 
 const tone = {

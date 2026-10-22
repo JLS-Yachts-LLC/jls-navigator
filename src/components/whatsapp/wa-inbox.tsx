@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Search, Send, Loader2, Check, CheckCheck, AlertCircle, Clock, Paperclip, Reply, X, Lock, MessageSquarePlus,
-  CircleCheck, RotateCcw, UserRound, Zap, Pencil, Copy, UserPlus, Contact as ContactIcon,
+  CircleCheck, RotateCcw, UserRound, Zap, Pencil, Copy, UserPlus, Contact as ContactIcon, Forward, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { windowRemaining, placeholderCount, dynamicUrlButtons, personalise, placeholderContext, recipientOf } from "@/lib/whatsapp/shared";
 import { TokenScope, TokenBar, TokenInput } from "./wa-tokens";
 import { WaTemplatePreview, templateBlocker } from "./wa-templates";
-import { db, waApi, waBlobUrl, ConsentChip, Chip, Empty, lineName, type WaContact, type WaTemplate, type MyLine } from "./wa-common";
+import { db, waApi, waBlob, ConsentChip, Chip, Empty, lineName, type WaContact, type WaTemplate, type MyLine } from "./wa-common";
 import { QuickReplyMenu, QuickRepliesManager, noteQuickReplyUsed, type QuickReply } from "./wa-quick-replies";
 
 /** What the paperclip accepts — the same kinds the server sends (see OUTBOUND_MEDIA). */
@@ -76,6 +76,8 @@ interface ThreadItem {
   type?: string | null;
   mediaMime?: string | null;
   hasMedia?: boolean;
+  /** A document's file name, as the client sent it. */
+  fileName?: string | null;
   action?: string | null;
   contextWamid?: string | null;
   // out
@@ -94,6 +96,8 @@ interface ThreadItem {
   imported?: boolean;
   /** Contact cards the client shared (WhatsApp "contacts" message). */
   shared?: SharedContact[];
+  /** Shown straight away while the send is still on its way to WhatsApp. */
+  pending?: boolean;
 }
 
 /** One contact card from a shared-contacts message, as Meta sends it. */
@@ -149,6 +153,8 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
     const t = setInterval(() => { if (!document.hidden) void loadConvs(); }, POLL_MS);
     return () => clearInterval(t);
   }, [loadConvs]);
+  // New messages are pushed (wa_conversations changes on every message); the poll is the fallback.
+  useLive("wa-convs", [{ table: "wa_conversations" }], loadConvs);
 
   // Only numbers the person can use reach the browser (row-level security);
   // this narrows to the one picked.
@@ -256,7 +262,7 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
       <section className={cn("min-h-0", !active && "hidden md:block")}>
         {active && activeLine ? (
           <Thread key={`${active.contactId}:${active.lineId}`} contactId={active.contactId} line={activeLine} showLine={lines.length > 1}
-            conv={activeConv} canEdit={activeLine.level === "send"} staff={staff} me={me}
+            conv={activeConv} canEdit={activeLine.level === "send"} staff={staff} me={me} sendable={sendable}
             onBack={() => setActive(null)} onChanged={loadConvs}
             onOpen={(contactId) => { setActive({ contactId, lineId: active.lineId }); void loadConvs(); }} />
         ) : (
@@ -278,9 +284,11 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
 
 // ─── One conversation ─────────────────────────────────────────────────────────
 
-function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, onChanged, onOpen }: {
+function Thread({ contactId, line, showLine, conv, canEdit, staff, me, sendable, onBack, onChanged, onOpen }: {
   contactId: string; line: MyLine; showLine: boolean; conv: Conversation | null; canEdit: boolean;
   staff: Array<{ id: string; display_name: string | null }>; me: string | null;
+  /** Numbers this person can send from — where a message can be forwarded to. */
+  sendable: MyLine[];
   onBack: () => void; onChanged: () => void;
   /** Open another contact's thread on this number (a shared contact card's Message button). */
   onOpen: (contactId: string) => void;
@@ -292,6 +300,9 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  /** What's being sent right now, shown in the thread before WhatsApp confirms it. */
+  const [pending, setPending] = useState<ThreadItem[]>([]);
+  const [forwarding, setForwarding] = useState<ThreadItem | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [qrQuery, setQrQuery] = useState("");
   const [manageQr, setManageQr] = useState(false);
@@ -306,7 +317,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   const load = useCallback(async () => {
     const [{ data: c }, { data: ins }, { data: outs }] = await Promise.all([
       db().from("wa_contacts").select("*, yacht:yachts(vessel_name)").eq("id", contactId).maybeSingle(),
-      db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at, source, shared:raw->contacts")
+      db().from("wa_inbound").select("id, wa_message_id, type, body, action, media_id, media_mime, context_wamid, received_at, source, shared:raw->contacts, doc_name:raw->document->>filename")
         .eq("contact_id", contactId).eq("line_id", line.id).order("received_at", { ascending: false }).limit(300),
       db().from("wa_messages").select("id, kind, auto_reply, body, status, error_message, sent_by, wa_message_id, queued_at, sent_at, media_type, media_mime, media_name, media_path, media_id, from_phone, source, campaign:wa_campaigns(name)")
         .eq("contact_id", contactId).eq("line_id", line.id).neq("status", "skipped").order("queued_at", { ascending: false }).limit(300),
@@ -315,7 +326,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
     const merged: ThreadItem[] = [
       ...((ins ?? []) as any[]).map((m): ThreadItem => ({
         key: `i${m.id}`, dir: "in", at: m.received_at, body: m.body, inboundId: m.id, type: m.type,
-        hasMedia: !!m.media_id, mediaMime: m.media_mime, action: m.action, contextWamid: m.context_wamid, wamid: m.wa_message_id,
+        hasMedia: !!m.media_id, mediaMime: m.media_mime, fileName: m.doc_name ?? null, action: m.action, contextWamid: m.context_wamid, wamid: m.wa_message_id,
         imported: m.source === "history",
         shared: m.type === "contacts" && Array.isArray(m.shared) ? m.shared : undefined,
       })),
@@ -338,18 +349,24 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
     const clock = setInterval(() => tick((n) => n + 1), 60_000);
     return () => { clearInterval(t); clearInterval(clock); };
   }, [load]);
+  // Their messages (via the conversation row) and our delivery / read ticks, pushed as they happen.
+  useLive(`wa-thread-${contactId}`, [
+    { table: "wa_conversations", filter: `contact_id=eq.${contactId}` },
+    { table: "wa_messages", filter: `contact_id=eq.${contactId}` },
+  ], load);
 
   // Reading the thread clears unread (and gives the client blue ticks).
   useEffect(() => {
     if (unread > 0) void waApi("conversations/read", { contactId, lineId: line.id }).then(onChanged).catch(() => {});
   }, [unread, contactId, line.id, onChanged]);
 
+  const shownItems = useMemo(() => (items === null ? null : [...items, ...pending]), [items, pending]);
   useEffect(() => {
-    if (items && items.length !== lastCount.current) {
-      lastCount.current = items.length;
+    if (shownItems && shownItems.length !== lastCount.current) {
+      lastCount.current = shownItems.length;
       endRef.current?.scrollIntoView({ block: "end" });
     }
-  }, [items]);
+  }, [shownItems]);
 
   const remaining = windowRemaining(lastInboundAt);
   const byWamid = useMemo(() => new Map((items ?? []).filter((i) => i.wamid).map((i) => [i.wamid!, i])), [items]);
@@ -377,39 +394,49 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
   async function send() {
     const body = text.trim();
     if (!body && !files.length) return;
+    // Clear the box and show the message at once; WhatsApp's confirmation follows.
+    const sendFiles = files, quote = replyTo, at = new Date().toISOString();
+    setText(""); setReplyTo(null); setFiles([]);
+    setPending(sendFiles.length
+      ? sendFiles.map((f, i) => ({ key: `p${at}${i}`, dir: "out", at, pending: true, kind: "reply",
+          body: `📎 ${f.name}${i === 0 && body ? `\n${body}` : ""}` }))
+      : [{ key: `p${at}`, dir: "out", at, pending: true, kind: "reply", body }]);
     setSending(true);
     try {
-      if (files.length) {
+      if (sendFiles.length) {
         // One message per file, in order; the text goes as the first one's caption.
-        // A file that fails stops the run and stays in the list with those after it.
-        for (let i = 0; i < files.length; i++) {
+        // A file that fails stops the run and goes back in the box with those after it.
+        for (let i = 0; i < sendFiles.length; i++) {
           const form = new FormData();
           form.append("contactId", contactId);
           form.append("lineId", line.id);
-          form.append("file", files[i]);
+          form.append("file", sendFiles[i]);
           if (i === 0 && body) form.append("caption", body);
-          if (i === 0 && replyTo?.wamid) form.append("replyTo", replyTo.wamid);
+          if (i === 0 && quote?.wamid) form.append("replyTo", quote.wamid);
           try {
             await sendMediaReply(form);
           } catch (e) {
-            const left = files.slice(i);
+            const left = sendFiles.slice(i);
             setFiles(left);
-            if (i > 0) { setText(""); setReplyTo(null); }
-            throw new Error(`${files[i].name}: ${e instanceof Error ? e.message : "not sent"}${i > 0 ? ` — ${i} sent, ${left.length} left to send` : ""}`);
+            if (i === 0) { setText(body); setReplyTo(quote); }
+            throw new Error(`${sendFiles[i].name}: ${e instanceof Error ? e.message : "not sent"}${i > 0 ? ` — ${i} sent, ${left.length} left to send` : ""}`);
           }
         }
-        setFiles([]);
       } else {
-        await waApi("reply", { contactId, lineId: line.id, text: body, replyTo: replyTo?.wamid ?? null });
+        try {
+          await waApi("reply", { contactId, lineId: line.id, text: body, replyTo: quote?.wamid ?? null });
+        } catch (e) {
+          setText((cur) => cur || body); setReplyTo((cur) => cur ?? quote);
+          throw e;
+        }
       }
-      setText("");
-      setReplyTo(null);
       await load();
       onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Not sent");
       await load();
     } finally {
+      setPending([]);
       setSending(false);
     }
   }
@@ -513,12 +540,12 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
 
       {/* Messages */}
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-muted/20 px-4 py-4">
-        {items === null ? (
+        {shownItems === null ? (
           <div className="grid place-items-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-        ) : items.length === 0 ? (
+        ) : shownItems.length === 0 ? (
           <p className="py-10 text-center text-xs text-muted-foreground">No messages yet.</p>
-        ) : items.map((m, i) => {
-          const newDay = i === 0 || new Date(items[i - 1].at).toDateString() !== new Date(m.at).toDateString();
+        ) : shownItems.map((m, i) => {
+          const newDay = i === 0 || new Date(shownItems[i - 1].at).toDateString() !== new Date(m.at).toDateString();
           const quoted = m.contextWamid ? byWamid.get(m.contextWamid) : null;
           return (
             <div key={m.key}>
@@ -530,7 +557,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
               <div className={cn("group flex", m.dir === "out" ? "justify-end" : "justify-start")}>
                 <div className={cn("max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm",
                   m.dir === "out" ? "rounded-br-sm bg-emerald-600 text-white" : "rounded-bl-sm border border-border bg-card",
-                  m.status === "failed" && "bg-red-600/90")}>
+                  m.status === "failed" && "bg-red-600/90", m.pending && "opacity-70")}>
                   {m.kind === "campaign" && (
                     <p className="mb-1 text-[10px] font-medium uppercase tracking-wide opacity-75">Broadcast{m.campaignName ? ` · ${m.campaignName}` : ""}</p>
                   )}
@@ -547,7 +574,7 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
                       {(quoted.body ?? `[${quoted.type ?? "message"}]`).slice(0, 140)}
                     </div>
                   )}
-                  {m.hasMedia && m.inboundId && <MediaLink src={`media?inbound=${m.inboundId}`} type={m.type} mime={m.mediaMime} />}
+                  {m.hasMedia && m.inboundId && <MediaLink src={`media?inbound=${m.inboundId}`} type={m.type} mime={m.mediaMime} name={m.fileName} />}
                   {m.dir === "out" && m.outMedia && m.outboundId && (
                     <MediaLink src={`media?outbound=${m.outboundId}`} type={m.outMedia.type} mime={m.outMedia.mime} name={m.outMedia.name} />
                   )}
@@ -556,7 +583,9 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
                       onSave={(c) => setEditing(c)}
                       onMessage={(c) => void saveContact(line.id, c, true).then((id) => id && onOpen(id))} />
                   ) : m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                    : !m.hasMedia && !m.outMedia && <p className="italic opacity-70">[{m.type ?? "message"}]</p>}
+                    : !m.hasMedia && !m.outMedia && (m.type === "unsupported"
+                      ? <p className="italic opacity-70" title="WhatsApp doesn't pass this kind of message on to business systems">A view-once photo, poll or other message WhatsApp can't show here — ask them to send it again as a normal message</p>
+                      : <p className="italic opacity-70">[{m.type ?? "message"}]</p>)}
                   {m.action && (
                     <p className="mt-1 text-[11px] font-medium text-red-500">
                       {m.action === "marketing_opt_out" ? "Opted out of news & offers" : "Opted out of WhatsApp messages"} — recorded automatically
@@ -566,13 +595,20 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
                   <div className={cn("mt-0.5 flex items-center justify-end gap-1 text-[10px]", m.dir === "out" ? "text-white/75" : "text-muted-foreground")}>
                     {m.dir === "out" && staffName(m.sentBy) && <span>{staffName(m.sentBy)} ·</span>}
                     <span>{new Date(m.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
-                    {m.dir === "out" && <Ticks s={m.status} />}
+                    {m.dir === "out" && <Ticks s={m.pending ? undefined : m.status} />}
                   </div>
                 </div>
                 {m.dir === "in" && canEdit && remaining > 0 && m.wamid && (
                   <button onClick={() => setReplyTo(m)} title="Reply to this message"
                     className="ml-1 self-center rounded p-1 text-muted-foreground opacity-0 hover:bg-muted group-hover:opacity-100">
                     <Reply className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {sendable.length > 0 && !m.pending && m.status !== "failed" && (m.hasMedia || m.outMedia || (m.body && !m.shared?.length)) && (
+                  <button onClick={() => setForwarding(m)} title="Forward to another chat"
+                    className={cn("self-center rounded p-1 text-muted-foreground opacity-0 hover:bg-muted group-hover:opacity-100",
+                      m.dir === "out" ? "order-first mr-1" : "ml-1")}>
+                    <Forward className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
@@ -639,6 +675,8 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
         )
       )}
       <QuickRepliesManager open={manageQr} onClose={() => setManageQr(false)} />
+      {forwarding && <ForwardDialog item={forwarding} lines={sendable} fromLineId={line.id} fromContactId={contactId}
+        onClose={() => setForwarding(null)} onSent={onChanged} />}
     </div>
   );
 }
@@ -651,34 +689,281 @@ function Ticks({ s }: { s?: string }) {
   return <Clock className="h-3 w-3" aria-label="Sending" />;
 }
 
+// ─── Files in the thread ──────────────────────────────────────────────────────
+
+/**
+ * Files fetched this session, by API path — so a thumbnail, its full-size view,
+ * a download and a forward all reuse one fetch. The oldest are let go past 80.
+ */
+const fileCache = new Map<string, Promise<{ blob: Blob; url: string }>>();
+function cachedFile(src: string) {
+  let hit = fileCache.get(src);
+  if (!hit) {
+    hit = waBlob(src).then((blob) => ({ blob, url: URL.createObjectURL(blob) }));
+    hit.catch(() => fileCache.delete(src));
+    fileCache.set(src, hit);
+    if (fileCache.size > 80) {
+      const [oldest, p] = fileCache.entries().next().value!;
+      fileCache.delete(oldest);
+      void p.then((f) => URL.revokeObjectURL(f.url), () => {});
+    }
+  }
+  return hit;
+}
+
+const EXT: Record<string, string> = {
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf", "video/mp4": "mp4",
+  "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac", "text/plain": "txt",
+};
+const bareMime = (mime?: string | null) => (mime ?? "").split(";")[0].trim().toLowerCase();
+/** A sensible file name when WhatsApp didn't give one (photos, voice notes). */
+function fileNameFor(name: string | null | undefined, type: string | null | undefined, mime: string | null | undefined) {
+  if (name) return name;
+  const m = bareMime(mime);
+  return `whatsapp-${type ?? "file"}.${EXT[m] ?? (m.split("/")[1] || "bin")}`;
+}
+
+function saveFile(url: string, name: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/** The file on a thread item, for forwarding: its API path, name and type. */
+function itemFile(m: ThreadItem): { src: string; name: string; mime: string } | null {
+  if (m.hasMedia && m.inboundId) return { src: `media?inbound=${m.inboundId}`, name: fileNameFor(m.fileName, m.type, m.mediaMime), mime: bareMime(m.mediaMime) };
+  if (m.outMedia && m.outboundId) {
+    return { src: `media?outbound=${m.outboundId}`, name: fileNameFor(m.outMedia.name, m.outMedia.type, m.outMedia.mime), mime: bareMime(m.outMedia.mime) };
+  }
+  return null;
+}
+
+/**
+ * Photos show as a thumbnail as soon as they scroll into view (click for full
+ * size); voice notes and videos play in the thread; documents download on click.
+ */
 function MediaLink({ src, type, mime, name }: { src: string; type?: string | null; mime?: string | null; name?: string | null }) {
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [big, setBig] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
   const isImage = type === "image" || type === "sticker";
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const playable = type === "audio" || type === "video";
+  const fileName = fileNameFor(name, type, mime);
 
-  async function open() {
+  async function fetchIt(): Promise<string | null> {
     setBusy(true);
     try {
-      const u = url ?? await waBlobUrl(src);
-      setUrl(u);
-      if (!isImage) window.open(u, "_blank", "noopener");
+      const f = await cachedFile(src);
+      setUrl(f.url);
+      return f.url;
     } catch (e) {
+      setFailed(true);
       toast.error(e instanceof Error ? e.message : "Couldn't load the file");
+      return null;
     } finally {
       setBusy(false);
     }
   }
 
-  if (isImage && url) return <img src={url} alt={name ?? "Photo"} className="mb-1 max-h-72 rounded-lg" />;
+  // Thumbnails load once they're on screen, so a long thread doesn't fetch every photo at once.
+  useEffect(() => {
+    if (!isImage || url || failed) return;
+    const el = boxRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); void fetchIt(); } }, { rootMargin: "200px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [isImage, url, failed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (isImage) {
+    return (
+      <div ref={boxRef} className="mb-1">
+        {url ? (
+          <button type="button" onClick={() => setBig(true)} title="Open full size" className="block">
+            <img src={url} alt={name ?? "Photo"} className="max-h-60 max-w-full rounded-lg object-cover" />
+          </button>
+        ) : (
+          <button type="button" onClick={() => void fetchIt()} disabled={busy}
+            className="grid h-32 w-44 place-items-center rounded-lg bg-muted text-xs text-muted-foreground">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : failed ? "Couldn't load — tap to retry" : <Loader2 className="h-4 w-4 animate-spin" />}
+          </button>
+        )}
+        {big && url && (
+          <Dialog open onOpenChange={(o) => { if (!o) setBig(false); }}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader><DialogTitle>Photo</DialogTitle></DialogHeader>
+              <img src={url} alt={name ?? "Photo"} className="mx-auto max-h-[75vh] rounded-lg" />
+              <Button variant="outline" className="ml-auto gap-1.5" onClick={() => saveFile(url, fileName)}>
+                <Download className="h-4 w-4" /> Download
+              </Button>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+    );
+  }
+  if (playable && url) {
+    return type === "audio"
+      ? <audio src={url} controls autoPlay className="mb-1 max-w-full" />
+      : <video src={url} controls autoPlay className="mb-1 max-h-72 max-w-full rounded-lg" />;
+  }
   return (
-    <button onClick={() => void open()} className="mb-1 inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-foreground hover:bg-muted/70">
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
-      {isImage ? "Show photo" : type === "audio" ? "Play voice note" : type === "video" ? "Play video" : "Open file"}
-      {name && !isImage ? <span className="max-w-[180px] truncate text-muted-foreground">{name}</span>
-        : mime && !isImage && <span className="text-muted-foreground">({mime.split("/")[1]?.split(";")[0]})</span>}
+    <button onClick={() => void (async () => {
+        const u = url ?? await fetchIt();
+        if (u && !playable) saveFile(u, fileName);
+      })()}
+      title={playable ? undefined : `Download ${fileName}`}
+      className="mb-1 inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-foreground hover:bg-muted/70">
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : playable ? <Paperclip className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
+      {type === "audio" ? "Play voice note" : type === "video" ? "Play video" : "Download"}
+      {!playable && <span className="max-w-[180px] truncate text-muted-foreground">{fileName}</span>}
     </button>
   );
+}
+
+// ─── Forward ──────────────────────────────────────────────────────────────────
+
+/** Most chats one forward goes to. */
+const MAX_FORWARD = 10;
+
+/**
+ * Send a message on to other chats — a file is fetched once and re-sent from
+ * here, with no download / upload by hand. Free-form, so only to chats whose
+ * 24-hour reply window is open.
+ */
+function ForwardDialog({ item, lines, fromLineId, fromContactId, onClose, onSent }: {
+  item: ThreadItem; lines: MyLine[]; fromLineId: string; fromContactId: string; onClose: () => void; onSent: () => void;
+}) {
+  const [rows, setRows] = useState<Conversation[] | null>(null);
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const file = itemFile(item);
+  const lineLabel = (id: string) => lines.find((l) => l.id === id)?.label ?? "";
+
+  useEffect(() => {
+    void db().from("wa_conversations")
+      .select("*, contact:wa_contacts(id, name, phone_e164, yacht:yachts(vessel_name))")
+      .in("line_id", lines.map((l) => l.id)).order("last_inbound_at", { ascending: false, nullsFirst: false }).limit(500)
+      .then(({ data }: any) => setRows(((data ?? []) as Conversation[])
+        .filter((c) => !(c.contact_id === fromContactId && c.line_id === fromLineId))));
+  }, [lines, fromLineId, fromContactId]);
+
+  const s = q.trim().toLowerCase();
+  const list = (rows ?? []).filter((c) => !s || [c.contact?.name, c.contact?.phone_e164, c.contact?.yacht?.vessel_name]
+    .some((v) => (v ?? "").toLowerCase().includes(s)));
+
+  async function send() {
+    const targets = (rows ?? []).filter((c) => picked.includes(c.id));
+    setSending(true);
+    const failed: string[] = [];
+    try {
+      let attach: File | null = null;
+      if (file) {
+        if (!ATTACH_ACCEPT.split(",").includes(file.mime)) throw new Error("WhatsApp can't forward this kind of file (stickers and some voice notes can't be re-sent)");
+        attach = new File([(await cachedFile(file.src)).blob], file.name, { type: file.mime });
+      }
+      for (const c of targets) {
+        try {
+          if (attach) {
+            const form = new FormData();
+            form.append("contactId", c.contact_id);
+            form.append("lineId", c.line_id);
+            form.append("file", attach);
+            if (item.body) form.append("caption", item.body.slice(0, 1024));
+            await sendMediaReply(form);
+          } else {
+            await waApi("reply", { contactId: c.contact_id, lineId: c.line_id, text: item.body ?? "" });
+          }
+        } catch (e) {
+          failed.push(`${c.contact?.name ?? "?"}: ${e instanceof Error ? e.message : "not sent"}`);
+        }
+      }
+      const ok = targets.length - failed.length;
+      if (ok) toast.success(`Forwarded to ${ok} chat${ok === 1 ? "" : "s"}`);
+      if (failed.length) toast.error(`Not forwarded to ${failed.length}`, { description: failed.join("\n") });
+      onSent();
+      if (!failed.length) onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Not forwarded");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o && !sending) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Forward {file ? (item.type === "image" || item.outMedia?.type === "image" ? "photo" : "file") : "message"}</DialogTitle>
+          <DialogDescription>
+            Sent as a new message from the chat's own number. WhatsApp only allows this to chats that wrote in the last 24 hours.
+          </DialogDescription>
+        </DialogHeader>
+        <p className="truncate rounded-md bg-muted px-2 py-1.5 text-xs">
+          {file ? <><Paperclip className="mr-1 inline h-3 w-3" />{file.name}{item.body ? ` — ${item.body}` : ""}</> : item.body}
+        </p>
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search chats" autoFocus />
+        <div className="max-h-[45vh] overflow-y-auto rounded-md border border-border">
+          {rows === null ? (
+            <div className="grid place-items-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+          ) : list.length === 0 ? (
+            <p className="p-4 text-center text-xs text-muted-foreground">No chats found.</p>
+          ) : list.map((c) => {
+            const open = windowRemaining(c.last_inbound_at) > 0;
+            const on = picked.includes(c.id);
+            return (
+              <label key={c.id} title={open ? undefined : "Their 24-hour reply window is closed — only a template can be sent"}
+                className={cn("flex items-center gap-2 border-b border-border/60 px-3 py-2 text-sm last:border-0",
+                  open ? "cursor-pointer hover:bg-muted/50" : "opacity-50")}>
+                <input type="checkbox" checked={on} disabled={!open || (!on && picked.length >= MAX_FORWARD)}
+                  onChange={() => setPicked((p) => (on ? p.filter((x) => x !== c.id) : [...p, c.id]))} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{c.contact?.name}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {[lines.length > 1 ? lineLabel(c.line_id) : null, c.contact?.yacht?.vessel_name, open ? null : "window closed"].filter(Boolean).join(" · ")}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <Button onClick={() => void send()} disabled={!picked.length || sending} className="gap-1.5">
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Forward className="h-4 w-4" />}
+          Forward{picked.length ? ` to ${picked.length}` : ""}
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Live updates ─────────────────────────────────────────────────────────────
+
+/**
+ * Re-run `onChange` when any of these tables change (Supabase Realtime, under
+ * the viewer's row-level security). Bursts — a message in also touches its
+ * conversation — collapse into one reload.
+ */
+function useLive(name: string, subs: Array<{ table: string; filter?: string }>, onChange: () => unknown) {
+  const ref = useRef(onChange);
+  ref.current = onChange;
+  const key = JSON.stringify(subs);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const fire = () => { clearTimeout(timer); timer = setTimeout(() => void ref.current(), 250); };
+    // Unique topic per mount — supabase.channel() hands back an existing channel for a repeated topic.
+    let ch: any = supabase.channel(`${name}:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    for (const s of JSON.parse(key) as typeof subs) {
+      ch = ch.on("postgres_changes", { event: "*", schema: "public", table: s.table, ...(s.filter ? { filter: s.filter } : {}) }, fire);
+    }
+    ch.subscribe();
+    return () => { clearTimeout(timer); void supabase.removeChannel(ch); };
+  }, [name, key]);
 }
 
 // ─── Outside the window: approved templates only ──────────────────────────────
