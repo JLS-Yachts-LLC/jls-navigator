@@ -16,8 +16,11 @@
  */
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendGraphEmailWithAttachments } from '@/lib/graph-mail.server'
-import { loadPermitForEmail, renderPermitEmail, PERMIT_LABELS } from '@/lib/permits/permit-email.server'
-import { createDocumentShare, documentButtonHtml, portalPointerHtml } from '@/lib/document-share.server'
+import {
+  loadPermitForEmail, renderPermitEmail, PERMIT_LABELS,
+  loadPermitsForBatchEmail, renderPermitBatchEmail,
+} from '@/lib/permits/permit-email.server'
+import { createDocumentShare, documentButtonHtml, portalPointerHtml, DEFAULT_SHARE_TTL_DAYS } from '@/lib/document-share.server'
 import { logAuditEvent } from '@/lib/admin/audit'
 
 export type PermitAttachment = { filename: string; contentType: string; contentBase64: string; size: number }
@@ -180,5 +183,161 @@ export async function sendPermitToClient(opts: {
     secureLink: !!share,
     linkExpiresAt: share?.expiresAt ?? null,
     attachments: extra.length,
+  }
+}
+
+/** Most permits one batch email may carry. */
+export const MAX_BATCH_PERMITS = 50
+
+export type PermitBatchResult = {
+  to: string[]
+  subject: string
+  count: number
+  delivery: 'secure_link' | 'portal'
+  /** How many of the permits went with a secure document link. */
+  secureLinks: number
+  linkExpiresAt: string | null
+  attachments: number
+}
+
+/**
+ * Several permits for one vessel in one email (SD-0081). Each permit with a
+ * document gets its own secure link; every permit is logged against the vessel,
+ * audited and stamped as sent exactly as a single send would be.
+ */
+export async function sendPermitBatchToClient(opts: {
+  permitIds: string[]
+  to?: string[]
+  cc?: string[]
+  extra?: PermitAttachment[]
+  actor: PermitSendActor
+  via: string
+}): Promise<PermitBatchResult> {
+  const { permitIds, actor, via } = opts
+  const cc = opts.cc ?? []
+  const extra = opts.extra ?? []
+  const sb = supabaseAdmin as any
+
+  const { permits, vesselName, delivery } = await loadPermitsForBatchEmail(permitIds)
+  const to = opts.to?.length ? opts.to : parseEmailList(permits.map(p => p.contact_email ?? '').join(';'))
+  if (!to.length) throw new PermitSendError('None of these permits has a client email address.', 400)
+
+  const label = PERMIT_LABELS[permits[0].permit_type] ?? 'Permit'
+  const items = await Promise.all(permits.map(async (permit) => {
+    const reference = String(permit.permit_number ?? permit.license_no ?? '').trim() || null
+    const share = permit.document_url && delivery === 'secure_link'
+      ? await createDocumentShare({
+          storageRef: permit.document_url,
+          title: [label, permit.holder_name].filter(Boolean).join(' — '),
+          reference,
+          purpose: `Your ${label} for ${vesselName}. Please keep a copy on board.`,
+          vesselName,
+          recipientEmail: to.join(', '),
+          sourceTable: 'permits',
+          sourceId: permit.id,
+          createdBy: actor.id,
+        })
+      : null
+    return { permit, reference, share }
+  }))
+  const linkExpiresAt = items.find(i => i.share)?.share?.expiresAt ?? null
+  const { subject, html } = renderPermitBatchEmail({
+    items: items.map(i => ({ permit: i.permit, documentLink: i.share ? { url: i.share.url } : null })),
+    vesselName, delivery, linkExpiresAt,
+  })
+
+  const logRows = items.map(({ permit, share }) => ({
+    yacht_id: permit.yacht_id ?? null,
+    permit_id: permit.id,
+    kind: permit.permit_type ?? 'permit',
+    channel: 'email',
+    subject,
+    recipients: to,
+    cc,
+    body_html: html,
+    attachments: [
+      ...(share
+        ? [{ filename: 'permit document', delivery: 'secure_link', token: share.token, expires_at: share.expiresAt }]
+        : permit.document_url ? [{ filename: 'permit document', delivery }] : []),
+      ...extra.map(a => ({ filename: a.filename, delivery: 'attachment', content_type: a.contentType, size: a.size })),
+    ],
+    actor_id: actor.id,
+    actor_name: actor.email,
+  }))
+
+  const recipients = `${to.join(', ')}${cc.length ? ` (cc ${cc.join(', ')})` : ''}`
+  const audit = (result: 'success' | 'blocked' | 'failed', detail: (what: string) => string) => Promise.all(items.map(({ permit, reference }) => {
+    const what = `${label}${reference ? ` ${reference}` : ''} for ${vesselName}`
+    return logAuditEvent({
+      event_type: 'EXPORT',
+      module: 'permits',
+      actor_id: actor.id, actor_email: actor.email, actor_role: actor.role,
+      target_type: 'permit', target_id: permit.id, target_label: what,
+      detail: detail(what), ip_address: actor.ip ?? null, user_agent: actor.userAgent ?? null,
+      result,
+    })
+  }))
+  const batchNote = `as one of ${items.length} in a batch email`
+
+  try {
+    await sendGraphEmailWithAttachments({
+      to, cc, subject, html,
+      attachments: extra.map(({ filename, contentType, contentBase64 }) => ({ filename, contentType, contentBase64 })),
+    })
+  } catch (e: any) {
+    const msg = String(e?.message ?? e)
+    const blocked = /switched off|currently disabled/i.test(msg)
+    await sb.from('yacht_activity_log').insert(logRows.map(r => ({ ...r, status: blocked ? 'blocked' : 'failed', error: msg.slice(0, 500) })))
+    await audit(blocked ? 'blocked' : 'failed', (what) =>
+      `Tried to email ${what} to ${recipients} ${batchNote} from the ${via} — ${blocked ? 'blocked' : 'failed'}: ${msg.slice(0, 300)}`)
+    throw new PermitSendError(msg, blocked ? 409 : 502, blocked)
+  }
+
+  await sb.from('yacht_activity_log').insert(logRows.map(r => ({ ...r, status: 'sent' })))
+  await audit('success', (what) => `Emailed ${what} to ${recipients} ${batchNote} from the ${via}${
+    linkExpiresAt ? ` — secure links, expire ${linkExpiresAt.slice(0, 10)}` : delivery === 'portal' ? ' — pointed to the client portal' : ''
+  }${extra.length ? ` + ${extra.length} attachment${extra.length === 1 ? '' : 's'}` : ''}`)
+
+  // Same stamping as a single send: sent markers, remember the contact, and a
+  // pending permit with a document becomes active once the client has it.
+  const now = new Date().toISOString()
+  await Promise.all(permits.map((permit) => sb.from('permits').update({
+    email_sent_at: now,
+    email_sent_by: actor.id,
+    email_sent_to: to.join(', '),
+    ...(!String(permit.contact_email ?? '').trim() ? { contact_email: to[0] } : {}),
+    ...(permit.document_url && permit.status === 'pending' ? { status: 'active' } : {}),
+  }).eq('id', permit.id)))
+
+  const { notifySentToClient } = await import('@/lib/staff-notifications.server')
+  await notifySentToClient({
+    userId: actor.id, document: `${items.length} × ${label}`, reference: null, vessel: vesselName,
+    to, cc, secureLinkExpiresAt: linkExpiresAt,
+  })
+
+  return {
+    to, subject, count: items.length, delivery,
+    secureLinks: items.filter(i => i.share).length,
+    linkExpiresAt,
+    attachments: extra.length,
+  }
+}
+
+/** What a batch send would look like, with placeholder links; sends nothing. */
+export async function previewPermitBatch(permitIds: string[]): Promise<{
+  subject: string; html: string; to: string; vesselName: string
+  delivery: 'secure_link' | 'portal'; count: number; withDocument: number
+}> {
+  const { permits, vesselName, delivery } = await loadPermitsForBatchEmail(permitIds)
+  const { subject, html } = renderPermitBatchEmail({
+    items: permits.map(permit => ({ permit, documentLink: permit.document_url ? { url: '#' } : null })),
+    vesselName, delivery,
+    linkExpiresAt: new Date(Date.now() + DEFAULT_SHARE_TTL_DAYS * 86400000).toISOString(),
+  })
+  return {
+    subject, html, vesselName, delivery,
+    to: parseEmailList(permits.map(p => p.contact_email ?? '').join(';')).join(', '),
+    count: permits.length,
+    withDocument: permits.filter(p => p.document_url).length,
   }
 }

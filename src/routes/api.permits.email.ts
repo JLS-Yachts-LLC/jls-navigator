@@ -11,13 +11,20 @@
  * sender adds in the review dialog (a quote, a letter) goes as an ordinary
  * attachment alongside it.
  *
+ * POST /api/permits/email-batch — several permits for one vessel in one email
+ * (SD-0081): { permitIds, preview?, to?, cc?, attachments? }. See
+ * permitsEmailBatchHandler below.
+ *
  * The send itself (secure link, yacht_activity_log + audit_log, stamping the
  * permit) lives in `send-permit.server.ts`, shared with the Permit Inbox.
  */
 import { requireAdminAccess } from '@/lib/admin/access'
 import { loadPermitForEmail, renderPermitEmail, PERMIT_LABELS } from '@/lib/permits/permit-email.server'
 import { documentButtonHtml, portalPointerHtml, DEFAULT_SHARE_TTL_DAYS } from '@/lib/document-share.server'
-import { sendPermitToClient, PermitSendError, type PermitAttachment } from '@/lib/permits/send-permit.server'
+import {
+  sendPermitToClient, sendPermitBatchToClient, previewPermitBatch, parseEmailList,
+  PermitSendError, MAX_BATCH_PERMITS, type PermitAttachment,
+} from '@/lib/permits/send-permit.server'
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -110,5 +117,41 @@ export async function permitsEmailHandler(request: Request): Promise<Response> {
     }
   } catch (e: any) {
     return json({ error: String(e?.message ?? e).slice(0, 300) }, 500)
+  }
+}
+
+export async function permitsEmailBatchHandler(request: Request): Promise<Response> {
+  const session = await requireAdminAccess(request, ['global_admin', 'org_admin', 'jls_staff'])
+  if (!session.ok) return session.response
+  if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+
+  let permitIds: string[] = [], preview = false, to: string[] = [], cc: string[] = [], extra: Attachment[] = []
+  try {
+    const body = await request.json() as any
+    permitIds = Array.isArray(body.permitIds) ? [...new Set(body.permitIds.filter(Boolean).map(String))] as string[] : []
+    preview = !!body.preview
+    to = parseEmailList(body.to)
+    cc = parseEmailList(body.cc)
+    const parsed = parseAttachments(body.attachments)
+    if (typeof parsed === 'string') return json({ error: parsed }, 400)
+    extra = parsed
+  } catch { return json({ error: 'Invalid request body' }, 400) }
+  if (!permitIds.length) return json({ error: 'permitIds is required' }, 400)
+  if (permitIds.length > MAX_BATCH_PERMITS) return json({ error: `At most ${MAX_BATCH_PERMITS} permits per email` }, 400)
+
+  try {
+    if (preview) return json({ ok: true, preview: true, ...(await previewPermitBatch(permitIds)) })
+    const r = await sendPermitBatchToClient({
+      permitIds, to, cc, extra, via: 'permits list (batch)',
+      actor: {
+        id: session.user.id, email: session.user.email, role: session.user.role,
+        ip: request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for'),
+        userAgent: request.headers.get('user-agent'),
+      },
+    })
+    return json({ ok: true, sent: true, ...r, to: r.to.join(', ') })
+  } catch (e: any) {
+    if (e instanceof PermitSendError) return json({ error: e.message, blocked: e.blocked }, e.status)
+    return json({ error: String(e?.message ?? e).slice(0, 300) }, /one type|one vessel|needs a yacht|not found/.test(String(e?.message)) ? 400 : 500)
   }
 }

@@ -189,3 +189,130 @@ export async function loadPermitForEmail(permitId: string): Promise<{
     delivery: permit.yachts?.preferred_document_delivery === 'portal' ? 'portal' : 'secure_link',
   }
 }
+
+/** One row of a batch email — the permit and its document block, if any. */
+export type PermitBatchItem = {
+  permit: Record<string, any>
+  /** Pre-rendered secure link (or a placeholder for a preview); null when none. */
+  documentLink?: { url: string } | null
+}
+
+/**
+ * Several permits of one type for one vessel in a single email (SD-0081): the
+ * vessel gets one message listing every pass instead of one email each. Each
+ * permit with a document gets its own secure link in its row.
+ *
+ * @param delivery 'portal' replaces the per-row links with one pointer to the portal.
+ */
+export function renderPermitBatchEmail(opts: {
+  items: PermitBatchItem[]
+  vesselName: string
+  delivery: 'secure_link' | 'portal'
+  linkExpiresAt?: string | null
+}): { subject: string; html: string } {
+  const { items, vesselName, delivery } = opts
+  const type = items[0]?.permit.permit_type
+  const label = PERMIT_LABELS[type] ?? 'Permit'
+  const plural = type === 'gate_pass' ? 'Gate Passes' : `${label}s`
+  const n = items.length
+  const isGatePass = type === 'gate_pass'
+  const anyDocument = items.some(i => i.permit.document_url)
+
+  const subject = `${vesselName} — ${n} ${n === 1 ? label : plural}`
+
+  const th = (s: string) =>
+    `<th style="padding:8px 10px;border:1px solid #dfe5ea;background:#f6f8fa;text-align:left;font-weight:600">${esc(s)}</th>`
+  const td = (s: string) => `<td style="padding:8px 10px;border:1px solid #dfe5ea;vertical-align:top">${s}</td>`
+
+  const head = [
+    isGatePass ? 'Visitor' : 'Holder',
+    isGatePass ? 'Pass no.' : 'Permit no.',
+    isGatePass ? 'Access zone / gate' : 'Authority',
+    isGatePass ? 'Entry' : 'Issued',
+    'Expiry',
+    ...(anyDocument && delivery === 'secure_link' ? ['Document'] : []),
+  ].map(th).join('')
+
+  const rows = items.map(({ permit: p, documentLink }) => {
+    const doc = anyDocument && delivery === 'secure_link'
+      ? [td(documentLink
+          ? `<a href="${esc(documentLink.url)}" style="color:#07435e;font-weight:600;text-decoration:underline">View securely</a>`
+          : '<span style="color:#7d8b96">—</span>')]
+      : []
+    return `<tr>${[
+      td(esc(String(p.holder_name ?? '').trim() || '—')),
+      td(esc(String(p.permit_number ?? p.license_no ?? '').trim() || '—')),
+      td(esc(String(p.issuing_authority ?? '').trim() || '—')),
+      td(esc(fmtDate(p.issue_date))),
+      td(esc(fmtDate(p.expiry_date))),
+      ...doc,
+    ].join('')}</tr>`
+  }).join('')
+
+  const expiry = opts.linkExpiresAt
+    ? new Date(opts.linkExpiresAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
+  const documentNote = !anyDocument ? ''
+    : delivery === 'portal'
+      ? `<p style="margin:0 0 12px;line-height:1.55">The documents are filed under <strong>Documents</strong> in your JLS Yachts portal.</p>`
+      : `<p style="margin:0 0 12px;line-height:1.55;font-size:12.5px;color:#7d8b96">The document links are for you only${expiry ? ` and expire on ${esc(expiry)}` : ''}. If a link has expired, reply to this email and we will send a new one.</p>`
+
+  const html = `<!doctype html>
+<html><body style="margin:0;padding:0;background:#eef2f5">
+  <div style="max-width:720px;margin:0 auto;padding:24px 16px;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#1d2b36;font-size:14px">
+    <div style="background:${BRAND};color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
+      ${emailBrandLockup(`<div style="font-size:17px;font-weight:600;letter-spacing:.2px;color:#fff">JLS Yachts</div>
+      <div style="font-size:12.5px;opacity:.8;margin-top:2px;color:#fff">${esc(plural)}</div>`, 34)}
+    </div>
+    <div style="background:#fff;padding:20px;border:1px solid #dfe5ea;border-top:none;border-radius:0 0 8px 8px">
+      <p style="margin:0 0 12px;line-height:1.55">Dear ${esc(vesselName)} team,</p>
+      <p style="margin:0 0 12px;line-height:1.55">Greetings from JLS Yachts!</p>
+      <p style="margin:0 0 12px;line-height:1.55">
+        Please find below the details of ${n} ${esc(n === 1 ? label : plural)} for ${esc(vesselName)}${anyDocument && delivery === 'secure_link' ? ', each with a secure link to its document' : ''}.
+      </p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0;font-size:13px">
+        <thead><tr>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${documentNote}
+      <p style="margin:18px 0 0;line-height:1.55">Best regards,<br><strong>JLS Yachts</strong></p>
+    </div>
+    <div style="text-align:center;color:#7d8b96;font-size:11.5px;padding:14px 8px">
+      Sent by JLS Yachts · Port &amp; Operations
+    </div>
+  </div>
+</body></html>`
+
+  return { subject, html }
+}
+
+/**
+ * Load permits for a batch email. They must all be the same type and belong to
+ * the same vessel — the batch is one email to one vessel.
+ */
+export async function loadPermitsForBatchEmail(permitIds: string[]): Promise<{
+  permits: Record<string, any>[]
+  vesselName: string
+  delivery: 'secure_link' | 'portal'
+}> {
+  const sb = admin() as any
+  const { data, error } = await sb
+    .from('permits')
+    .select('*, yachts(vessel_name, preferred_document_delivery)')
+    .in('id', permitIds)
+  if (error) throw new Error(error.message)
+  const byId = new Map((data ?? []).map((p: any) => [p.id, p]))
+  // Keep the order the sender selected them in.
+  const permits = permitIds.map(id => byId.get(id)).filter(Boolean) as Record<string, any>[]
+  if (permits.length !== permitIds.length) throw new Error('One or more permits were not found')
+  if (new Set(permits.map(p => p.permit_type)).size > 1) throw new Error('Select permits of one type only')
+  const yachtIds = new Set(permits.map(p => p.yacht_id ?? null))
+  if (yachtIds.has(null)) throw new Error('Every selected permit needs a yacht to send them together')
+  if (yachtIds.size > 1) throw new Error('Select permits for one vessel only')
+  const y = permits[0].yachts
+  return {
+    permits,
+    vesselName: y?.vessel_name ?? '—',
+    delivery: y?.preferred_document_delivery === 'portal' ? 'portal' : 'secure_link',
+  }
+}

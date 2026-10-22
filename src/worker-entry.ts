@@ -1260,6 +1260,12 @@ export default {
       return permitsEmailHandler(request)
     }
 
+    // Several permits for one vessel in one email (SD-0081)
+    if (url.pathname === '/api/permits/email-batch') {
+      const { permitsEmailBatchHandler } = await import('./routes/api.permits.email')
+      return permitsEmailBatchHandler(request)
+    }
+
     // Permit Inbox â emailed permits awaiting Agency review (staff only)
     if (url.pathname === '/api/permits/inbox') {
       const { permitInboxHandler } = await import('./routes/api.permits.inbox')

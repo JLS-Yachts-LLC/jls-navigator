@@ -82,3 +82,55 @@ export const sendPermitEmail = (permitId: string, files: File[] = []): Promise<P
 
 /** Render what would be sent, without sending it. */
 export const previewPermitEmail = (permitId: string): Promise<PermitEmailPreview> => call(permitId, true);
+
+// ── Batch: several permits for one vessel in one email (SD-0081) ─────────────
+
+export interface PermitBatchPreview {
+  subject: string;
+  html: string;
+  /** The permits' own contact addresses, combined. */
+  to: string;
+  vesselName: string;
+  delivery: "secure_link" | "portal";
+  count: number;
+  /** How many of the permits have a document on file. */
+  withDocument: number;
+}
+
+export interface PermitBatchResult {
+  to: string;
+  subject: string;
+  count: number;
+  delivery: "secure_link" | "portal";
+  secureLinks: number;
+  linkExpiresAt: string | null;
+  attachments: number;
+}
+
+async function callBatch(body: Record<string, unknown>, files: File[] = []): Promise<any> {
+  const { data: { session } } = await (supabase as any).auth.getSession();
+  const attachments = await Promise.all(files.map(async (f) => ({
+    filename: f.name,
+    contentType: f.type || "application/octet-stream",
+    contentBase64: await toBase64(f),
+  })));
+  const res = await fetch("/api/permits/email-batch", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({ ...body, ...(attachments.length ? { attachments } : {}) }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out?.error ?? `Request failed (${res.status})`);
+  return out;
+}
+
+/** Render the combined email for these permits, without sending it. */
+export const previewPermitBatchEmail = (permitIds: string[]): Promise<PermitBatchPreview> =>
+  callBatch({ permitIds, preview: true });
+
+/** Send these permits to the vessel in one email. */
+export const sendPermitBatchEmail = (permitIds: string[], to: string, files: File[] = []): Promise<PermitBatchResult> =>
+  callBatch({ permitIds, to }, files);

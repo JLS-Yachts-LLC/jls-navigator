@@ -35,7 +35,9 @@ import { NavigationLicenseDialog } from "@/components/navigation-license-dialog"
 import { GatePassDialog } from "@/components/gate-pass-dialog";
 import { AbuDhabiDialog } from "@/components/abu-dhabi-dialog";
 import { PermitEmailReviewDialog } from "@/components/permits/permit-email-review-dialog";
-import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, RotateCw, Paperclip } from "lucide-react";
+import { PermitBatchEmailDialog } from "@/components/permits/permit-batch-email-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Search, FileCheck2, Pencil, Trash2, AlertTriangle, CheckCircle2, Clock, Mail, MailCheck, RotateCw, Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { doPushToSharePoint } from "@/lib/sharepoint-push.server";
 import { cn } from "@/lib/utils";
@@ -53,6 +55,9 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Permit | null>(null);
   const [reviewEmailId, setReviewEmailId] = useState<string | null>(null);
+  // Gate passes ticked for one combined email to their vessel (SD-0081).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchIds, setBatchIds] = useState<string[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "expiring" | "expired" | "pending" | "cancelled">("all");
   const [passFilter, setPassFilter] = useState<"all" | "daily" | "weekly" | "monthly" | "unknown">("all");
 
@@ -163,6 +168,26 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
   }, [yachts]);
   const cf = useColumnFilters(filtered, columns);
   const H = cf.header;
+
+  // Batch send: only rows still loaded count, and they must share one vessel.
+  const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.id)), [rows, selected]);
+  const selectedYachts = new Set(selectedRows.map((r) => r.yacht_id ?? null));
+  const batchProblem = !selectedRows.length ? null
+    : selectedYachts.has(null) ? "Some selected passes have no yacht — set one to send them together"
+    : selectedYachts.size > 1 ? `These passes are for ${selectedYachts.size} vessels — select passes for one vessel`
+    : null;
+  const allVisibleSelected = cf.rows.length > 0 && cf.rows.every((r) => selected.has(r.id));
+  const someVisibleSelected = cf.rows.some((r) => selected.has(r.id));
+  function toggleRow(id: string, on: boolean) {
+    setSelected((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
+  }
+  function toggleVisible(on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const r of cf.rows) { if (on) next.add(r.id); else next.delete(r.id); }
+      return next;
+    });
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -286,6 +311,32 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
         <Stat label="Expired" value={stats.expired} icon={AlertTriangle} accent="text-destructive" />
       </div>
 
+      {isGatePass && selectedRows.length > 0 && (
+        <div className="mx-6 mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm">
+          <span className="font-medium">
+            {selectedRows.length} gate pass{selectedRows.length === 1 ? "" : "es"} selected
+            {!batchProblem && <> · {yachtName(selectedRows[0].yacht_id)}</>}
+          </span>
+          {batchProblem && <span className="text-warning">{batchProblem}</span>}
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm" className="h-8 gap-1.5"
+              disabled={!!batchProblem}
+              onClick={() => {
+                if (!user?.email) { toast.error("You must be signed in to send emails"); return; }
+                setBatchIds(selectedRows.map((r) => r.id));
+              }}
+              title="Review one email to the vessel listing every selected pass"
+            >
+              <Mail className="h-4 w-4" /> Email selected to vessel
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 gap-1" onClick={() => setSelected(new Set())}>
+              <X className="h-4 w-4" /> Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto px-6 pb-6">
         {loading ? (
           <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -313,6 +364,15 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
             <table className="data-table sticky-head">
               <thead>
                 <tr>
+                  {isGatePass && (
+                    <th className="w-8">
+                      <Checkbox
+                        aria-label="Select all shown passes"
+                        checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+                        onCheckedChange={(v) => toggleVisible(v === true)}
+                      />
+                    </th>
+                  )}
                   <th>{H("number")}</th>
                   <th>{H("yacht")}</th>
                   <th>{H("holder")}</th>
@@ -346,7 +406,16 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
                   const status = displayStatus(r);
                   const pass = isGatePass ? gatePassValidityOf(r.issue_date, r.expiry_date) : null;
                   return (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={selected.has(r.id) ? "bg-primary/5" : undefined}>
+                      {isGatePass && (
+                        <td className="w-8">
+                          <Checkbox
+                            aria-label={`Select ${r.holder_name ?? r.permit_number ?? "pass"}`}
+                            checked={selected.has(r.id)}
+                            onCheckedChange={(v) => toggleRow(r.id, v === true)}
+                          />
+                        </td>
+                      )}
                       <td className="font-medium tabular-nums text-foreground/90">{r.permit_number ?? <span className="text-muted-foreground/50">—</span>}</td>
                       <td className="font-medium">{yachtName(r.yacht_id)}</td>
                       <td className="text-foreground/75">{r.holder_name ?? <span className="text-muted-foreground/50">—</span>}</td>
@@ -475,6 +544,13 @@ export function PermitsPage({ permitType }: { permitType: PermitType }) {
         permitId={reviewEmailId}
         onClose={() => setReviewEmailId(null)}
         onSent={() => { setReviewEmailId(null); void load(); /* refresh to show email_sent_at */ }}
+      />
+
+      <PermitBatchEmailDialog
+        permitIds={batchIds}
+        noun="gate pass"
+        onClose={() => setBatchIds(null)}
+        onSent={() => { setBatchIds(null); setSelected(new Set()); void load(); }}
       />
     </div>
   );
