@@ -11,6 +11,11 @@
  *
  * Every new job card rings the in-app bell for the Crew Care team straight
  * away. Email and Teams alerts are optional — the Notifications button.
+ *
+ * Crew Care assigns a driver on the card (Assigned / Unassigned). The driver's
+ * name, phone and vehicle are emailed to the card's "Send driver details to"
+ * addresses, and whoever raised it gets a bell (migration 20261022100000).
+ * A linked trip keeps the same driver and vehicle, both ways.
  */
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
@@ -44,12 +49,17 @@ type Job = {
   pickup: string | null; dropoff: string | null; needed_at: string | null; passengers: number | null;
   requested_by_name: string | null; priority: Priority; status: JobStatus;
   assigned_to: string | null; assigned_name: string | null; trip_id: string | null;
+  driver_id: string | null; driver_name: string | null; driver_phone: string | null;
+  vehicle_id: string | null; vehicle: string | null; driver_assigned_at: string | null;
+  notify_emails: string[]; driver_notice_result: string | null; created_by: string | null;
   created_at: string; completed_at: string | null; alert_result: string | null;
   yacht?: { vessel_name: string | null } | null;
   request?: { reference: string | null } | null;
 };
 type Staff = { user_id: string; display_name: string | null; email: string | null; department: string | null };
 type Yacht = { id: string; vessel_name: string };
+type Driver = { id: string; full_name: string; phone: string | null; status: string | null };
+type Vehicle = { id: string; make: string | null; model: string | null; registration: string | null; color: string | null; status: string | null };
 
 const TYPE_LABEL: Record<JobType, string> = {
   transfer: "Transfer", driver: "Driver needed", airport: "Airport run", crew_logistics: "Crew logistics", other: "Other",
@@ -75,6 +85,10 @@ const TRIP_TYPE: Record<JobType, string> = {
 
 const JOB_COLS = "*, yacht:yachts(vessel_name), request:captain_requests(reference)";
 const staffName = (s: Staff | undefined) => s?.display_name || s?.email || "Unknown";
+// Same wording the database uses when a vehicle is picked on the Trips board.
+const vehicleLabel = (v: Vehicle) => [[v.color, v.make, v.model].filter(Boolean).join(" "), v.registration].filter(Boolean).join(" · ");
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const splitEmails = (s: string) => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
 
 async function runAlerts(token: string | undefined) {
   if (!token) return;
@@ -92,23 +106,29 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [yachts, setYachts] = useState<Yacht[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"open" | "done" | "all">("open");
+  const [view, setView] = useState<"open" | "unassigned" | "done" | "all">("open");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(initialJobId ?? null);
   const [showSettings, setShowSettings] = useState(false);
 
   const load = useCallback(async () => {
-    const [j, s, y] = await Promise.all([
+    const [j, s, y, d, v] = await Promise.all([
       db.from("crew_care_jobs").select(JOB_COLS).order("created_at", { ascending: false }).limit(500),
       db.from("user_profiles").select("user_id, display_name, email, department, active").neq("active", false).order("display_name"),
       db.from("yachts").select("id, vessel_name").order("vessel_name"),
+      db.from("crew_drivers").select("id, full_name, phone, status").order("full_name"),
+      db.from("crew_vehicles").select("id, make, model, registration, color, status").order("make"),
     ]);
     if (j.error) toast.error(j.error.message);
     setJobs(j.data ?? []);
     setStaff(s.data ?? []);
     setYachts(y.data ?? []);
+    setDrivers(d.data ?? []);
+    setVehicles(v.data ?? []);
     setLoading(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -120,13 +140,16 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
   const shown = useMemo(() => {
     const term = q.trim().toLowerCase();
     return jobs.filter((j) =>
-      (view === "all" || (view === "open" ? OPEN.includes(j.status) : !OPEN.includes(j.status))) &&
-      (!term || [j.reference, j.title, j.details, j.pickup, j.dropoff, j.requested_by_name, j.yacht?.vessel_name, j.assigned_name]
+      (view === "all" || (view === "open" ? OPEN.includes(j.status)
+        : view === "unassigned" ? OPEN.includes(j.status) && !j.driver_name
+        : !OPEN.includes(j.status))) &&
+      (!term || [j.reference, j.title, j.details, j.pickup, j.dropoff, j.requested_by_name, j.yacht?.vessel_name, j.assigned_name, j.driver_name, j.vehicle]
         .some((v) => (v ?? "").toLowerCase().includes(term))));
   }, [jobs, view, q]);
   const counts = useMemo(() => ({
     new: jobs.filter((j) => j.status === "new").length,
     open: jobs.filter((j) => OPEN.includes(j.status)).length,
+    unassigned: jobs.filter((j) => OPEN.includes(j.status) && !j.driver_name).length,
   }), [jobs]);
   const openJob = jobs.find((j) => j.id === openId) ?? null;
 
@@ -145,11 +168,11 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {(["open", "done", "all"] as const).map((v) => (
+        {(["open", "unassigned", "done", "all"] as const).map((v) => (
           <button key={v} type="button" onClick={() => setView(v)}
                   className={cn("rounded-full border px-3 py-1 text-xs font-medium transition",
                     view === v ? "border-primary/50 bg-primary/15 text-foreground" : "border-border text-muted-foreground hover:text-foreground")}>
-            {v === "open" ? "Open" : v === "done" ? "Completed & cancelled" : "All"}
+            {v === "open" ? "Open" : v === "unassigned" ? `Unassigned${counts.unassigned ? ` (${counts.unassigned})` : ""}` : v === "done" ? "Completed & cancelled" : "All"}
           </button>
         ))}
         <div className="relative ml-auto w-full sm:w-64">
@@ -185,7 +208,13 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {j.assigned_name && <span className="text-xs text-muted-foreground">{j.assigned_name}</span>}
+                {j.status !== "cancelled" && (j.driver_name ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">
+                    <Car className="h-3 w-3" /> {j.driver_name}
+                  </span>
+                ) : (
+                  <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400">Unassigned</span>
+                ))}
                 <span className={cn("rounded-full border px-2 py-0.5 text-xs font-medium", STATUS_COLOR[j.status])}>{STATUS_LABEL[j.status]}</span>
               </div>
             </button>
@@ -194,7 +223,7 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
       )}
 
       {creating && (
-        <NewJobDialog yachts={yachts} defaultRequester={staffName(me) === "Unknown" ? "" : staffName(me)}
+        <NewJobDialog yachts={yachts} defaultNotify={me?.email ?? user?.email ?? ""}
                       onClose={() => setCreating(false)}
                       onCreated={async (job) => {
                         setCreating(false);
@@ -204,7 +233,8 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
                       }} />
       )}
       {openJob && (
-        <JobDialog job={openJob} staff={staff} staffById={staffById}
+        <JobDialog job={openJob} staff={staff} staffById={staffById} drivers={drivers} vehicles={vehicles}
+                   token={session?.access_token}
                    onClose={() => setOpenId(null)}
                    onChanged={(job) => setJobs((prev) => prev.map((x) => (x.id === job.id ? job : x)))} />
       )}
@@ -215,24 +245,30 @@ export function JobCardsPage({ initialJobId }: { initialJobId?: string }) {
 
 // ─── New job card ────────────────────────────────────────────────────────────
 
-function NewJobDialog({ yachts, defaultRequester, onClose, onCreated }: {
-  yachts: Yacht[]; defaultRequester: string; onClose: () => void; onCreated: (job: Job) => void;
+function NewJobDialog({ yachts, defaultNotify, onClose, onCreated }: {
+  yachts: Yacht[]; defaultNotify: string; onClose: () => void; onCreated: (job: Job) => void;
 }) {
   const { user } = useAuth();
   const [f, setF] = useState({
     job_type: "transfer" as JobType, title: "", details: "", yacht_id: "__none",
-    requested_by_name: defaultRequester, pickup: "", dropoff: "", needed_at: "", passengers: "", priority: "normal" as Priority,
+    requested_by_name: "", pickup: "", dropoff: "", needed_at: "", passengers: "", priority: "normal" as Priority,
+    notify: defaultNotify,
   });
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   const save = async () => {
-    if (!f.title.trim()) { toast.error("Give the job a short summary"); return; }
+    const notify = splitEmails(f.notify);
+    const bad = notify.find((e) => !EMAIL_RE.test(e));
+    if (bad) { toast.error(`"${bad}" isn't an email address`); return; }
+    const who = f.requested_by_name.trim();
+    // The summary is optional — "Transfer for Capt. Mike" says enough.
+    const title = f.title.trim() || `${TYPE_LABEL[f.job_type]}${who ? ` for ${who}` : ""}`;
     setBusy(true);
     const { data, error } = await db.from("crew_care_jobs").insert({
-      source: "internal", job_type: f.job_type, title: f.title.trim(), details: f.details.trim() || null,
+      source: "internal", job_type: f.job_type, title, details: f.details.trim() || null,
       yacht_id: f.yacht_id === "__none" ? null : f.yacht_id,
-      requested_by_name: f.requested_by_name.trim() || null,
+      requested_by_name: who || null, notify_emails: notify,
       pickup: f.pickup.trim() || null, dropoff: f.dropoff.trim() || null,
       needed_at: f.needed_at ? new Date(f.needed_at).toISOString() : null,
       passengers: f.passengers === "" ? null : Number(f.passengers),
@@ -268,13 +304,13 @@ function NewJobDialog({ yachts, defaultRequester, onClose, onCreated }: {
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Summary</Label>
-            <Input maxLength={140} value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Driver for 2 crew to DXB" autoFocus />
+            <Label>Summary <span className="text-muted-foreground">(optional)</span></Label>
+            <Input maxLength={140} value={f.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Driver for 2 crew to DXB" />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label>Requested by</Label>
-              <Input value={f.requested_by_name} onChange={(e) => set("requested_by_name", e.target.value)} placeholder="e.g. Captain Steve" />
+              <Label>For</Label>
+              <Input value={f.requested_by_name} onChange={(e) => set("requested_by_name", e.target.value)} placeholder="e.g. Capt. Mike" autoFocus />
             </div>
             <div className="grid gap-1.5">
               <Label>Vessel <span className="text-muted-foreground">(optional)</span></Label>
@@ -304,12 +340,19 @@ function NewJobDialog({ yachts, defaultRequester, onClose, onCreated }: {
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Details</Label>
+            <Label>Remarks</Label>
             <Textarea rows={3} value={f.details} onChange={(e) => set("details", e.target.value)} placeholder="Crew names, flight numbers, luggage, contact on the day…" />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Send driver details to</Label>
+            <Input value={f.notify} onChange={(e) => set("notify", e.target.value)} placeholder="name@jlsyachts.com, another@jlsyachts.com" />
+            <p className="text-xs text-muted-foreground">
+              When Crew Care assigns a driver, the driver's name, phone and vehicle are emailed here (JLS addresses only). You also get a notification in Polaris.
+            </p>
           </div>
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => void save()} disabled={busy || !f.title.trim()}>
+            <Button onClick={() => void save()} disabled={busy}>
               {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="mr-1.5 h-4 w-4" />} Raise job card
             </Button>
           </div>
@@ -321,11 +364,23 @@ function NewJobDialog({ yachts, defaultRequester, onClose, onCreated }: {
 
 // ─── One job card ────────────────────────────────────────────────────────────
 
-function JobDialog({ job, staff, staffById, onClose, onChanged }: {
-  job: Job; staff: Staff[]; staffById: Map<string, Staff>; onClose: () => void; onChanged: (job: Job) => void;
+function JobDialog({ job, staff, staffById, drivers, vehicles, token, onClose, onChanged }: {
+  job: Job; staff: Staff[]; staffById: Map<string, Staff>; drivers: Driver[]; vehicles: Vehicle[];
+  token: string | undefined; onClose: () => void; onChanged: (job: Job) => void;
 }) {
   const { user } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
+  const fromJob = () => ({
+    driver_id: job.driver_id ?? "", driver_name: job.driver_name ?? "", driver_phone: job.driver_phone ?? "",
+    vehicle_id: job.vehicle_id ?? "", vehicle: job.vehicle ?? "",
+  });
+  const [dv, setDv] = useState(fromJob);
+  const [notify, setNotify] = useState((job.notify_emails ?? []).join(", "));
+  // Reload when the job changes underneath (e.g. a driver picked on the Trips board).
+  useEffect(() => { setDv(fromJob()); setNotify((job.notify_emails ?? []).join(", ")); },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [job.id, job.driver_assigned_at, job.vehicle_id]);
+  const pickable = drivers.filter((d) => d.status === "active" || d.id === job.driver_id);
 
   const update = async (patch: Partial<Job>, what: string) => {
     setBusy(what);
@@ -345,10 +400,50 @@ function JobDialog({ job, staff, staffById, onClose, onChanged }: {
     }, "assign");
   };
 
+  const pickDriver = (id: string) => {
+    const d = drivers.find((x) => x.id === id);
+    setDv((p) => d
+      ? { ...p, driver_id: d.id, driver_name: d.full_name, driver_phone: d.id === p.driver_id ? p.driver_phone : (d.phone ?? "") }
+      : { ...p, driver_id: "", driver_name: p.driver_id ? "" : p.driver_name, driver_phone: p.driver_id ? "" : p.driver_phone });
+  };
+  const pickVehicle = (id: string) => {
+    const v = vehicles.find((x) => x.id === id);
+    setDv((p) => v ? { ...p, vehicle_id: v.id, vehicle: vehicleLabel(v) } : { ...p, vehicle_id: "", vehicle: p.vehicle_id ? "" : p.vehicle });
+  };
+
+  const saveDriver = async () => {
+    const name = dv.driver_name.trim();
+    if (!name) { toast.error("Pick a driver, or type the driver's name"); return; }
+    const emails = splitEmails(notify);
+    const bad = emails.find((e) => !EMAIL_RE.test(e));
+    if (bad) { toast.error(`"${bad}" isn't an email address`); return; }
+    const saved = await update({
+      driver_id: dv.driver_id || null, driver_name: name, driver_phone: dv.driver_phone.trim() || null,
+      vehicle_id: dv.vehicle_id || null, vehicle: dv.vehicle.trim() || null, notify_emails: emails,
+      // A driver on it means it's under way.
+      ...(job.status === "new" || job.status === "acknowledged" ? { status: "in_progress" as JobStatus } : {}),
+    }, "driver");
+    if (!saved) return;
+    if (saved.driver_assigned_at !== job.driver_assigned_at) {
+      toast.success(emails.length ? `Driver assigned — details sent to ${emails.join(", ")}` : "Driver assigned");
+      await runAlerts(token);
+      // Pick up the "emailed to …" result.
+      const { data } = await db.from("crew_care_jobs").select(JOB_COLS).eq("id", job.id).single();
+      if (data) onChanged(data);
+    } else toast.success("Saved");
+  };
+
+  const unassign = () => void update({ driver_id: null, driver_name: null, driver_phone: null, vehicle_id: null, vehicle: null }, "unassign");
+
+  const driverDirty = dv.driver_name.trim() !== (job.driver_name ?? "") || dv.driver_phone.trim() !== (job.driver_phone ?? "")
+    || dv.vehicle.trim() !== (job.vehicle ?? "") || dv.driver_id !== (job.driver_id ?? "") || dv.vehicle_id !== (job.vehicle_id ?? "")
+    || splitEmails(notify).join(",") !== (job.notify_emails ?? []).join(",");
+
   const createTrip = async () => {
     setBusy("trip");
     const { data: trip, error } = await db.from("crew_trips").insert({
       trip_type: TRIP_TYPE[job.job_type], passenger_name: job.requested_by_name, yacht_id: job.yacht_id,
+      driver_id: job.driver_id, vehicle_id: job.vehicle_id,
       pickup_address: job.pickup, dropoff_address: job.dropoff, pickup_datetime: job.needed_at,
       status: "pending", created_by: user?.id ?? null,
       notes: [`${job.reference} — ${job.title}`, job.passengers != null ? `${job.passengers} passenger(s)` : null, job.details].filter(Boolean).join("\n"),
@@ -362,7 +457,8 @@ function JobDialog({ job, staff, staffById, onClose, onChanged }: {
   const facts: Array<[string, ReactNode]> = ([
     ["Type", TYPE_LABEL[job.job_type]],
     ["Vessel", job.yacht?.vessel_name],
-    ["Requested by", job.requested_by_name && `${job.requested_by_name}${job.source === "portal" ? ` (Client Portal${job.request?.reference ? ` · ${job.request.reference}` : ""})` : ""}`],
+    [job.source === "portal" ? "Requested by" : "For", job.requested_by_name && `${job.requested_by_name}${job.source === "portal" ? ` (Client Portal${job.request?.reference ? ` · ${job.request.reference}` : ""})` : ""}`],
+    ["Raised by", job.source === "internal" && job.created_by ? staffName(staffById.get(job.created_by)) : null],
     ["When", job.needed_at && fmtDMY(job.needed_at, { time: true })],
     ["Pick-up", job.pickup],
     ["Drop-off", job.dropoff],
@@ -397,7 +493,7 @@ function JobDialog({ job, staff, staffById, onClose, onChanged }: {
             </Select>
           </div>
           <div className="grid gap-1.5">
-            <Label>Assigned to</Label>
+            <Label>Handled by</Label>
             <Select value={job.assigned_to ?? "__none"} onValueChange={assign} disabled={!!busy}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -405,6 +501,73 @@ function JobDialog({ job, staff, staffById, onClose, onChanged }: {
                 {staff.map((s) => <SelectItem key={s.user_id} value={s.user_id}>{staffName(s)}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-lg border border-border p-3">
+          <div className="flex items-center gap-2">
+            <Car className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Driver</span>
+            {job.driver_name ? (
+              <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">Assigned</span>
+            ) : (
+              <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400">Unassigned</span>
+            )}
+            {job.driver_name && (
+              <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={unassign} disabled={!!busy}>
+                {busy === "unassign" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <X className="mr-1 h-3 w-3" />} Unassign
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label>Driver</Label>
+              <Select value={dv.driver_id || "__other"} onValueChange={pickDriver} disabled={!!busy}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__other">Someone else (type the name)</SelectItem>
+                  {pickable.map((d) => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Name</Label>
+              <Input maxLength={120} value={dv.driver_name} disabled={!!dv.driver_id || !!busy}
+                     onChange={(e) => setDv((p) => ({ ...p, driver_name: e.target.value }))} placeholder="Driver's name" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Phone</Label>
+              <Input type="tel" maxLength={40} value={dv.driver_phone} disabled={!!busy}
+                     onChange={(e) => setDv((p) => ({ ...p, driver_phone: e.target.value }))} placeholder="+971 5x xxx xxxx" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Vehicle</Label>
+              <Select value={dv.vehicle_id || "__other"} onValueChange={pickVehicle} disabled={!!busy}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__other">Other (type below)</SelectItem>
+                  {vehicles.map((v) => <SelectItem key={v.id} value={v.id}>{vehicleLabel(v) || "Unnamed vehicle"}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {!dv.vehicle_id && (
+                <Input maxLength={160} value={dv.vehicle} disabled={!!busy}
+                       onChange={(e) => setDv((p) => ({ ...p, vehicle: e.target.value }))} placeholder="e.g. White Toyota Camry · K 12345" />
+              )}
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Send driver details to</Label>
+            <Input value={notify} disabled={!!busy} onChange={(e) => setNotify(e.target.value)} placeholder="name@jlsyachts.com" />
+            <p className="text-xs text-muted-foreground">
+              Emailed when the driver is assigned or the details change (JLS addresses only).
+              {job.source === "internal" ? " Whoever raised it also gets a notification in Polaris." : " The captain isn't told automatically — reply to them from Client Requests."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => void saveDriver()} disabled={!!busy || !driverDirty || !dv.driver_name.trim()}>
+              {busy === "driver" && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} {job.driver_name ? "Save driver" : "Assign driver"}
+            </Button>
+            {job.driver_notice_result && <span className="text-[11px] text-muted-foreground">{job.driver_notice_result}</span>}
           </div>
         </div>
 

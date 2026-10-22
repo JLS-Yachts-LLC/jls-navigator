@@ -225,6 +225,108 @@ export async function sendCrewCareJobAlerts(): Promise<{ sent: number; failed: n
   return { sent, failed }
 }
 
+// ─── Driver details → whoever raised the request ─────────────────────────────
+
+type DriverJob = Job & {
+  driver_name: string; driver_phone: string | null; vehicle: string | null; notify_emails: string[]
+}
+
+export function buildDriverEmail(j: DriverJob) {
+  const subject = `Driver assigned — ${j.reference}: ${j.title}`
+  const driver: Array<[string, string]> = ([
+    ['Driver', j.driver_name],
+    ['Phone', j.driver_phone ?? ''],
+    ['Vehicle', j.vehicle ?? ''],
+  ] as Array<[string, string]>).filter(([, v]) => v)
+  const trip: Array<[string, string]> = ([
+    ['When', fmtWhen(j.needed_at)],
+    ['Pick-up', j.pickup ?? ''],
+    ['Drop-off', j.dropoff ?? ''],
+    ['For', j.requested_by_name ?? ''],
+  ] as Array<[string, string]>).filter(([, v]) => v)
+  const row = ([k, v]: [string, string], big = false) => `<tr>
+      <td style="padding:6px 12px 6px 0;font-size:12px;color:#64748b;white-space:nowrap;vertical-align:top">${esc(k)}</td>
+      <td style="padding:6px 0;font-size:${big ? 16 : 14}px;color:#0f172a;${big ? 'font-weight:600' : ''}">${
+        k === 'Phone' ? `<a href="tel:${esc(v.replace(/[^\d+]/g, ''))}" style="color:#0f172a">${esc(v)}</a>` : esc(v)}</td></tr>`
+  const html = `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+  <div style="max-width:560px;margin:0 auto;padding:24px">
+    <div style="background:#0a1838;color:#e9cc72;padding:14px 20px;border-radius:12px 12px 0 0;font-size:12px;letter-spacing:.16em;text-transform:uppercase;font-weight:600">
+      Crew Care · Driver assigned
+    </div>
+    <div style="background:#ffffff;padding:20px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:0">
+      <h1 style="margin:0 0 12px;font-size:18px;line-height:1.35">${esc(j.reference)} — ${esc(j.title)}</h1>
+      <table cellpadding="0" cellspacing="0" style="margin-bottom:8px">${driver.map((d) => row(d, true)).join('')}</table>
+      <table cellpadding="0" cellspacing="0" style="border-top:1px solid #e2e8f0;padding-top:6px">${trip.map((d) => row(d)).join('')}</table>
+      <p style="margin:18px 0 0"><a href="${jobLink(j.id)}" style="display:inline-block;background:#c9a227;color:#0a1838;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:8px">Open the request</a></p>
+    </div>
+    <p style="margin:12px 4px 0;color:#94a3b8;font-size:11px">You get this because your address is on this Crew Care request under "Send driver details to". If the driver changes, you'll get the new details.</p>
+  </div></body></html>`
+  const text = [
+    subject, '',
+    ...driver.map(([k, v]) => `${k}: ${v}`), '',
+    ...trip.map(([k, v]) => `${k}: ${v}`),
+    '', `Open: ${jobLink(j.id)}`,
+  ].join('\n')
+  return { subject, html, text }
+}
+
+/**
+ * Email the driver details to each job's notify_emails once a driver is
+ * assigned (and again if the details change — the database clears the claim).
+ * Internal addresses only. Assignments older than a day when first seen are
+ * stamped, not sent.
+ */
+export async function sendDriverNotices(): Promise<{ sent: number; failed: number; skipped?: string }> {
+  const { data: pending } = await db().from('crew_care_jobs').select('id, driver_assigned_at')
+    .not('driver_assigned_at', 'is', null).is('driver_notice_claimed_at', null).order('driver_assigned_at').limit(40)
+  if (!(pending ?? []).length) return { sent: 0, failed: 0 }
+  const now = new Date().toISOString()
+
+  if (!outboundEmailEnabled()) {
+    await db().from('crew_care_jobs').update({ driver_notice_claimed_at: now, driver_notice_result: 'Email is switched off on the server' })
+      .in('id', (pending as any[]).map((p) => p.id)).is('driver_notice_claimed_at', null)
+    return { sent: 0, failed: 0, skipped: 'outbound email off' }
+  }
+
+  const fresh = (pending as any[]).filter((p) => Date.now() - Date.parse(p.driver_assigned_at) < STALE_MS).map((p) => p.id)
+  const stale = (pending as any[]).filter((p) => !fresh.includes(p.id)).map((p) => p.id)
+  if (stale.length) {
+    await db().from('crew_care_jobs').update({ driver_notice_claimed_at: now, driver_notice_result: 'Too old to send' })
+      .in('id', stale).is('driver_notice_claimed_at', null)
+  }
+  if (!fresh.length) return { sent: 0, failed: 0 }
+
+  const { data: claimed } = await db().from('crew_care_jobs').update({ driver_notice_claimed_at: now })
+    .in('id', fresh).is('driver_notice_claimed_at', null)
+    .select(`${JOB_COLS}, driver_name, driver_phone, vehicle, notify_emails`)
+  let sent = 0, failed = 0
+  for (const j of (claimed ?? []) as DriverJob[]) {
+    if (!j.driver_name) continue
+    const seen = new Set<string>()
+    const to = (j.notify_emails ?? []).map((e) => e.trim()).filter((e) => {
+      const k = e.toLowerCase()
+      if (!e || !isInternalAddress(e) || seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+    let result: string
+    if (!to.length) result = 'Nobody to email'
+    else {
+      try {
+        const m = buildDriverEmail(j)
+        await sendEmail({ to, subject: m.subject, html: m.html, text: m.text })
+        result = `Driver details emailed to ${to.join(', ')}`
+        sent++
+      } catch (e) {
+        result = `Email failed: ${e instanceof Error ? e.message : String(e)}`
+        failed++
+      }
+    }
+    await db().from('crew_care_jobs').update({ driver_notice_result: result.slice(0, 500) }).eq('id', j.id)
+  }
+  return { sent, failed }
+}
+
 /** A sample job for the Notifications panel's "Send test" buttons. */
 export function sampleJob(): Job {
   return {

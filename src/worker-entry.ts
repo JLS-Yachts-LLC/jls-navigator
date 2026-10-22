@@ -1809,6 +1809,13 @@ export default {
           .then((r) => { if (r.sent || r.failed) console.log('[crew-care-alerts]', JSON.stringify(r)) })
           .catch((e) => console.error('[crew-care-alerts] error:', e instanceof Error ? e.message : String(e)))
       );
+      // …and the assigned driver's details to whoever raised the job card.
+      ctx.waitUntil(
+        import('./lib/crew-care/job-alerts.server')
+          .then((m) => m.sendDriverNotices())
+          .then((r) => { if (r.sent || r.failed) console.log('[crew-care-driver]', JSON.stringify(r)) })
+          .catch((e) => console.error('[crew-care-driver] error:', e instanceof Error ? e.message : String(e)))
+      );
       // â¦Compass Card events: email to the sign-ups / partners teams, when
       //    switched on (the bell already rang from the database). See lib/compass-card/alerts.server.
       ctx.waitUntil(

@@ -1,9 +1,10 @@
 /**
  * POST /api/crew-care/alerts — Crew Care job-card alerts.
  *
- *   { action: 'run' }                        send email / Teams for any job card not yet alerted
- *                                            (called straight after staff raise one, so the team
- *                                            doesn't wait for the 5-minute tick)
+ *   { action: 'run' }                        send email / Teams for any job card not yet alerted,
+ *                                            and any newly assigned driver details to the requester
+ *                                            (called straight after staff raise or assign, so nobody
+ *                                            waits for the 5-minute tick)
  *   { action: 'test', channel: 'email' }     a sample job card to the caller's own address
  *   { action: 'test', channel: 'teams', url } a sample job card to that Teams webhook (the URL
  *                                            being typed in, so it can be tried before saving)
@@ -15,7 +16,7 @@ import { supabaseAdmin } from '@/integrations/supabase/client.server'
 import { sendEmail } from '@/lib/ses.server'
 import { outboundEmailEnabled } from '@/lib/mail-guard.server'
 import {
-  buildJobEmail, buildTeamsPayload, isTeamsWebhookUrl, postToTeams, sampleJob, sendCrewCareJobAlerts,
+  buildJobEmail, buildTeamsPayload, isTeamsWebhookUrl, postToTeams, sampleJob, sendCrewCareJobAlerts, sendDriverNotices,
 } from '@/lib/crew-care/job-alerts.server'
 
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } })
@@ -38,7 +39,10 @@ export async function crewCareAlertsHandler(request: Request): Promise<Response>
   const body = await request.json().catch(() => null) as { action?: string; channel?: string; url?: string } | null
 
   try {
-    if (body?.action === 'run') return json({ ok: true, ...(await sendCrewCareJobAlerts()) })
+    if (body?.action === 'run') {
+      const [jobs, drivers] = await Promise.all([sendCrewCareJobAlerts(), sendDriverNotices()])
+      return json({ ok: true, ...jobs, driverNotices: drivers })
+    }
 
     if (body?.action === 'test' && body.channel === 'email') {
       const to = profile.email ?? user.email
