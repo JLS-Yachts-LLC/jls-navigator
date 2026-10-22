@@ -362,6 +362,18 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
     setFiles(all.slice(0, MAX_FILES));
   }
 
+  // Pasted (Ctrl+V) or dropped files — e.g. a screenshot straight from the clipboard.
+  // Clipboard images all arrive as "image.png", so give each a unique name.
+  function takeFiles(list: FileList) {
+    const picked = Array.from(list);
+    const ok = picked.filter((f) => ATTACH_ACCEPT.split(",").includes(f.type));
+    if (ok.length < picked.length) toast.error("WhatsApp can't send that file type — use JPG/PNG, MP4, PDF, Office or audio files");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    addFiles(ok.map((f, i) => /^image\.(png|jpe?g)$/i.test(f.name)
+      ? new File([f], `pasted-${stamp}${ok.length > 1 ? `-${i + 1}` : ""}.${f.type === "image/png" ? "png" : "jpg"}`, { type: f.type })
+      : f));
+  }
+
   async function send() {
     const body = text.trim();
     if (!body && !files.length) return;
@@ -611,8 +623,11 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, onBack, o
                 </Button>
               </div>
               <Textarea value={text} onChange={(e) => onType(e.target.value)} rows={2}
-                placeholder={files.length ? "Add a caption (optional) — Enter to send" : "Type a reply, or / for quick replies — Enter to send, Shift+Enter for a new line"}
+                placeholder={files.length ? "Add a caption (optional) — Enter to send" : "Type a reply, / for quick replies, or paste an image — Enter to send, Shift+Enter for a new line"}
                 onKeyDown={(e) => { if (qrOpen) return; if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }}
+                onPaste={(e) => { if (e.clipboardData.files.length) { e.preventDefault(); takeFiles(e.clipboardData.files); } }}
+                onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
+                onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); takeFiles(e.dataTransfer.files); } }}
                 className="min-h-[44px] resize-none" />
               <Button onClick={() => void send()} disabled={sending || (!text.trim() && !files.length) || (!!files.length && text.length > 1024)} className="h-11 gap-1.5">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send{files.length > 1 ? ` ${files.length}` : ""}
