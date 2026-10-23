@@ -180,12 +180,13 @@ export interface WaLine {
   disconnected_at: string | null;
   disconnect_reason: string | null;
 }
-export type LineLevel = "view" | "send";
+export type LineLevel = "view" | "send" | "assigned";
 export type MyLine = WaLine & { level: LineLevel };
 
 /**
  * The numbers the signed-in person can use, and how: "view" reads that number's
- * conversations, "send" also replies. The database decides (wa_my_lines), the
+ * conversations, "send" also replies, "assigned" is a number they can't use but
+ * where chats are assigned to them (those chats only). The database decides (wa_my_lines), the
  * same rule the server and row-level security apply.
  */
 export async function loadMyLines(): Promise<MyLine[]> {

@@ -22,8 +22,8 @@
  * Numbers ("lines", see lines.server.ts): conversations, replies, media and
  * templates belong to one number. Reading or replying in a thread needs access to
  * THAT number (wa_line_level: global admin, a line member, or — for the office
- * number only — the Communications permission). Broadcasts and automations send
- * from the office number only.
+ * number only — the Communications permission), or being assigned that thread
+ * (wa_thread_level). Broadcasts and automations send from the office number only.
  */
 import { createClient } from "@supabase/supabase-js";
 import { requireAccess } from "@/lib/auth/requireAccess.server";
@@ -131,15 +131,19 @@ type LineAccess = { ok: true; userId: string; db: any; line: WaLine; level: "vie
 /**
  * The caller may use this line at `need` (view: read its threads; send: reply).
  * lineId absent/null = the office number. Mirrors the database's wa_line_level,
- * so what the screen shows and what the server allows always agree.
+ * so what the screen shows and what the server allows always agree. Given the
+ * thread's contact, its assignee may use that one thread too (wa_thread_level).
  */
-async function requireLine(request: Request, lineId: string | null | undefined, need: "view" | "send"): Promise<LineAccess> {
+async function requireLine(request: Request, lineId: string | null | undefined, need: "view" | "send",
+  contactId?: string | null): Promise<LineAccess> {
   const access = await requireAccess(request);
   if (!access.ok) return access;
   const db = admin();
   const line = await lineById(db, lineId);
   if (!line) return { ok: false, response: json({ error: "That WhatsApp number isn't set up in Polaris." }, 404) };
-  const { data: level } = await db.rpc("wa_line_level", { p_user: access.claims.userId, p_line: line.id });
+  const { data: level } = contactId
+    ? await db.rpc("wa_thread_level", { p_user: access.claims.userId, p_line: line.id, p_contact: contactId })
+    : await db.rpc("wa_line_level", { p_user: access.claims.userId, p_line: line.id });
   if (level !== "view" && level !== "send") {
     return { ok: false, response: json({ error: `You don't have access to ${line.label}.` }, 403) };
   }
@@ -468,7 +472,7 @@ export async function whatsappReplyHandler(request: Request): Promise<Response> 
     contactId?: string; lineId?: string | null; text?: string; replyTo?: string | null; templateId?: string; variables?: string[];
     buttonValues?: string[];
   };
-  const access = await requireLine(request, body.lineId, "send");
+  const access = await requireLine(request, body.lineId, "send", body.contactId);
   if (!access.ok) return access.response;
   const { db, line } = access;
   const cfg = await configForLine(db, line);
@@ -583,7 +587,8 @@ const MAX_CAPTION = 1024;
  */
 export async function whatsappReplyMediaHandler(request: Request): Promise<Response> {
   const form = await request.formData().catch(() => null);
-  const access = await requireLine(request, String(form?.get("lineId") ?? "") || null, "send");
+  const access = await requireLine(request, String(form?.get("lineId") ?? "") || null, "send",
+    String(form?.get("contactId") ?? "") || null);
   if (!access.ok) return access.response;
   const { line } = access;
   const cfg = await configForLine(access.db, line);
@@ -645,7 +650,7 @@ export async function whatsappReplyMediaHandler(request: Request): Promise<Respo
 export async function whatsappConversationReadHandler(request: Request): Promise<Response> {
   const { contactId, lineId } = (await request.json().catch(() => ({}))) as { contactId?: string; lineId?: string | null };
   if (!contactId) return json({ error: "No contact" }, 400);
-  const access = await requireLine(request, lineId, "view");
+  const access = await requireLine(request, lineId, "view", contactId);
   if (!access.ok) return access.response;
   const { db, line } = access;
   const { data: conv } = await db.from("wa_conversations").select("id, unread_count")
@@ -681,7 +686,8 @@ export async function whatsappContactSaveHandler(request: Request): Promise<Resp
   const body = (await request.json().catch(() => ({}))) as {
     lineId?: string; contactId?: string; phone?: string; name?: string; email?: string | null; notes?: string | null; open?: boolean;
   };
-  const access = await requireLine(request, body.lineId, "send");
+  // Renaming the contact in a thread: its assignee may too. A new number needs the number itself.
+  const access = await requireLine(request, body.lineId, "send", body.contactId);
   if (!access.ok) return access.response;
   const { db, line, userId } = access;
   const name = String(body.name ?? "").trim().slice(0, 120);
@@ -744,9 +750,9 @@ export async function whatsappMediaHandler(request: Request): Promise<Response> 
   const outboundId = new URL(request.url).searchParams.get("outbound");
   if (outboundId) {
     if (!/^[0-9a-f-]{36}$/i.test(outboundId)) return json({ error: "Bad id" }, 400);
-    const { data: m } = await admin().from("wa_messages").select("line_id, media_path, media_id, media_mime, media_name").eq("id", outboundId).maybeSingle();
+    const { data: m } = await admin().from("wa_messages").select("line_id, contact_id, media_path, media_id, media_mime, media_name").eq("id", outboundId).maybeSingle();
     if (!m) return json({ error: "No file on this message" }, 404);
-    const access = await requireLine(request, m.line_id, "view");
+    const access = await requireLine(request, m.line_id, "view", m.contact_id);
     if (!access.ok) return access.response;
     const db = access.db;
     // Sent from the phone app: Meta holds the file, fetched like an inbound one.
@@ -787,9 +793,9 @@ export async function whatsappMediaHandler(request: Request): Promise<Response> 
   }
   const id = new URL(request.url).searchParams.get("inbound") ?? "";
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Bad id" }, 400);
-  const { data: m } = await admin().from("wa_inbound").select("line_id, media_id, media_mime, raw").eq("id", id).maybeSingle();
+  const { data: m } = await admin().from("wa_inbound").select("line_id, contact_id, media_id, media_mime, raw").eq("id", id).maybeSingle();
   if (!m?.media_id) return json({ error: "No file on this message" }, 404);
-  const access = await requireLine(request, m.line_id, "view");
+  const access = await requireLine(request, m.line_id, "view", m.contact_id);
   if (!access.ok) return access.response;
   const cfg = await configForLine(access.db, access.line);
   if (!cfg) return json({ error: "That WhatsApp number isn't connected." }, 409);

@@ -7,15 +7,17 @@
  *
  * Numbers: someone given a WhatsApp number in Setup → Numbers (e.g. the
  * Training number) but not the Communications permission sees only the Inbox,
- * and only that number's conversations.
+ * and only that number's conversations — plus any chat assigned to them on
+ * another number (that chat only).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { Inbox, Users, Radio, FileText, Send, Gauge, CalendarClock, ListChecks, MessageCircle } from "lucide-react";
 import { useAccess } from "@/lib/auth/useAccess";
 import { useUserPreference } from "@/lib/user-preferences";
 import { cn } from "@/lib/utils";
 import { db, loadMyLines, type MyLine } from "./wa-common";
-import { WaInbox } from "./wa-inbox";
+import { WaInbox, type Active } from "./wa-inbox";
 import { WaContacts } from "./wa-contacts";
 import { WaLists } from "./wa-lists";
 import { WaTemplates } from "./wa-templates";
@@ -46,9 +48,23 @@ export function WhatsAppHub() {
   const [unread, setUnread] = useState(0);
   // A contact's Message button opens their Inbox thread.
   const [openContact, setOpenContact] = useState<string | null>(null);
+  // A link to one chat (?c=contact&l=number — the "assigned to you" bell) opens it in the Inbox.
+  const search = useSearch({ strict: false }) as { c?: string; l?: string };
+  const [openThread, setOpenThread] = useState<Active | null>(null);
+  useEffect(() => {
+    if (search.c && search.l) setOpenThread({ contactId: search.c, lineId: search.l });
+  }, [search.c, search.l]);
   /** The numbers this person can use (null while loading). */
   const [lines, setLines] = useState<MyLine[] | null>(null);
   useEffect(() => { void loadMyLines().then(setLines).catch(() => setLines([])); }, []);
+  // A chat just assigned to them on a number they couldn't reach when the page loaded.
+  const reloadedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openThread || !lines || lines.some((l) => l.id === openThread.lineId)) return;
+    if (reloadedFor.current === openThread.lineId) return; // once: they may really have no access
+    reloadedFor.current = openThread.lineId;
+    void loadMyLines().then(setLines);
+  }, [openThread, lines]);
 
   // Unread badge on the Inbox tab, whichever tab is open.
   useEffect(() => {
@@ -67,7 +83,7 @@ export function WhatsAppHub() {
   const canEdit = canAccessModule("communications", "edit");
   // A number-only user: just the Inbox.
   const tabs = full ? TABS : TABS.filter((t) => t.key === "inbox");
-  const current: Tab = tabs.some((t) => t.key === tab) ? tab : "inbox";
+  const current: Tab = openThread ? "inbox" : tabs.some((t) => t.key === tab) ? tab : "inbox";
 
   return (
     <div className="space-y-4 p-6">
@@ -77,7 +93,7 @@ export function WhatsAppHub() {
           <p className="text-sm text-muted-foreground">
             Message clients who've opted in, and reply to them — every message, receipt and consent recorded.
             {/* Someone with "Read & send" on a number (Setup → Numbers) can reply there without the Communications permission. */}
-            {!canEdit && !lines.some((l) => l.level === "send") && " You have view-only access."}
+            {!canEdit && !lines.some((l) => l.level === "send" || l.level === "assigned") && " You have view-only access."}
           </p>
         </div>
         {/* The inbox on its own, installable like WhatsApp Desktop (see chats-app.tsx). */}
@@ -90,7 +106,7 @@ export function WhatsAppHub() {
 
       <div className="flex flex-wrap gap-1 border-b border-border">
         {tabs.map(({ key, label, icon: Icon }) => (
-          <button key={key} onClick={() => { setOpenContact(null); setTab(key); }}
+          <button key={key} onClick={() => { setOpenContact(null); setOpenThread(null); setTab(key); }}
             className={cn("-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm",
               current === key ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
             <Icon className="h-4 w-4" /> {label}
@@ -101,8 +117,9 @@ export function WhatsAppHub() {
         ))}
       </div>
 
-      {current === "inbox" && <WaInbox key={openContact ?? "inbox"} lines={lines} openContactId={openContact} />}
-      {current === "contacts" && <WaContacts canEdit={canEdit} onMessage={(id) => { setOpenContact(id); setTab("inbox"); }} />}
+      {current === "inbox" && <WaInbox key={openThread ? `${openThread.contactId}:${openThread.lineId}` : openContact ?? "inbox"}
+        lines={lines} openContactId={openContact} openThread={openThread} />}
+      {current === "contacts" && <WaContacts canEdit={canEdit} onMessage={(id) => { setOpenThread(null); setOpenContact(id); setTab("inbox"); }} />}
       {current === "lists" && <WaLists canEdit={canEdit} />}
       {current === "templates" && <WaTemplates canEdit={canEdit} />}
       {current === "sends" && <WaSends canEdit={canEdit} />}

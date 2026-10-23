@@ -195,7 +195,7 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
               <option value="all">All my numbers</option>
               {lines.map((l) => {
                 const n = unreadOn(l.id);
-                return <option key={l.id} value={l.id}>{lineName(l)}{n ? ` (${n} unread)` : ""}{l.level === "view" ? " — read only" : ""}</option>;
+                return <option key={l.id} value={l.id}>{lineName(l)}{n ? ` (${n} unread)` : ""}{l.level === "view" ? " — read only" : l.level === "assigned" ? " — chats assigned to you" : ""}</option>;
               })}
             </select>
           )}
@@ -262,7 +262,7 @@ export function WaInbox({ lines, openContactId = null, openThread = null, fill =
       <section className={cn("min-h-0", !active && "hidden md:block")}>
         {active && activeLine ? (
           <Thread key={`${active.contactId}:${active.lineId}`} contactId={active.contactId} line={activeLine} showLine={lines.length > 1}
-            conv={activeConv} canEdit={activeLine.level === "send"} staff={staff} me={me} sendable={sendable}
+            conv={activeConv} canEdit={activeLine.level === "send" || (!!me && activeConv?.assigned_to === me)} staff={staff} me={me} sendable={sendable}
             onBack={() => setActive(null)} onChanged={loadConvs}
             onOpen={(contactId) => { setActive({ contactId, lineId: active.lineId }); void loadConvs(); }} />
         ) : (
@@ -294,6 +294,13 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, sendable,
   onOpen: (contactId: string) => void;
 }) {
   const [contact, setContact] = useState<WaContact | null>(conv?.contact ?? null);
+  /** Each person's level on this number — who'd only reach this chat by being assigned it. */
+  const [lineLevels, setLineLevels] = useState<Map<string, string> | null>(null);
+  useEffect(() => {
+    if (!canEdit) return;
+    void db().rpc("wa_line_people", { p_line: line.id })
+      .then(({ data }: any) => setLineLevels(new Map(((data ?? []) as any[]).map((r) => [r.user_id, r.level]))));
+  }, [canEdit, line.id]);
   const [items, setItems] = useState<ThreadItem[] | null>(null);
   const [lastInboundAt, setLastInboundAt] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ThreadItem | null>(null);
@@ -459,6 +466,8 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, sendable,
     if (!conv) return;
     const { error } = await db().from("wa_conversations").update(patch).eq("id", conv.id);
     if (error) toast.error(error.message);
+    // Handing on a chat you only had through being assigned it: it leaves your inbox.
+    else if (line.level === "assigned" && patch.assigned_to !== undefined && patch.assigned_to !== me) onBack();
     onChanged();
   }
 
@@ -506,10 +515,15 @@ function Thread({ contactId, line, showLine, conv, canEdit, staff, me, sendable,
         {conv && canEdit && (
           <div className="flex items-center gap-1.5">
             <select value={conv.assigned_to ?? ""} onChange={(e) => void setConv({ assigned_to: e.target.value || null })}
-              className="h-7 max-w-[160px] rounded-md border border-border bg-background px-2 text-xs" title="Assign">
+              className="h-7 max-w-[160px] rounded-md border border-border bg-background px-2 text-xs"
+              title={`Assign. Someone marked "this chat only" can't use ${line.label} — being assigned lets them read and reply to this chat, nothing else on it.`}>
               <option value="">Unassigned</option>
               {me && <option value={me}>Me</option>}
-              {staff.filter((s) => s.id !== me).map((s) => <option key={s.id} value={s.id}>{s.display_name ?? "—"}</option>)}
+              {staff.filter((s) => s.id !== me && (!lineLevels || lineLevels.has(s.id))).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.display_name ?? "—"}{lineLevels?.get(s.id) === "none" ? " · this chat only" : ""}
+                </option>
+              ))}
             </select>
             {conv.status === "open" ? (
               <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => void setConv({ status: "closed" })}>
