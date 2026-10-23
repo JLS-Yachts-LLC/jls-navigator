@@ -11,6 +11,7 @@ import {
   loadShelves, loadClientItems, loadInternalItems, loadPackageContents,
   type WarehouseShelf, type WarehouseClientItem, type WarehouseInternalItem, type WarehousePackageContent,
 } from "@/lib/warehouse/data";
+import { allZones } from "@/components/shipsync/warehouse/warehouse-constants";
 import type { ShipSyncData } from "@/components/shipsync-page";
 
 export interface WarehouseData {
@@ -78,7 +79,7 @@ export function ShipSyncWarehouse(_props: { data: ShipSyncData; reload: () => Pr
             {tab === "search" && <WarehouseSearch data={data} />}
             {tab === "inventory" && <InventoryList data={data} reload={reload} />}
             {tab === "zones" && <ZoneStorageStatus data={data} reload={reload} />}
-            {tab === "new" && <NewStorage onSaved={reload} />}
+            {tab === "new" && <NewStorage onSaved={reload} zones={allZones(data.shelves)} />}
           </>
         )}
       </div>

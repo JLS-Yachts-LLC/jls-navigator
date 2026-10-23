@@ -141,6 +141,12 @@ export const clientItemCrud = makeCrud<WarehouseClientItem>('warehouse_client_it
 export const internalItemCrud = makeCrud<WarehouseInternalItem>('warehouse_internal_items')
 export const packageContentCrud = makeCrud<WarehousePackageContent>('warehouse_package_contents')
 
+/** Remove every packing-list line of a stored item — used when the item itself is deleted, so no orphan lines are left behind. */
+export async function removePackingListFor(refNo: string): Promise<void> {
+  const { error } = await db().from('warehouse_package_contents').delete().eq('ref_no', refNo)
+  if (error) throw error
+}
+
 /** Allocate the next Client Inventory reference number atomically (e.g. "CLI-0001"). */
 export async function nextClientRef(): Promise<string> {
   const { data, error } = await db().rpc('next_warehouse_client_ref')

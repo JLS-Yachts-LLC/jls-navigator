@@ -90,9 +90,10 @@ export function calcCbm(lengthCm: number, widthCm: number, heightCm: number): nu
   return (lengthCm * widthCm * heightCm) / 1_000_000;
 }
 
-/** A "Completed" item has finished its storage process — it no longer
- *  occupies real shelf space for capacity purposes, everything else does. */
-const occupiesSpace = (status: string) => status !== "Completed";
+/** Completed, Checked Out and Disposed items are no longer on the shelf, so they
+ *  don't count towards capacity; everything else (Stored, Returned…) does. Used by
+ *  every capacity figure so the dashboard and the shelf list can't disagree. */
+export const occupiesSpace = (status: string) => status !== "Completed" && status !== "Checked Out" && status !== "Disposed";
 
 /** Volume + weight currently occupying a specific shelf, from real client +
  *  internal items assigned to it — there's no stored per-shelf counter (that

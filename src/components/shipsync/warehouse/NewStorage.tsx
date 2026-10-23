@@ -6,7 +6,7 @@ import { ClientItemForm, InternalItemForm } from "@/components/shipsync/warehous
 type Owner = "client" | "internal";
 type InternalKind = "documents" | "assets";
 
-export function NewStorage({ onSaved }: { onSaved: () => Promise<void> }) {
+export function NewStorage({ onSaved, zones }: { onSaved: () => Promise<void>; zones?: string[] }) {
   const [owner, setOwner] = useState<Owner>("client");
   const [internalKind, setInternalKind] = useState<InternalKind>("documents");
   const [key, setKey] = useState(0); // bump to reset the form after a successful save
@@ -47,8 +47,8 @@ export function NewStorage({ onSaved }: { onSaved: () => Promise<void> }) {
       )}
 
       {owner === "client"
-        ? <ClientItemForm key={`client-${key}`} editing={null} existingContents={[]} onSaved={handleSaved} />
-        : <InternalItemForm key={`internal-${internalKind}-${key}`} kind={internalKind} editing={null} existingContents={[]} onSaved={handleSaved} />}
+        ? <ClientItemForm key={`client-${key}`} editing={null} existingContents={[]} zones={zones} onSaved={handleSaved} />
+        : <InternalItemForm key={`internal-${internalKind}-${key}`} kind={internalKind} editing={null} existingContents={[]} zones={zones} onSaved={handleSaved} />}
     </div>
   );
 }

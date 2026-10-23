@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Boxes, Building2, Ship, Weight } from "lucide-react";
 import {
-  ZONES, CAPACITY_STATUS_STYLE, capacityStatus, DISPLAY_STATUS_STYLE, deriveStatus, locationCode,
+  allZones, occupiesSpace, CAPACITY_STATUS_STYLE, capacityStatus, DISPLAY_STATUS_STYLE, deriveStatus, locationCode,
 } from "@/components/shipsync/warehouse/warehouse-constants";
 import type { WarehouseData } from "@/components/shipsync/ShipSyncWarehouse";
 
@@ -19,14 +19,12 @@ function toneFor(status: string): "emerald" | "amber" | "red" {
   return status === "Full/Restricted" ? "red" : status === "Warning" ? "amber" : "emerald";
 }
 
-const occupiesSpace = (status: string) => status !== "Completed";
-
 export function ShelfDashboard({ data }: { data: WarehouseData }) {
   const { shelves, clientItems, internalItems } = data;
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
 
   const perZone = useMemo(() => {
-    return ZONES.map((zone) => {
+    return allZones(shelves).map((zone) => {
       const zoneShelves = shelves.filter((s) => s.zone === zone);
       const maxCbm = zoneShelves.reduce((s, sh) => s + sh.max_cbm, 0);
       const maxWeightKg = zoneShelves.reduce((s, sh) => s + (sh.max_weight_kg ?? 0), 0);

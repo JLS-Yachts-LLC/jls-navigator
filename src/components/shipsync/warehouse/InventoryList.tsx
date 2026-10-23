@@ -14,11 +14,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Users, Building2, Boxes, Plus, Pencil, Trash2, Search, FileText } from "lucide-react";
 import {
-  DISPLAY_STATUS_STYLE, deriveStatus, locationCode,
+  DISPLAY_STATUS_STYLE, deriveStatus, locationCode, allZones,
 } from "@/components/shipsync/warehouse/warehouse-constants";
 import { ClientItemForm, InternalItemForm } from "@/components/shipsync/warehouse/forms";
 import {
-  clientItemCrud, internalItemCrud, packageContentCrud,
+  clientItemCrud, internalItemCrud, packageContentCrud, removePackingListFor,
   type WarehouseClientItem, type WarehouseInternalItem, type WarehousePackageContent, type ManualStatus, type WarehouseDoc,
 } from "@/lib/warehouse/data";
 import type { WarehouseData } from "@/components/shipsync/ShipSyncWarehouse";
@@ -79,6 +79,8 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
   async function confirmDelete() {
     if (!deleteTarget) return;
     try {
+      // The packing list goes first: if it fails nothing has been deleted, and a failure after it would leave an item with an empty list rather than lines with no item.
+      await removePackingListFor(deleteTarget.label);
       if (deleteTarget.kind === "client") await clientItemCrud.remove(deleteTarget.id);
       else await internalItemCrud.remove(deleteTarget.id);
       toast.success("Removed");
@@ -159,7 +161,7 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
         <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingClient ? `Edit ${editingClient.ref_no}` : "New client storage item"}</DialogTitle></DialogHeader>
           {editingClient !== undefined && (
-            <ClientItemForm editing={editingClient} existingContents={existingContentsForClientEdit}
+            <ClientItemForm editing={editingClient} existingContents={existingContentsForClientEdit} zones={allZones(data.shelves)}
               onSaved={async () => { await reload(); setEditingClient(undefined); }}
               onCancel={() => setEditingClient(undefined)} />
           )}
@@ -188,7 +190,7 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
                   </div>
                 </div>
               )}
-              <InternalItemForm kind={editingInternal?.kind ?? newInternalKind} editing={editingInternal} existingContents={existingContentsForInternalEdit}
+              <InternalItemForm kind={editingInternal?.kind ?? newInternalKind} editing={editingInternal} existingContents={existingContentsForInternalEdit} zones={allZones(data.shelves)}
                 onSaved={async () => { await reload(); setEditingInternal(undefined); }}
                 onCancel={() => setEditingInternal(undefined)} />
             </>
@@ -200,7 +202,7 @@ export function InventoryList({ data, reload }: { data: WarehouseData; reload: (
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {deleteTarget?.label}?</AlertDialogTitle>
-            <AlertDialogDescription>This permanently deletes the storage record. This can't be undone.</AlertDialogDescription>
+            <AlertDialogDescription>This permanently deletes the storage record and its packing list. This can't be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -270,8 +272,13 @@ function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete, reload }: 
   onEdit: (item: WarehouseClientItem) => void; onDelete: (item: WarehouseClientItem) => void; reload: () => Promise<void>;
 }) {
   if (rows.length === 0) return <div className="px-4 py-10 text-center text-sm text-muted-foreground">No client storage items found.</div>;
-  async function changeStatus(id: string, status: ManualStatus) {
-    try { await clientItemCrud.patch(id, { status }); await reload(); }
+  async function changeStatus(row: WarehouseClientItem, status: ManualStatus) {
+    // Checked Out / Returned need who and when: open the edit form with the new status selected rather than saving it half-filled.
+    if (status === "Checked Out" || status === "Returned") { onEdit({ ...row, status }); return; }
+    try {
+      await clientItemCrud.patch(row.id, { status, checked_out_date: null, checked_out_to: null, actual_return_date: null });
+      await reload();
+    }
     catch (e: any) { toast.error(e?.message ?? "Update failed"); }
   }
   return (
@@ -301,7 +308,7 @@ function ClientTable({ rows, selectedRef, onSelect, onEdit, onDelete, reload }: 
             <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{r.due_date ?? "—"}</td>
             <td className="px-3 py-2 font-mono">{locationCode(r)}</td>
             <td className="px-3 py-2 font-mono text-muted-foreground">{r.invoice_no ?? "—"}</td>
-            <td className="px-3 py-2"><EditableStatusCell dateField={r.due_date} status={r.status} onChange={(s) => void changeStatus(r.id, s)} /></td>
+            <td className="px-3 py-2"><EditableStatusCell dateField={r.due_date} status={r.status} onChange={(s) => void changeStatus(r, s)} /></td>
             <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{r.checked_out_date ?? "—"}</td>
             <td className="px-3 py-2 text-muted-foreground">{r.checked_out_to ?? "—"}</td>
             <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{r.actual_return_date ?? "—"}</td>
@@ -321,8 +328,12 @@ function InternalTable({ rows, selectedRef, onSelect, onEdit, onDelete, reload }
   onEdit: (item: WarehouseInternalItem) => void; onDelete: (item: WarehouseInternalItem) => void; reload: () => Promise<void>;
 }) {
   if (rows.length === 0) return <div className="px-4 py-10 text-center text-sm text-muted-foreground">No internal storage items found.</div>;
-  async function changeStatus(id: string, status: ManualStatus) {
-    try { await internalItemCrud.patch(id, { status }); await reload(); }
+  async function changeStatus(row: WarehouseInternalItem, status: ManualStatus) {
+    if (status === "Checked Out" || status === "Returned") { onEdit({ ...row, status }); return; }
+    try {
+      await internalItemCrud.patch(row.id, { status, checked_out_date: null, checked_out_to: null, actual_return_date: null });
+      await reload();
+    }
     catch (e: any) { toast.error(e?.message ?? "Update failed"); }
   }
   return (
@@ -349,7 +360,7 @@ function InternalTable({ rows, selectedRef, onSelect, onEdit, onDelete, reload }
             <td className="px-3 py-2 tabular-nums text-muted-foreground">{r.cbm != null ? `${r.cbm.toFixed(2)} m³` : "—"}</td>
             <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{r.date_stored ?? "—"}</td>
             <td className="px-3 py-2 font-mono">{locationCode(r)}</td>
-            <td className="px-3 py-2"><EditableStatusCell dateField={r.destruction_date} status={r.status} onChange={(s) => void changeStatus(r.id, s)} /></td>
+            <td className="px-3 py-2"><EditableStatusCell dateField={r.destruction_date} status={r.status} onChange={(s) => void changeStatus(r, s)} /></td>
             <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{r.checked_out_date ?? "—"}</td>
             <td className="px-3 py-2 text-muted-foreground">{r.checked_out_to ?? "—"}</td>
             <td className="px-3 py-2 tabular-nums text-muted-foreground whitespace-nowrap">{r.actual_return_date ?? "—"}</td>

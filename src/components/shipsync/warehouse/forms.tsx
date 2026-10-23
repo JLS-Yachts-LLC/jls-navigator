@@ -68,8 +68,14 @@ export function Field({ label, full, children }: { label: string; full?: boolean
   );
 }
 
-export function ZoneBayShelfFields({ zone, bay, shelf, onZone, onBay, onShelf }: {
-  zone: string; bay: string; shelf: string;
+/** The zones on offer: every zone the warehouse has shelves in (A–E plus any the client added), and the item's own zone if it is somewhere else. */
+function zoneOptions(zones: string[] | undefined, current: string): string[] {
+  const list = zones ?? [...ZONES];
+  return current && !list.includes(current) ? [...list, current] : list;
+}
+
+export function ZoneBayShelfFields({ zone, zones, bay, shelf, onZone, onBay, onShelf }: {
+  zone: string; zones?: string[]; bay: string; shelf: string;
   onZone: (v: string) => void; onBay: (v: string) => void; onShelf: (v: string) => void;
 }) {
   return (
@@ -77,7 +83,7 @@ export function ZoneBayShelfFields({ zone, bay, shelf, onZone, onBay, onShelf }:
       <Field label="Zone">
         <Select value={zone || undefined} onValueChange={onZone}>
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select zone" /></SelectTrigger>
-          <SelectContent>{ZONES.map((z) => <SelectItem key={z} value={z}>Zone {z}</SelectItem>)}</SelectContent>
+          <SelectContent>{(zones ?? ZONES).map((z) => <SelectItem key={z} value={z}>Zone {z}</SelectItem>)}</SelectContent>
         </Select>
       </Field>
       <Field label="Bay"><Input value={bay} onChange={(e) => onBay(e.target.value)} placeholder="e.g. 1" className="h-9" /></Field>
@@ -254,13 +260,14 @@ function packingRowFromContent(c: WarehousePackageContent): PackingRow {
 
 // ── Client item form ─────────────────────────────────────────────────────────
 
-export function ClientItemForm({ editing, existingContents, onSaved, onCancel }: {
+export function ClientItemForm({ editing, existingContents, zones, onSaved, onCancel }: {
   editing: WarehouseClientItem | null;
+  zones?: string[];
   existingContents: WarehousePackageContent[];
   onSaved: () => Promise<void>;
   onCancel?: () => void;
 }) {
-  const blank = { clientName: "", description: "", quotationNo: "", length: "", width: "", height: "", weight: "", charges: "", dateStored: "", dueDate: "", zone: "", bay: "", shelf: "", invoiceNo: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "" };
+  const blank = { clientName: "", description: "", quotationNo: "", length: "", width: "", height: "", weight: "", charges: "", dateStored: "", dueDate: "", zone: "", bay: "", shelf: "", invoiceNo: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "", remarks: "" };
   const [f, setF] = useState(blank);
   const [docs, setDocs] = useState<WarehouseDoc[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -276,7 +283,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         height: editing.height_cm != null ? String(editing.height_cm) : "", weight: editing.weight_kg != null ? String(editing.weight_kg) : "",
         charges: editing.charges != null ? String(editing.charges) : "", dateStored: editing.date_stored ?? "", dueDate: editing.due_date ?? "",
         zone: editing.zone ?? "", bay: editing.bay ?? "", shelf: editing.shelf ?? "", invoiceNo: editing.invoice_no ?? "",
-        status: editing.status, checkedOutDate: editing.checked_out_date ?? "", checkedOutTo: editing.checked_out_to ?? "", actualReturnDate: editing.actual_return_date ?? "",
+        status: editing.status, checkedOutDate: editing.checked_out_date ?? "", checkedOutTo: editing.checked_out_to ?? "", actualReturnDate: editing.actual_return_date ?? "", remarks: editing.remarks ?? "",
       });
       setDocs(editing.documents ?? []);
       setImageUrl(editing.image_url);
@@ -304,6 +311,7 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         status: f.status, checked_out_date: f.status === "Checked Out" ? (f.checkedOutDate || null) : null,
         checked_out_to: f.status === "Checked Out" ? (f.checkedOutTo.trim() || null) : null,
         actual_return_date: f.status === "Returned" ? (f.actualReturnDate || null) : null,
+        remarks: f.remarks.trim() || null,
       };
       let refNo: string;
       if (editing) {
@@ -338,10 +346,12 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
         <Field label="Date Stored"><Input type="date" value={f.dateStored} onChange={(e) => set({ dateStored: e.target.value })} className="h-9" /></Field>
         <Field label="Due Date"><Input type="date" value={f.dueDate} onChange={(e) => set({ dueDate: e.target.value })} className="h-9" /></Field>
 
-        <ZoneBayShelfFields zone={f.zone} bay={f.bay} shelf={f.shelf} onZone={(v) => set({ zone: v })} onBay={(v) => set({ bay: v })} onShelf={(v) => set({ shelf: v })} />
+        <ZoneBayShelfFields zone={f.zone} zones={zoneOptions(zones, f.zone)} bay={f.bay} shelf={f.shelf} onZone={(v) => set({ zone: v })} onBay={(v) => set({ bay: v })} onShelf={(v) => set({ shelf: v })} />
         <Field label="Invoice No."><Input value={f.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} className="h-9" /></Field>
 
         <StatusAndCheckoutFields status={f.status} checkedOutDate={f.checkedOutDate} checkedOutTo={f.checkedOutTo} actualReturnDate={f.actualReturnDate} onChange={set} />
+
+        <Field label="Remarks" full><Textarea rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} className="resize-none text-sm" /></Field>
 
         <AttachmentsField label="Attached Documents" pathPrefix={`client/${pathPrefix}`} files={docs} onChange={setDocs} />
         <ImageField pathPrefix={`client/${pathPrefix}`} url={imageUrl} onChange={setImageUrl} />
@@ -358,14 +368,15 @@ export function ClientItemForm({ editing, existingContents, onSaved, onCancel }:
 
 // ── Internal item form (Documents / Assets) ─────────────────────────────────
 
-export function InternalItemForm({ kind, editing, existingContents, onSaved, onCancel }: {
+export function InternalItemForm({ kind, editing, existingContents, zones, onSaved, onCancel }: {
   kind: "documents" | "assets";
   editing: WarehouseInternalItem | null;
+  zones?: string[];
   existingContents: WarehousePackageContent[];
   onSaved: () => Promise<void>;
   onCancel?: () => void;
 }) {
-  const blank = { department: "", departmentDetail: "", description: "", length: "", width: "", height: "", weight: "", dateStored: "", destructionDate: "", zone: "", bay: "", shelf: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "" };
+  const blank = { department: "", departmentDetail: "", description: "", length: "", width: "", height: "", weight: "", dateStored: "", destructionDate: "", zone: "", bay: "", shelf: "", status: "Stored" as ManualStatus, checkedOutDate: "", checkedOutTo: "", actualReturnDate: "", remarks: "" };
   const [f, setF] = useState(blank);
   const [docs, setDocs] = useState<WarehouseDoc[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -382,7 +393,7 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
         height: editing.height_cm != null ? String(editing.height_cm) : "", weight: editing.weight_kg != null ? String(editing.weight_kg) : "",
         dateStored: editing.date_stored ?? "", destructionDate: editing.destruction_date ?? "",
         zone: editing.zone ?? "", bay: editing.bay ?? "", shelf: editing.shelf ?? "",
-        status: editing.status, checkedOutDate: editing.checked_out_date ?? "", checkedOutTo: editing.checked_out_to ?? "", actualReturnDate: editing.actual_return_date ?? "",
+        status: editing.status, checkedOutDate: editing.checked_out_date ?? "", checkedOutTo: editing.checked_out_to ?? "", actualReturnDate: editing.actual_return_date ?? "", remarks: editing.remarks ?? "",
       });
       setDocs(editing.documents ?? []);
       setImageUrl(editing.image_url);
@@ -410,6 +421,7 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
         status: f.status, checked_out_date: f.status === "Checked Out" ? (f.checkedOutDate || null) : null,
         checked_out_to: f.status === "Checked Out" ? (f.checkedOutTo.trim() || null) : null,
         actual_return_date: f.status === "Returned" ? (f.actualReturnDate || null) : null,
+        remarks: f.remarks.trim() || null,
       };
       let refNo: string;
       if (editing) {
@@ -455,9 +467,11 @@ export function InternalItemForm({ kind, editing, existingContents, onSaved, onC
           <Field label="Destruction Date"><Input type="date" value={f.destructionDate} onChange={(e) => set({ destructionDate: e.target.value })} className="h-9" /></Field>
         )}
 
-        <ZoneBayShelfFields zone={f.zone} bay={f.bay} shelf={f.shelf} onZone={(v) => set({ zone: v })} onBay={(v) => set({ bay: v })} onShelf={(v) => set({ shelf: v })} />
+        <ZoneBayShelfFields zone={f.zone} zones={zoneOptions(zones, f.zone)} bay={f.bay} shelf={f.shelf} onZone={(v) => set({ zone: v })} onBay={(v) => set({ bay: v })} onShelf={(v) => set({ shelf: v })} />
 
         <StatusAndCheckoutFields status={f.status} checkedOutDate={f.checkedOutDate} checkedOutTo={f.checkedOutTo} actualReturnDate={f.actualReturnDate} onChange={set} />
+
+        <Field label="Remarks" full><Textarea rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} className="resize-none text-sm" /></Field>
 
         <AttachmentsField label="Attached Documents" pathPrefix={`internal/${pathPrefix}`} files={docs} onChange={setDocs} />
         <ImageField pathPrefix={`internal/${pathPrefix}`} url={imageUrl} onChange={setImageUrl} />
