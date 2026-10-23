@@ -11,7 +11,7 @@ import { dmaSignatureFields, generateDmaPdf } from "@/lib/anchor-forms/dma-docx.
 import { generateCf12aPdf } from "@/lib/anchor-forms/cf12a-pdf.server";
 import { getFormDef } from "@/lib/anchor-forms/definitions";
 import { sendEmail } from "@/lib/ses.server";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { findApprovedUse, formFingerprint, logRefusedUse, markApplied, requestSignatoryUse } from "@/lib/anchor/signatory-auth.server";
 
 const BUCKET = "esign-documents";
@@ -71,7 +71,17 @@ async function stampSignature(sub: any, outPath: string): Promise<{ ok: boolean;
   if (!pdfBlob || !pngBlob) return { ok: false, reason: "file missing" };
   const pdf = await PDFDocument.load(new Uint8Array(await pdfBlob.arrayBuffer()), { ignoreEncryption: true });
   const png = await pdf.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
-  const spot = (await signatureFieldsFor(sub)).find((f) => typeof f.x === "number" && typeof f.y === "number");
+  const spots = await signatureFieldsFor(sub);
+  const spot = spots.find((f) => f.type !== "date" && typeof f.x === "number" && typeof f.y === "number");
+  // The signing date on the form's "Date:" line (the DMA notices), as e-Sign does.
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Dubai" });
+  for (const f of spots.filter((s) => s.type === "date" && typeof s.x === "number" && typeof s.y === "number")) {
+    const p = pdf.getPages()[Math.max(0, (f.page ?? 1) - 1)];
+    if (!p) continue;
+    const tw = font.widthOfTextAtSize(today, 10);
+    p.drawText(today, { x: f.x * p.getWidth() - tw / 2, y: (1 - f.y) * p.getHeight() - 5, size: 10, font, color: rgb(0.1, 0.12, 0.16) });
+  }
   const page = pdf.getPages()[Math.min(pdf.getPageCount(), spot?.page ?? pdf.getPageCount()) - 1];
   const { width, height } = page.getSize();
   const w = 150; const h = (png.height / png.width) * w;
@@ -180,7 +190,7 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
         try {
           pdfBytes = await generateDmaPdf(def.key, values, def.title);
           const pages = (await PDFDocument.load(pdfBytes, { ignoreEncryption: true })).getPageCount();
-          signatureFields = dmaSignatureFields(def.key, pages);
+          signatureFields = dmaSignatureFields(def.key, pages, { date: true });
         }
         catch (e: any) { pdfWarning = `Bilingual PDF failed (${e?.message ?? e}); served the English version`; pdfBytes = await buildFormPdf(def, values); }
       } else {

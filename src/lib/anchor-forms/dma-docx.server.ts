@@ -49,6 +49,32 @@ function orderedValues(formKey: string, v: Record<string, any>): string[] {
   ];
 }
 
+const DATE_PLACEHOLDER = "Click or tap to enter a date.";
+
+/**
+ * Take out the agent's "Date: [Click or tap to enter a date.]" date control and
+ * its brackets, leaving "Date:" — the signing date is printed after it when the
+ * form is signed (dmaSignatureFields). The template has exactly one; anything
+ * unexpected around it and only the placeholder text goes, so the grey prompt
+ * never reaches the PDF.
+ */
+function clearDateControl(xml: string): string {
+  const at = xml.indexOf(DATE_PLACEHOLDER);
+  if (at < 0) return xml;
+  const sdtStart = xml.lastIndexOf("<w:sdt>", at);
+  const sdtEnd = xml.indexOf("</w:sdt>", at);
+  const runBefore = Math.max(xml.lastIndexOf("<w:r ", sdtStart), xml.lastIndexOf("<w:r>", sdtStart));
+  const after = sdtEnd + "</w:sdt>".length;
+  const runAfterEnd = xml.indexOf("</w:r>", after) + "</w:r>".length;
+  const before = xml.slice(runBefore, sdtStart);
+  const close = xml.slice(after, runAfterEnd);
+  if (sdtStart < 0 || sdtEnd < 0 || runBefore < 0 || !/^<w:r[ >]/.test(close)
+      || !/<w:t xml:space="preserve"> \[<\/w:t><\/w:r>$/.test(before) || !/<w:t>\]<\/w:t><\/w:r>$/.test(close)) {
+    return xml.replace(DATE_PLACEHOLDER, "");
+  }
+  return xml.slice(0, runBefore) + xml.slice(runAfterEnd);
+}
+
 /** Fill the DMA template positionally and return the .docx bytes. */
 export function fillDmaDocx(formKey: string, values: Record<string, any>): Uint8Array {
   const b64 = formKey === "dma-notice-of-departure" ? DMA_DEPARTURE_B64 : DMA_ARRIVAL_B64;
@@ -58,7 +84,7 @@ export function fillDmaDocx(formKey: string, values: Record<string, any>): Uint8
   const vals = orderedValues(formKey, values);
   let out = parts[0];
   for (let i = 1; i < parts.length; i++) out += xmlEscape(String(vals[i - 1] ?? "")) + parts[i];
-  files["word/document.xml"] = strToU8(out);
+  files["word/document.xml"] = strToU8(clearDateControl(out));
   return zipSync(files, { level: 6 });
 }
 
@@ -71,16 +97,23 @@ export function fillDmaDocx(formKey: string, values: Record<string, any>): Uint8
  * If a long answer pushes the layout onto a different number of pages, the
  * box has moved and we don't know where to — no spot, and the signature goes
  * on the certificate page only rather than over the form's text.
+ *
+ * `date` is where the signing date is printed: just after the "Date:" label
+ * above the box (page 2 on both). Only on PDFs built since clearDateControl —
+ * older ones still carry the grey "Click or tap to enter a date." there.
  */
-const DMA_SIGNATURE_BOX: Record<string, { pages: number; x: number; y: number }> = {
-  "dma-notice-of-departure": { pages: 2, x: 0.256, y: 0.848 },
-  "dma-notice-of-arrival": { pages: 3, x: 0.258, y: 0.126 },
+const DMA_SIGNATURE_BOX: Record<string, { pages: number; x: number; y: number; date: { page: number; x: number; y: number } }> = {
+  "dma-notice-of-departure": { pages: 2, x: 0.256, y: 0.848, date: { page: 2, x: 0.161, y: 0.7764 } },
+  "dma-notice-of-arrival": { pages: 3, x: 0.258, y: 0.126, date: { page: 2, x: 0.161, y: 0.8162 } },
 };
 
-export function dmaSignatureFields(formKey: string, pageCount: number): any[] {
+export function dmaSignatureFields(formKey: string, pageCount: number, opts: { date?: boolean } = {}): any[] {
   const box = DMA_SIGNATURE_BOX[formKey];
   if (!box || box.pages !== pageCount) return [];
-  return [{ page: box.pages, x: box.x, y: box.y, role: "client", label: false }];
+  return [
+    { page: box.pages, x: box.x, y: box.y, role: "client", label: false },
+    ...(opts.date ? [{ type: "date", ...box.date }] : []),
+  ];
 }
 
 /** Generate the bilingual DMA PDF via Graph. Returns PDF bytes (throws on failure). */
