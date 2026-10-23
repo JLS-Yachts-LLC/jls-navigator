@@ -17,9 +17,9 @@
  * are never touched by the sync.
  */
 import { SignedAnchor } from "@/components/ui/signed-file";
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, FileText, FileCheck2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Search, ChevronDown, ChevronRight, FileText, FileCheck2, ArrowDownToLine, Plus, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, type StatusDatum, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, type StatusDatum, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
 import { loadEdasPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
 
@@ -107,6 +107,10 @@ export function ShipSyncEdasBoard() {
   const [rows, setRows] = useState<ShipSyncPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [when, setWhen] = useState<When>("all");
+  const [clientFilter, setClientFilter] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSearchShortcut(searchRef);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [addingIn, setAddingIn] = useState<string | null>(null);
@@ -198,15 +202,16 @@ export function ShipSyncEdasBoard() {
 
   // Ticked rows only mean something in the view they were ticked in: changing the tab, search, filters or collapsing a group
   // must not leave hidden rows selected for "Delete N selected".
-  useEffect(() => { setSelected(new Set()); }, [search, collapsed]);
+  useEffect(() => { setSelected(new Set()); }, [search, clientFilter, when, collapsed]);
 
+  const clientOptions = useMemo(() => clientsOf(rows), [rows]);
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter((p) =>
+    const base = !search.trim() ? rows : rows.filter((p) =>
       [p.barcode, p.boat_name, ...Object.values(mondayRow(p))].join(" ").toLowerCase().includes(s),
     );
-  }, [rows, search]);
+    return base.filter((p) => (!clientFilter || (p.boat_name?.trim() ?? "") === clientFilter) && matchesWhen(p, when));
+  }, [rows, search, clientFilter, when]);
 
   const mondayColumns = useMemo(() => extraMondayColumns(rows, COVERED), [rows]);
 
@@ -242,6 +247,22 @@ export function ShipSyncEdasBoard() {
 
   function toggle(title: string) { setCollapsed((p) => ({ ...p, [title]: !p[title] })); }
 
+  /**
+   * Everything currently on screen, in the board's own column order, as a spreadsheet — search and filters are respected, so you
+   * export what you are looking at, not the whole board. Group leads; the Monday-only extra columns trail, same as the table.
+   */
+  function exportSpreadsheet() {
+    const specs = CELLS.flatMap((c) =>
+      c.kind === "field" ? [{ label: c.col.label, value: (p: ShipSyncPackage) => c.col.get(p) }] : []);
+    const headers = ["Group", ...specs.map((x) => x.label), ...mondayColumns];
+    const out = groups.flatMap((g) =>
+      g.rows.map((p) => [g.title, ...specs.map((x) => x.value(p)), ...mondayColumns.map((title) => mondayText(p, title))]),
+    );
+    if (out.length === 0) { toast.error("Nothing to export"); return; }
+    downloadCsv(`shipsync-edas-${new Date().toISOString().slice(0, 10)}.csv`, headers, out);
+    toast.success(`Exported ${out.length} ${out.length === 1 ? "entry" : "entries"}`);
+  }
+
   if (loading) return <TableSkeleton />;
 
   const colCount = 2 + CELLS.length + mondayColumns.length + 1;
@@ -254,11 +275,12 @@ export function ShipSyncEdasBoard() {
       <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2.5">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search EDAS entries…" className="h-9 w-72 pl-8 text-sm" />
+          <Input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search EDAS entries…" title="Press / to search" className="h-9 w-72 pl-8 text-sm" />
         </div>
         <span className="text-[12px] text-muted-foreground">{filtered.length} of {rows.length}</span>
         <TableChartToggle value={view} onChange={setView} />
         <ColumnLinesToggle on={lines} onChange={setLines} />
+        <ShipmentFilters when={when} onWhen={setWhen} client={clientFilter} onClient={setClientFilter} clients={clientOptions} />
         <Button size="sm" onClick={() => { setNpGroup(allGroups[0]?.title ?? ""); setNpName(""); setNewPackageOpen(true); }} className="ml-auto h-9 gap-1.5">
           <Plus className="h-4 w-4" /> New EDAS entry
         </Button>
@@ -268,6 +290,10 @@ export function ShipSyncEdasBoard() {
             <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
           </Button>
         )}
+        <Button size="sm" variant="outline" onClick={exportSpreadsheet} className="h-9 gap-1.5"
+          title="Download the entries shown as a CSV — opens straight in Excel">
+          <ArrowDownToLine className="h-4 w-4" /> Export
+        </Button>
       </div>
 
       {view === "chart" ? (

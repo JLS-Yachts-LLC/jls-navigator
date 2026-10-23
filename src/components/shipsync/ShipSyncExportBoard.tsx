@@ -32,7 +32,7 @@ import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { PackageDetailPanel } from "@/components/shipsync/PackageDetailPanel";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, PanelRightOpen, Search, ChevronDown, ChevronRight, FileText, ArrowUpFromLine, Plus, Trash2, X, Camera } from "lucide-react";
+import { Loader2, PanelRightOpen, Search, ChevronDown, ChevronRight, FileText, ArrowUpFromLine, ArrowDownToLine, Plus, Trash2, X, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle, PhotoUploadCell } from "@/components/shipsync/shared";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle, PhotoUploadCell } from "@/components/shipsync/shared";
 import { exportTotals } from "@/lib/shipsync/trade-summary";
 import { loadExportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile, uploadShipSyncImage } from "@/lib/shipsync/data";
 import type { ShipSyncPackage } from "@/lib/shipsync/model";
@@ -326,6 +326,24 @@ export function ShipSyncExportBoard() {
 
   function toggle(title: string) { setCollapsed((p) => ({ ...p, [title]: !p[title] })); }
 
+  /**
+   * Everything currently on screen, in the board's own column order, as a spreadsheet — search and filters are respected, so you
+   * export what you are looking at, not the whole board. Group leads; the Monday-only extra columns trail, same as the table.
+   */
+  function exportSpreadsheet() {
+    const specs = CELLS.flatMap((c) =>
+      c.kind === "field" ? [{ label: c.col.label, value: (p: ShipSyncPackage) => c.col.get(p) }]
+      : c.kind === "exportStatus" ? [{ label: "Status", value: (p: ShipSyncPackage) => mondayText(p, "STATUS") }]
+      : []);
+    const headers = ["Group", ...specs.map((x) => x.label), ...mondayColumns];
+    const out = groups.flatMap((g) =>
+      g.rows.map((p) => [g.title, ...specs.map((x) => x.value(p)), ...mondayColumns.map((title) => mondayText(p, title))]),
+    );
+    if (out.length === 0) { toast.error("Nothing to export"); return; }
+    downloadCsv(`shipsync-export-${new Date().toISOString().slice(0, 10)}.csv`, headers, out);
+    toast.success(`Exported ${out.length} ${out.length === 1 ? "entry" : "entries"}`);
+  }
+
   if (loading) return <TableSkeleton />;
 
   const colCount = 2 + CELLS.length + mondayColumns.length + 1;
@@ -354,6 +372,10 @@ export function ShipSyncExportBoard() {
             <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
           </Button>
         )}
+        <Button size="sm" variant="outline" onClick={exportSpreadsheet} className="h-9 gap-1.5"
+          title="Download the shipments shown as a CSV — opens straight in Excel">
+          <ArrowDownToLine className="h-4 w-4" /> Export
+        </Button>
       </div>
 
       {rows.length > 0 && (

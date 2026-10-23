@@ -171,13 +171,15 @@ function extraOf(p: ShipSyncPackage): Record<string, any> { return (p.extra as a
  *   Complete         Monday's "Completed" group — invoiced and closed
  * A shipment with no Monday group falls back to what the app recorded about it.
  */
-type Tab = "active" | "delivered" | "completed";
+type Tab = "active" | "delivered" | "completed" | "cancelled";
 function tabForGroup(title: string): Tab {
   const t = title.trim().toLowerCase();
   if (t === "completed" || t === "complete") return "completed";
   return t.startsWith("delivered") ? "delivered" : "active";
 }
 function tabOf(p: ShipSyncPackage): Tab {
+  // A cancelled shipment sits in whichever Monday group it was left in (usually Complete) — keep it out of the live lists.
+  if (/^cancel/i.test(mondayText(p, "STATUS").trim())) return "cancelled";
   const title = extraOf(p).monday_group_title;
   if (title) return tabForGroup(title);
   if (p.status === "completed") return "completed";
@@ -187,6 +189,7 @@ const TABS: { key: Tab; label: string; hint: string }[] = [
   { key: "active", label: "Pending", hint: "Import, Transit and anything not yet delivered." },
   { key: "delivered", label: "Delivered - TBI", hint: "Delivered - TBI: delivered and waiting to be invoiced." },
   { key: "completed", label: "Complete", hint: "Invoiced and closed." },
+  { key: "cancelled", label: "Cancelled", hint: "Shipments marked Canceled on Monday." },
 ];
 function mondayText(p: ShipSyncPackage, title: string): string { return mondayRow(p)[title] ?? ""; }
 
@@ -523,13 +526,13 @@ export function ShipSyncImportBoard() {
     const base = !search.trim()
       ? rows.filter((p) => tabOf(p) === tab)
       : rows.filter((p) =>
-        [p.barcode, p.boat_name, p.supplier, p.courier, p.boe_no, p.receiver_full_name,
+        [p.barcode, p.boat_name, p.supplier, p.courier, p.boe_no, p.receiver_full_name, p.delivery_note_no, p.description, p.origin, p.eta,
          ...Object.values(mondayRow(p))].join(" ").toLowerCase().includes(s),
       );
     return base.filter((p) => (!clientFilter || (p.boat_name?.trim() ?? "") === clientFilter) && matchesWhen(p, when));
   }, [rows, search, tab, clientFilter, when]);
   const tabCounts = useMemo(() => {
-    const c: Record<Tab, number> = { active: 0, delivered: 0, completed: 0 };
+    const c: Record<Tab, number> = { active: 0, delivered: 0, completed: 0, cancelled: 0 };
     for (const p of rows) c[tabOf(p)]++;
     return c;
   }, [rows]);
@@ -611,7 +614,7 @@ export function ShipSyncImportBoard() {
     <div className="flex h-full min-w-0 flex-col px-6 py-3">
       {/* Pending, Delivered - TBI and Complete — the last two are the long lists. */}
       <div className="mb-3 shrink-0">
-        <PillTabs tabs={TABS.map(({ key, label, hint }) => ({ key, label, hint, count: tabCounts[key] }))} value={tab} onChange={setTab} />
+        <PillTabs tabs={TABS.filter((t) => t.key !== "cancelled" || tabCounts.cancelled > 0 || tab === "cancelled").map(({ key, label, hint }) => ({ key, label, hint, count: tabCounts[key] }))} value={tab} onChange={setTab} />
       </div>
       {searching && <p className="mb-3 shrink-0 text-[11.5px] text-muted-foreground">Searching every list — clear the box to go back to browsing.</p>}
 
