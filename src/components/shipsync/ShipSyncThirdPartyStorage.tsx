@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Chip, EmptyState, PillTabs, RowMenu, TableSkeleton, downloadCsv, useSearchShortcut } from "@/components/shipsync/shared";
 import { Field } from "@/components/shipsync/warehouse/forms";
+import { NoteLog } from "@/components/orbit2/orbit2-fields";
+import { useAuth } from "@/lib/auth";
 import {
   TPS_CURRENCIES, TPS_STATUSES, createThirdPartyStorage, deleteThirdPartyStorage, dueFlag, loadThirdPartyStorage,
   updateThirdPartyStorage, type ThirdPartyStorage, type TpsCurrency, type TpsFile, type TpsStatus, type TpsUpdate,
@@ -141,39 +143,8 @@ function FileDropField({ label, pathPrefix, files, onChange, images }: {
   );
 }
 
-/** Dated notes on a storage arrangement (the "Update" lines on the old board), newest first. */
-function UpdatesField({ updates, onChange }: { updates: TpsUpdate[]; onChange: (v: TpsUpdate[]) => void }) {
-  const [text, setText] = useState("");
-  const [owner, setOwner] = useState("");
-  function add() {
-    if (!text.trim()) return;
-    onChange([{ date: today(), owner: owner.trim(), text: text.trim() }, ...updates]);
-    setText("");
-  }
-  return (
-    <Field label="Updates" full>
-      <div className="space-y-2">
-        <div className="flex flex-wrap gap-2">
-          <Input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Who" className="h-9 w-32" />
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Called the company — unit confirmed empty"
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} className="h-9 min-w-[200px] flex-1" />
-          <Button type="button" variant="outline" size="sm" className="h-9 gap-1" onClick={add} disabled={!text.trim()}><Plus className="h-3.5 w-3.5" /> Add</Button>
-        </div>
-        {updates.map((u, i) => (
-          <div key={i} className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1.5 text-[13px]">
-            <span className="shrink-0 tabular-nums text-muted-foreground">{fmt(u.date)}</span>
-            {u.owner && <span className="shrink-0 font-medium">{u.owner}</span>}
-            <span className="min-w-0 flex-1 break-words">{u.text}</span>
-            <button type="button" aria-label="Remove update" onClick={() => onChange(updates.filter((_, j) => j !== i))}
-              className="shrink-0 text-muted-foreground/60 hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
-          </div>
-        ))}
-      </div>
-    </Field>
-  );
-}
-
-function StorageForm({ editing, onSaved, onCancel }: { editing: ThirdPartyStorage | null; onSaved: () => Promise<void>; onCancel: () => void }) {
+function StorageForm({ editing, onSaved, onCancel, onNoteSaved }: { editing: ThirdPartyStorage | null; onSaved: () => Promise<void>; onCancel: () => void; onNoteSaved: () => Promise<void> }) {
+  const { user } = useAuth();
   const [f, setF] = useState<FormState>(() => (editing ? fromRecord(editing) : blank()));
   const [quoteFiles, setQuoteFiles] = useState<TpsFile[]>(editing?.storage_company_quotation ?? []);
   const [images, setImages] = useState<TpsFile[]>(editing?.unit_images ?? []);
@@ -182,6 +153,16 @@ function StorageForm({ editing, onSaved, onCancel }: { editing: ThirdPartyStorag
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<FormState>) => setF((p) => ({ ...p, ...patch }));
   // Files are filed under the record's id when it exists, otherwise under a scratch folder for this new one.
+  /** A note is a record, so on an existing storage it is saved the moment it is added — it isn't lost if the form is closed without Save. */
+  async function addNote(body: string) {
+    const note: TpsUpdate = { id: crypto.randomUUID(), author: user?.email?.split("@")[0] ?? "Polaris", body, created_at: new Date().toISOString() };
+    const next = [...updates, note];
+    if (editing) {
+      try { await updateThirdPartyStorage(editing.id, { updates: next }); await onNoteSaved(); }
+      catch (e: any) { toast.error(e?.message ?? "Couldn't save the note"); return; }
+    }
+    setUpdates(next);
+  }
   const pathPrefix = useRef(`third-party/${editing?.id ?? `new-${Date.now()}`}`).current;
 
   async function save() {
@@ -266,7 +247,10 @@ function StorageForm({ editing, onSaved, onCancel }: { editing: ThirdPartyStorag
         <FileDropField label="Unit Images" pathPrefix={pathPrefix} files={images} onChange={setImages} images />
         <FileDropField label="Documents" pathPrefix={`${pathPrefix}/docs`} files={docs} onChange={setDocs} />
         <Field label="Remarks" full><Textarea rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} className="resize-none text-sm" /></Field>
-        <UpdatesField updates={updates} onChange={setUpdates} />
+        <div className="col-span-2">
+          <NoteLog title="Updates" notes={updates} onAdd={addNote} placeholder="Add an update, e.g. called the company — unit confirmed empty"
+            emptyText="No updates yet." />
+        </div>
       </div>
 
       <div className="mt-5 flex justify-end gap-2">
@@ -399,7 +383,7 @@ export function ShipSyncThirdPartyStorage() {
           <DialogHeader><DialogTitle>{editing ? `Edit ${editing.ref_no}` : "New 3rd party storage"}</DialogTitle></DialogHeader>
           {editing !== undefined && (
             <StorageForm key={editing?.id ?? "new"} editing={editing}
-              onSaved={async () => { await reload(); setEditing(undefined); }} onCancel={() => setEditing(undefined)} />
+              onSaved={async () => { await reload(); setEditing(undefined); }} onCancel={() => setEditing(undefined)} onNoteSaved={reload} />
           )}
         </DialogContent>
       </Dialog>

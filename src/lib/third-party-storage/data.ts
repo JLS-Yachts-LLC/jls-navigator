@@ -18,7 +18,8 @@ export const TPS_CURRENCIES = ['AED', 'USD', 'EUR'] as const
 export type TpsCurrency = (typeof TPS_CURRENCIES)[number]
 
 export interface TpsFile { name: string; url: string }
-export interface TpsUpdate { date: string; owner: string; text: string }
+/** One dated note — same shape the Orbit note log reads (author, body, created_at). */
+export interface TpsUpdate { id: string; author: string; body: string; created_at: string }
 
 export interface ThirdPartyStorage {
   id: string

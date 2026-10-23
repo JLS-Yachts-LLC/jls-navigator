@@ -69,6 +69,6 @@ BEGIN
        'Q26-02176', 'The Box', null, '100 SQFT - JLT', '[]'::jsonb),
       (next_third_party_storage_ref(), 'GALVAS', 'Closed', null, '2025-11-20', '2026-03-30', '2026-03-31', 'D07', 'Al Quoz',
        '25-7411', 'E HOUSE - Self Storage', '+971 58 629 5123', 'Warehouse number 26, Gate number 15, Street 5b',
-       '[{"date":"2026-03-31","owner":"","text":"+44 7880 768945 - WHATSAPP - Chief Officer Olie - Confirmed that warehouse storage has been emptied."}]'::jsonb);
+       '[{"id":"6f1f2c0e-6b1a-4a55-9d0e-3f0b7a1c2d11","author":"Imported","body":"+44 7880 768945 - WHATSAPP - Chief Officer Olie - Confirmed that warehouse storage has been emptied.","created_at":"2026-03-31T00:00:00Z"}]'::jsonb);
   END IF;
 END $$;
