@@ -61,7 +61,9 @@ export function useYachts(): { yachts: YachtOption[]; loading: boolean } {
   return { yachts, loading };
 }
 
-const EXCLUDED = new Set(["cancelled", "sign off", "signed off"]);
+// Crew who have left the vessel — `off_signed` is what Sign On/Off writes;
+// the spaced spellings come from tracker imports (SD-0082).
+const EXCLUDED = new Set(["cancelled", "off_signed", "sign off", "signed off"]);
 
 /** Days-to-expiry → simple traffic-light state (expiring window = 90 days). */
 function expiryState(d: string | null): "active" | "expiring_soon" | "expired" | "none" {
