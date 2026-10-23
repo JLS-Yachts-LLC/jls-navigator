@@ -23,6 +23,7 @@ import { ShipSyncGatePassBoard } from "@/components/shipsync/ShipSyncGatePassBoa
 import { ShipSyncPrinters } from "@/components/shipsync/ShipSyncPrinters";
 import { TableSkeleton } from "@/components/shipsync/shared";
 import { FleetTrackingPage } from "@/components/fleet-tracking-page";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface ShipSyncData {
   /** Local Packages: the Local (and untagged) parcels only. */
@@ -75,12 +76,23 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
   const [data, setData] = useState<ShipSyncData>({ packages: [], deliverable: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the packages couldn't be loaded — without it Local Packages, Routing and Dispatched just look empty. */
+  const [packagesProblem, setPackagesProblem] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     // allSettled + per-source fallbacks: one failing/slow query degrades that
     // section gracefully instead of blanking or hanging the whole module.
+    let problem: string | null = null;
+    // The packages are the heart of this page, so a failure is retried once and, if it still fails, said out loud rather than shown as an empty list.
+    const loadPackagesOrSay = async (): Promise<ShipSyncData["packages"]> => {
+      try { return await withTimeout(loadDeliverablePackages(), 20000, "Packages"); }
+      catch {
+        try { return await withTimeout(loadDeliverablePackages(), 40000, "Packages"); }
+        catch (e: any) { problem = e?.message ?? "The packages didn't load"; return []; }
+      }
+    };
     const [deliverable, drivers, notes, destinations, schedule, vehicles, yachts] = await Promise.all([
-      withTimeout(loadDeliverablePackages(), 20000, "Packages").catch(() => [] as ShipSyncData["packages"]),
+      loadPackagesOrSay(),
       withTimeout(loadDrivers(), 20000, "Drivers").catch(() => [] as ShipSyncData["drivers"]),
       withTimeout(loadNotes(), 20000, "Notes").catch(() => [] as ShipSyncData["notes"]),
       withTimeout(loadDestinations(), 20000, "Destinations").catch(() => [] as ShipSyncData["destinations"]),
@@ -88,6 +100,12 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
       withTimeout(loadVehicles(), 20000, "Vehicles").catch(() => [] as ShipSyncData["vehicles"]),
       withTimeout(loadYachtNames(), 20000, "Yachts").catch(() => [] as string[]),
     ]);
+    // Signed out, the database answers with an empty list rather than an error — tell that apart from "no packages".
+    if (!problem && deliverable.length === 0) {
+      const { data: sess } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      if (!sess.session) problem = "Your sign-in has expired";
+    }
+    setPackagesProblem(problem);
     setData({ packages: deliverable.filter(isLocalPackage), deliverable, drivers, notes, destinations, schedule, vehicles, yachts });
   }, []);
 
@@ -149,6 +167,13 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
           fit and the overflow escapes to the New View shell's own <main>
           instead — which hides its scrollbar app-wide, so scrolling still
           worked but with no visible thumb (and no pds-scroll styling). */}
+      {packagesProblem && !loading && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-[13px] text-amber-600 dark:text-amber-400">
+          <span><strong>The packages didn't load</strong> — {packagesProblem}. Local Packages, Routing and Dispatched will look empty until they do.</span>
+          <button onClick={runReload} className="rounded-md border border-amber-500/40 px-2.5 py-1 font-medium hover:bg-amber-500/10">Try again</button>
+          {/expired/i.test(packagesProblem) && <button onClick={() => window.location.reload()} className="rounded-md border border-amber-500/40 px-2.5 py-1 font-medium hover:bg-amber-500/10">Refresh the page</button>}
+        </div>
+      )}
       <div className="pds-scroll min-h-0 min-w-0 flex-1 overflow-auto">
         {loading ? (
           <TableSkeleton />
