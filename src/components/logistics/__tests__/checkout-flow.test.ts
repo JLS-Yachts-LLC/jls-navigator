@@ -289,3 +289,25 @@ test("a delivery that has a driver but still reads Draft takes the added parcel 
   const runs = await drv.loadDriverRuns("D1");
   assert.deepEqual(runs.packages.map((p) => p.id).sort(), ["A1", "P1"]);
 });
+
+// ── cancelling a run from the office keeps the note and frees the parcels ────
+
+test("cancelling a run returns its parcels to Routing, keeps the note as cancelled with no driver, and leaves finished parcels' outcomes alone", async () => {
+  const sd = await import("@/lib/shipsync/data");
+  be.rows("shipsync_delivery_notes").push({ id: "N1", status: "dispatched", driver_id: "D1", number: "0001" });
+  be.rows("shipsync_packages").push(
+    { id: "A1", status: "assigned", delivery_note_id: "N1", driver_id: "D1", boat_name: "ORKA" },
+    { id: "A2", status: "out_for_delivery", delivery_note_id: "N1", driver_id: "D1", driver_scanned: true, warehouse_zone: "A1", boat_name: "ORKA" },
+    { id: "A3", status: "delivered", delivery_note_id: "N1", driver_id: "D1", boat_name: "ORKA" },
+  );
+  await sd.cancelRun("N1");
+  const note = be.rows("shipsync_delivery_notes")[0];
+  assert.equal(note.status, "cancelled");
+  assert.equal(note.driver_id, null);
+  assert.equal(pk("A1").status, "in_office");
+  assert.equal(pk("A1").delivery_note_id, null);
+  assert.equal(pk("A2").status, "in_storage", "it had a rack, so it goes back to the warehouse");
+  assert.equal(pk("A2").driver_scanned, false);
+  assert.equal(pk("A3").status, "delivered", "what was already delivered stays delivered");
+  assert.equal(pk("A3").delivery_note_id, null);
+});

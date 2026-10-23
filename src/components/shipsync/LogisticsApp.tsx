@@ -117,7 +117,7 @@ export function LogisticsApp() {
           <div className="flex h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : (
           <>
-            {(screen === "checkin" || screen === "packages") && <ShipSyncPackages data={data} reload={reload} />}
+            {(screen === "checkin" || screen === "packages") && <ShipSyncPackages data={{ ...data, packages: data.deliverable }} reload={reload} />}
             {screen === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
             {screen === "checkout" && <ShipSyncRouting data={data} reload={reload} />}
             {(screen === "deliveries" || screen === "notes") && <ShipSyncDispatch data={data} reload={reload} />}

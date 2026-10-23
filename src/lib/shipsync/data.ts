@@ -325,18 +325,34 @@ export async function unassignPackage(id: string): Promise<void> {
  *  Delivered-TBI / Completed / Collected / Refused only gets detached from
  *  the note (its FK would otherwise dangle) — its status and delivered_at
  *  are left alone, same reasoning as unassignPackage above. */
-export async function deleteRun(noteId: string): Promise<void> {
-  const { data: pkgs } = await db().from('shipsync_packages').select('id, warehouse_zone, status').eq('delivery_note_id', noteId)
+/** Send a run's parcels back to the routing pool and detach the finished ones — shared by deleting and cancelling a run. */
+async function releaseRunParcels(noteId: string): Promise<void> {
+  const { data: pkgs, error: readError } = await db().from('shipsync_packages').select('id, warehouse_zone, status').eq('delivery_note_id', noteId)
+  if (readError) throw readError
   const active = (pkgs ?? []).filter((p: any) => !DONE_STATUSES.includes(p.status as PackageStatus))
   const done = (pkgs ?? []).filter((p: any) => DONE_STATUSES.includes(p.status as PackageStatus))
   const inStorageIds = active.filter((p: any) => p.warehouse_zone).map((p: any) => p.id)
   const inOfficeIds = active.filter((p: any) => !p.warehouse_zone).map((p: any) => p.id)
   const doneIds = done.map((p: any) => p.id)
   const baseReset = { delivery_note_id: null, driver_id: null, scan_out_time: null, driver_scanned: false, driver_scan_out_time: null, delivered_at: null }
-  if (inStorageIds.length) await db().from('shipsync_packages').update({ ...baseReset, status: 'in_storage' as PackageStatus }).in('id', inStorageIds)
-  if (inOfficeIds.length) await db().from('shipsync_packages').update({ ...baseReset, status: 'in_office' as PackageStatus }).in('id', inOfficeIds)
-  if (doneIds.length) await db().from('shipsync_packages').update({ delivery_note_id: null, driver_id: null }).in('id', doneIds)
+  const writes: Promise<{ error: any }>[] = []
+  if (inStorageIds.length) writes.push(db().from('shipsync_packages').update({ ...baseReset, status: 'in_storage' as PackageStatus }).in('id', inStorageIds))
+  if (inOfficeIds.length) writes.push(db().from('shipsync_packages').update({ ...baseReset, status: 'in_office' as PackageStatus }).in('id', inOfficeIds))
+  if (doneIds.length) writes.push(db().from('shipsync_packages').update({ delivery_note_id: null, driver_id: null }).in('id', doneIds))
+  for (const r of await Promise.all(writes)) if (r.error) throw r.error
+}
+
+export async function deleteRun(noteId: string): Promise<void> {
+  await releaseRunParcels(noteId)
   const { error } = await db().from('shipsync_delivery_notes').delete().eq('id', noteId)
+  if (error) throw error
+}
+
+/** Cancel a run but keep its note on record: the parcels go back to the routing pool (they used to stay on a cancelled note, invisible
+ *  to Routing and Dispatched), and the note is closed off with no driver. */
+export async function cancelRun(noteId: string): Promise<void> {
+  await releaseRunParcels(noteId)
+  const { error } = await db().from('shipsync_delivery_notes').update({ status: 'cancelled', driver_id: null, awaiting_completion_at: null }).eq('id', noteId)
   if (error) throw error
 }
 

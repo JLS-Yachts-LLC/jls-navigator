@@ -28,7 +28,9 @@ interface RouteDraft {
   manualAssign: Record<string, string>; // parcel id -> stop (boat/location) it's been pulled into
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Today as the person planning sees it. toISOString() is UTC: in Dubai between midnight and 4am it said "yesterday", which also
+// picked the wrong weekday for the driver work-day check.
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const newRoute = (id: string, name: string): RouteDraft =>
   ({ id, name, driverId: "", vehicleId: "", boats: [], excluded: new Set(), expanded: new Set(), manualAssign: {} });
 
@@ -249,21 +251,48 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   const activeDrivers = useMemo(() => data.drivers.filter((d) => d.active), [data.drivers]);
 
+  // A saved draft can name a driver who has since been deactivated or a van that has gone. The picker then shows blank while the
+  // route still holds the old id — Dispatch stayed enabled and the work-day check was skipped. Drop what no longer exists.
+  useEffect(() => {
+    setRoutes((rs) => {
+      let changed = false;
+      const next = rs.map((r) => {
+        const driverId = r.driverId && !activeDrivers.some((d) => d.id === r.driverId) ? "" : r.driverId;
+        const vehicleId = r.vehicleId && !data.vehicles.some((v) => v.id === r.vehicleId) ? "" : r.vehicleId;
+        if (driverId !== r.driverId || vehicleId !== r.vehicleId) changed = true;
+        return driverId === r.driverId && vehicleId === r.vehicleId ? r : { ...r, driverId, vehicleId };
+      });
+      return changed ? next : rs;
+    });
+  }, [activeDrivers, data.vehicles]);
+
   // A stop's parcels: its own client's waiting parcels, MINUS any that were
   // manually pulled into a different stop that's still on this route, PLUS
   // any other client's parcels manually pulled into this stop instead. A
   // parcel only ever counts once per route — pulling it into one stop takes
   // it off wherever it would otherwise show. Includes unticked (excluded)
   // parcels, so the checklist UI can still show and re-tick them.
+  /** Parcels another draft route has already pulled into one of its stops — they can only go on one route. */
+  function claimedElsewhere(r: RouteDraft): Set<string> {
+    const taken = new Set<string>();
+    for (const other of routes) {
+      if (other.id === r.id) continue;
+      for (const [id, to] of Object.entries(other.manualAssign)) if (other.boats.includes(to)) taken.add(id);
+    }
+    return taken;
+  }
+
   function stopAllParcels(r: RouteDraft, boat: string): ShipSyncPackage[] {
     const byId = new Map<string, ShipSyncPackage>();
+    const taken = claimedElsewhere(r);
     for (const p of parcelsByBoat.get(boat) ?? []) {
+      if (taken.has(p.id)) continue;
       const to = r.manualAssign[p.id];
       const pulledElsewhere = to && to !== boat && r.boats.includes(to);
       if (!pulledElsewhere) byId.set(p.id, p);
     }
     for (const p of unrouted) {
-      if (r.manualAssign[p.id] === boat) byId.set(p.id, p);
+      if (r.manualAssign[p.id] === boat && !taken.has(p.id)) byId.set(p.id, p);
     }
     // Order by the parcel's own boat (so pulled-in packages from another
     // client group together instead of interleaving), then oldest-received
@@ -289,7 +318,9 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
 
   /** Pull every one of `sourceClient`'s currently-waiting parcels into `targetStop`. */
   function pullInClient(routeId: string, targetStop: string, sourceClient: string) {
-    const toPull = parcelsByBoat.get(sourceClient) ?? [];
+    const route = routes.find((x) => x.id === routeId);
+    const taken = route ? claimedElsewhere(route) : new Set<string>();
+    const toPull = (parcelsByBoat.get(sourceClient) ?? []).filter((p) => !taken.has(p.id));
     if (toPull.length === 0) return;
     patchRoute(routeId, (r) => {
       const manualAssign = { ...r.manualAssign };
@@ -549,9 +580,9 @@ export function ShipSyncRouting({ data, reload }: { data: ShipSyncData; reload: 
                                     // putting the same parcels on two delivery notes at
                                     // once with no conflict check.
                                     items: Array.from(parcelsByBoat.keys())
-                                      .filter((b) => b !== boat && !assignedBoats.has(b))
+                                      .filter((b) => b !== boat && !assignedBoats.has(b) && (parcelsByBoat.get(b) ?? []).some((p) => !claimedElsewhere(r).has(p.id)))
                                       .sort((a, b2) => a.localeCompare(b2))
-                                      .map((b) => ({ value: b, label: `${b === UNASSIGNED ? "No client set" : b} (${parcelsByBoat.get(b)!.length})` })),
+                                      .map((b) => ({ value: b, label: `${b === UNASSIGNED ? "No client set" : b} (${(parcelsByBoat.get(b) ?? []).filter((p) => !claimedElsewhere(r).has(p.id)).length})` })),
                                   }]}
                                 />
                               </div>

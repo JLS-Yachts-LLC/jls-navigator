@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { StatusBadge } from "@/components/shipsync/shared";
 import { AddParcelsDialog } from "@/components/shipsync/AddParcelsDialog";
 import {
-  createDeliveryNote, setNoteDriver, unassignPackage, deleteRun, saveDestination as saveBoatDestination,
+  createDeliveryNote, setNoteDriver, unassignPackage, deleteRun, cancelRun, saveDestination as saveBoatDestination,
 } from "@/lib/shipsync/data";
 import { supabase } from "@/integrations/supabase/client";
 import { useGoogleMaps } from "@/lib/google-maps";
@@ -23,7 +23,9 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   const [busy, setBusy] = useState(false);
   const [newBoat, setNewBoat] = useState("");
 
-  const openNotes = useMemo(() => data.notes.filter((n) => n.status !== "delivered" && n.status !== "cancelled"), [data.notes]);
+  // Delivered and cancelled notes drop off the list; tick "Show finished" to find one again (its PDFs, its proof of delivery).
+  const [showFinished, setShowFinished] = useState(false);
+  const openNotes = useMemo(() => data.notes.filter((n) => showFinished || (n.status !== "delivered" && n.status !== "cancelled")), [data.notes, showFinished]);
   const sel = data.notes.find((n) => n.id === selId) ?? null;
   const pkgsOnNote = useMemo(() => data.deliverable.filter((p) => p.delivery_note_id === selId), [data.deliverable, selId]);
   // Per-boat parcel counts for the selected note (a route can span several boats).
@@ -153,7 +155,9 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     try { const n = await createDeliveryNote(newBoat.trim().toUpperCase()); setNewBoat(""); await reload(); setSelId(n.id); toast.success(`Delivery note ${n.number} created`); }
     catch (e: any) { toast.error(e?.message ?? "Failed"); } finally { setBusy(false); }
   }
-  async function removeFromNote(pkgId: string) { await unassignPackage(pkgId); await reload(); }
+  async function removeFromNote(pkgId: string) {
+    try { await unassignPackage(pkgId); await reload(); } catch (e: any) { toast.error(e?.message ?? "Could not take that parcel off the note"); }
+  }
   async function doDeleteRun() {
     if (!sel) return;
     setBusy(true);
@@ -166,7 +170,8 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   }
   async function changeDriver(driverId: string) {
     if (!sel) return;
-    await setNoteDriver(sel.id, driverId === "none" ? null : driverId); await reload();
+    try { await setNoteDriver(sel.id, driverId === "none" ? null : driverId); await reload(); }
+    catch (e: any) { toast.error(e?.message ?? "Could not change the driver"); }
   }
   /** Use a saved destination as this note's destination. Picking another place
    *  (a hotel, the warehouse) must not overwrite the boat's own saved berth. */
@@ -190,7 +195,9 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
     // up blank again. Single-boat notes only; a multi-boat note has no one boat to
     // attribute the address to.
     if (sel.boat_name) {
-      const destPatch: Record<string, unknown> = { type: "vessel" };
+      // Keep what the place already is: a Location saved through here used to be turned into a vessel and vanish from the Locations tab.
+      const existingPlace = data.destinations.find((d) => d.boat_name.trim().toLowerCase() === (sel.boat_name ?? "").trim().toLowerCase());
+      const destPatch: Record<string, unknown> = { type: (existingPlace as any)?.type ?? "vessel" };
       if ("destination_address" in patch) destPatch.address = patch.destination_address;
       if ("destination_lat" in patch) destPatch.lat = patch.destination_lat;
       if ("destination_lng" in patch) destPatch.lng = patch.destination_lng;
@@ -201,9 +208,24 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
   saveDestinationRef.current = saveDestination;
   async function setNoteStatus(status: string) {
     if (!sel) return;
-    await (supabase as any).from("shipsync_delivery_notes").update({ status, ...(status === "delivered" ? { delivered_at: new Date().toISOString() } : {}) }).eq("id", sel.id);
-    if (status === "delivered") await (supabase as any).from("shipsync_packages").update({ status: "delivered", delivered_at: new Date().toISOString() }).eq("delivery_note_id", sel.id);
-    await reload();
+    try {
+      if (status === "cancelled") {
+        // Cancelling hands the parcels back to Routing; it used to leave them on a note nobody could see.
+        await cancelRun(sel.id);
+        toast.success(`DN-${sel.number} cancelled — its parcels are back in Routing`);
+      } else {
+        const now = new Date().toISOString();
+        const { error } = await (supabase as any).from("shipsync_delivery_notes").update({ status, ...(status === "delivered" ? { delivered_at: now } : {}) }).eq("id", sel.id);
+        if (error) throw error;
+        // Only parcels still on their way are marked delivered — one already Refused or Collected keeps its own outcome.
+        if (status === "delivered") {
+          const { error: pe } = await (supabase as any).from("shipsync_packages").update({ status: "delivered", delivered_at: now })
+            .eq("delivery_note_id", sel.id).in("status", ["in_office", "in_storage", "assigned", "out_for_delivery"]);
+          if (pe) throw pe;
+        }
+      }
+      await reload();
+    } catch (e: any) { toast.error(e?.message ?? "Could not change the note's status"); }
   }
 
   const [pdfBusy, setPdfBusy] = useState<string | null>(null);
@@ -248,8 +270,12 @@ export function ShipSyncDispatch({ data, reload }: { data: ShipSyncData; reload:
           <datalist id="ss-disp-boats">{boats.map((b) => <option key={b} value={b} />)}</datalist>
           <Button size="sm" className="h-9 gap-1.5 shrink-0" onClick={makeNote} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Note</Button>
         </div>
+        <label className="mb-2 flex cursor-pointer select-none items-center gap-2 text-[13px] text-muted-foreground">
+          <input type="checkbox" checked={showFinished} onChange={(e) => setShowFinished(e.target.checked)} className="h-3.5 w-3.5 accent-primary" />
+          Show delivered and cancelled notes
+        </label>
         <div className="flex flex-col gap-1.5">
-          {openNotes.length === 0 && <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No open delivery notes.</div>}
+          {openNotes.length === 0 && <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">{showFinished ? "No delivery notes." : "No open delivery notes."}</div>}
           {openNotes.map((n) => {
             const notePkgs = data.deliverable.filter((p) => p.delivery_note_id === n.id);
             const count = notePkgs.length;

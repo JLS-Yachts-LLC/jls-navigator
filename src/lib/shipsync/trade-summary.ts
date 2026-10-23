@@ -131,12 +131,15 @@ export function upcomingExports(rows: TradeRow[]): UpcomingExport[] {
  * Local parcels go as they are. Import and Transit ones only while Monday doesn't say they are finished or cancelled — their
  * own status can still read "in office" long after delivery. Export and EDAS shipments leave by freight, not on a van.
  */
+/** Monday statuses that mean the shipment is not here yet. Its own status still reads "in office" from the moment it is logged. */
+const NOT_ARRIVED = /^(new request|intransit|incoming|collected from origin|arrived in uae)$/i
+
 export function isRoutable(p: TradeRow & { delivery_note_id?: string | null }): boolean {
   if (p.delivery_note_id) return false
   if ((p.extra as { warehouse_ref?: string } | null)?.warehouse_ref) return false
   if (p.status !== 'in_office' && p.status !== 'in_storage') return false
   const trade = p.local_import
   if (!trade || trade === 'Local') return true
-  if (trade === 'Import' || trade === 'Transit') return progressOf(p) === 'pending'
+  if (trade === 'Import' || trade === 'Transit') return progressOf(p) === 'pending' && !NOT_ARRIVED.test((mondayOf(p).STATUS ?? '').trim())
   return false
 }

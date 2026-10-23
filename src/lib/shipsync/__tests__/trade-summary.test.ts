@@ -147,3 +147,13 @@ test("the Incoming list is only shipments whose status is Incoming, not ones alr
   ]);
   assert.deepEqual(list.map((r) => r.client), ["ON ITS WAY", "ALSO INCOMING"]);
 });
+
+test("Import and Transit shipments whose status says they have not arrived are not waiting to be routed", () => {
+  for (const status of ["Incoming", "Intransit", "New Request", "Collected from Origin", "Arrived in UAE"]) {
+    assert.equal(isRoutable(row({ local_import: "Import" }, { STATUS: status }, "IMPORT")), false, status);
+  }
+  for (const status of ["Warehouse", "Office", "Out for Delivery", ""]) {
+    assert.equal(isRoutable(row({ local_import: "Import" }, status ? { STATUS: status } : {}, "IMPORT")), true, status || "no status");
+  }
+  assert.equal(isRoutable(row({ local_import: "Local" }, { STATUS: "Incoming" })), true, "a Local parcel has no Monday status to go by");
+});
