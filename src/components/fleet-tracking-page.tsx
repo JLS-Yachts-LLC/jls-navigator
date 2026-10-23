@@ -8,9 +8,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Provider monitor link kept as a fallback "full view".
-const MONITOR_URL = "https://tracking.mygps.ae/backend/monitor_token.php?token=fd25f0cce7423608b3fa820bb6a92931";
-
 // Client-only Leaflet map (touches window → must not render during SSR).
 const FleetMap = lazy(() => import("@/components/fleet-map"));
 
@@ -21,6 +18,8 @@ export function FleetTrackingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  // The provider's own "full view" link: handed over by the server, to signed-in staff only.
+  const [monitorUrl, setMonitorUrl] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("vehicle");
   const [hidden, setHidden] = useState<Set<number>>(new Set());
   const [q, setQ] = useState("");
@@ -38,9 +37,10 @@ export function FleetTrackingPage() {
   async function load(initial: boolean) {
     if (initial) setLoading(true);
     try {
-      const res = await (getFleetPositions as any)() as { vehicles: FleetVehicle[]; fetchedAt: string };
+      const res = await (getFleetPositions as any)() as { vehicles: FleetVehicle[]; fetchedAt: string; monitorUrl: string | null };
       setVehicles(res.vehicles);
       setFetchedAt(res.fetchedAt);
+      setMonitorUrl(res.monitorUrl ?? null);
       setError(null);
     } catch (e: any) {
       setError(e?.message ?? "Could not load vehicle positions.");
@@ -98,9 +98,11 @@ export function FleetTrackingPage() {
           <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs" onClick={() => load(true)} disabled={loading}>
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} /> Refresh
           </Button>
-          <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs" asChild>
-            <a href={MONITOR_URL} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Open Full View</a>
-          </Button>
+          {monitorUrl && (
+            <Button size="sm" variant="outline" className="h-9 gap-1.5 text-xs" asChild>
+              <a href={monitorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /> Open Full View</a>
+            </Button>
+          )}
         </div>
       </header>
 

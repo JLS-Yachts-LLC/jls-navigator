@@ -13,7 +13,10 @@
  * position is persisted onto the vehicle record so the Vehicles page shows it.
  */
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import { requireStaff } from "@/lib/guest/guest-auth.server";
 import { fetchAllRows } from "./fetch-all";
 
 const BASE = "https://tracking.mygps.ae/backend";
@@ -112,14 +115,29 @@ async function persistLocations(vehicles: FleetVehicle[], idx: VehIdx): Promise<
   return updates.length;
 }
 
+/**
+ * The provider's own "full view" page, opened from the Van Tracking tab. It carries an access token, so it lives here on the
+ * server (set MYGPS_MONITOR_URL to change or rotate it) and is only handed to a signed-in member of staff — it used to be
+ * written into the page's source, where anyone could read it.
+ */
+const monitorUrl = (): string | null =>
+  (process.env.MYGPS_MONITOR_URL as string | undefined)
+  ?? "https://tracking.mygps.ae/backend/monitor_token.php?token=fd25f0cce7423608b3fa820bb6a92931";
+
 // Page data: enriched vehicles, and persist the latest fix (best-effort).
+// Staff only: this returns live positions with drivers' names and phone numbers, and writes to crew_vehicles. The caller's
+// login rides along (attachSupabaseAuth); client-portal and guest logins, and anyone not signed in, are refused.
 export const getFleetPositions = createServerFn({ method: "GET" })
-  .handler(async (): Promise<{ vehicles: FleetVehicle[]; fetchedAt: string }> => {
+  .middleware([attachSupabaseAuth])
+  .handler(async (): Promise<{ vehicles: FleetVehicle[]; fetchedAt: string; monitorUrl: string | null }> => {
+    const request = getRequest();
+    const gate = request ? await requireStaff(request) : null;
+    if (!gate?.ok) throw new Error("Please sign in to Polaris as a member of staff to see van tracking.");
     const vehicles = await fetchFleetRaw();
     const idx = await loadVehicleIndex();
     enrich(vehicles, idx);
     try { await persistLocations(vehicles, idx); } catch { /* persistence is best-effort; don't fail the read */ }
-    return { vehicles, fetchedAt: new Date().toISOString() };
+    return { vehicles, fetchedAt: new Date().toISOString(), monitorUrl: monitorUrl() };
   });
 
 // Cron entry point (called from the Worker's scheduled handler).
