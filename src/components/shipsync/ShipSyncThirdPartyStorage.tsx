@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Archive, ArrowDownToLine, ImagePlus, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Archive, ArrowDownToLine, FileText, ImagePlus, Loader2, Pencil, Plus, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SignedImage } from "@/components/ui/signed-file";
+import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
 import { Chip, EmptyState, PillTabs, RowMenu, TableSkeleton, downloadCsv, useSearchShortcut } from "@/components/shipsync/shared";
-import { AttachmentsField, Field } from "@/components/shipsync/warehouse/forms";
+import { Field } from "@/components/shipsync/warehouse/forms";
 import {
   TPS_CURRENCIES, TPS_STATUSES, createThirdPartyStorage, deleteThirdPartyStorage, dueFlag, loadThirdPartyStorage,
   updateThirdPartyStorage, type ThirdPartyStorage, type TpsCurrency, type TpsFile, type TpsStatus, type TpsUpdate,
@@ -63,36 +63,80 @@ const fromRecord = (r: ThirdPartyStorage): FormState => ({
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const nz = (v: string) => v.trim() || null;
 
-/** Several pictures of the unit — thumbnails you can remove, plus a picker. */
-function UnitImagesField({ pathPrefix, images, onChange }: { pathPrefix: string; images: TpsFile[]; onChange: (v: TpsFile[]) => void }) {
-  const [busy, setBusy] = useState(false);
-  async function pick(list: FileList | null) {
-    const picked = Array.from(list ?? []);
+/**
+ * Drop zone for any number of files at once — drag them onto it or click to choose. Files upload straight away and show as
+ * thumbnails (images) or chips (documents), each removable. `images` limits the zone to pictures.
+ */
+function FileDropField({ label, pathPrefix, files, onChange, images }: {
+  label: string; pathPrefix: string; files: TpsFile[]; onChange: (v: TpsFile[]) => void; images?: boolean;
+}) {
+  const [busy, setBusy] = useState(0);
+  const [over, setOver] = useState(false);
+  const depth = useRef(0); // dragenter/leave fire for every child element — count them so the highlight doesn't flicker
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  async function add(list: FileList | File[] | null) {
+    let picked = Array.from(list ?? []);
+    if (images) {
+      const pics = picked.filter((f) => f.type.startsWith("image/"));
+      if (pics.length < picked.length) toast.error("Only image files can go here");
+      picked = pics;
+    }
     if (!picked.length) return;
-    setBusy(true);
-    try {
-      const up = await Promise.all(picked.map(async (f) => ({ name: f.name, url: await uploadWarehouseFile(f, `${pathPrefix}/unit-${Date.now()}-${f.name}`) })));
-      onChange([...images, ...up]);
-    } catch (e: any) { toast.error(e?.message ?? "Upload failed"); }
-    finally { setBusy(false); }
+    setBusy((n) => n + picked.length);
+    const stamp = Date.now();
+    // Each file lands as soon as it's up, so a failed one doesn't lose the rest.
+    await Promise.all(picked.map(async (f, i) => {
+      try {
+        const url = await uploadWarehouseFile(f, `${pathPrefix}/${images ? "unit" : "doc"}-${stamp}-${i}-${f.name}`);
+        onChange([...filesRef.current, { name: f.name, url }]);
+        filesRef.current = [...filesRef.current, { name: f.name, url }];
+      } catch (e: any) { toast.error(`${f.name}: ${e?.message ?? "upload failed"}`); }
+      finally { setBusy((n) => n - 1); }
+    }));
   }
+
   return (
-    <Field label="Unit Images" full>
-      <div className="flex flex-wrap items-center gap-2">
-        {images.map((im, i) => (
-          <div key={im.url} className="relative">
-            <SignedImage stored={im.url} alt={im.name} className="h-16 w-16 rounded border border-border object-cover" />
-            <button type="button" aria-label={`Remove ${im.name}`} onClick={() => onChange(images.filter((_, j) => j !== i))}
-              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-destructive">
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-dashed border-border px-2.5 py-1.5 text-[12px] text-muted-foreground hover:border-primary hover:text-primary">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} Add images
-          <input type="file" accept="image/*" multiple className="hidden" disabled={busy} onChange={(e) => void pick(e.target.files)} />
-        </label>
-      </div>
+    <Field label={label} full>
+      <label
+        onDragEnter={(e) => { e.preventDefault(); depth.current++; setOver(true); }}
+        onDragLeave={() => { depth.current = Math.max(0, depth.current - 1); if (depth.current === 0) setOver(false); }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); depth.current = 0; setOver(false); void add(e.dataTransfer.files); }}
+        className={cn(
+          "flex cursor-pointer flex-col items-center gap-1 rounded-lg border-2 border-dashed px-4 py-4 text-center text-[13px] transition-colors",
+          over ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/60 hover:text-foreground",
+        )}>
+        {busy > 0 ? <Loader2 className="h-5 w-5 animate-spin" /> : <UploadCloud className="h-5 w-5" />}
+        <span>{busy > 0 ? `Uploading ${busy} file${busy === 1 ? "" : "s"}…` : over ? "Drop to add" : `Drag ${images ? "images" : "files"} here, or click to choose — as many as you like`}</span>
+        <input type="file" multiple accept={images ? "image/*" : undefined} className="hidden"
+          onChange={(e) => { void add(e.target.files); e.target.value = ""; }} />
+      </label>
+      {files.length > 0 && (images ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {files.map((im, i) => (
+            <div key={im.url} className="relative">
+              <SignedImage stored={im.url} alt={im.name} className="h-16 w-16 rounded border border-border object-cover" />
+              <button type="button" aria-label={`Remove ${im.name}`} onClick={() => onChange(files.filter((_, j) => j !== i))}
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:text-destructive">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {files.map((f, i) => (
+            <SignedAnchor key={f.url} stored={f.url} title={f.name}
+              className="inline-flex max-w-[220px] items-center gap-1 rounded border border-border bg-muted/30 px-2 py-1 text-[12px] hover:bg-primary/5">
+              <FileText className="h-3 w-3 shrink-0 text-primary" /> <span className="truncate">{f.name}</span>
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={(e) => { e.preventDefault(); onChange(files.filter((_, j) => j !== i)); }}
+                className="shrink-0 text-muted-foreground/60 hover:text-destructive"><X className="h-3 w-3" /></button>
+            </SignedAnchor>
+          ))}
+        </div>
+      ))}
     </Field>
   );
 }
@@ -215,12 +259,12 @@ function StorageForm({ editing, onSaved, onCancel }: { editing: ThirdPartyStorag
         {text("contactNumber", "Contact Number")}
         {text("website", "Website", { placeholder: "https://…" })}
         {text("companyEmail", "Email", { type: "email" })}
-        <AttachmentsField label="Storage Company Quotation" pathPrefix={`${pathPrefix}/quote`} files={quoteFiles} onChange={setQuoteFiles} />
+        <FileDropField label="Storage Company Quotation" pathPrefix={`${pathPrefix}/quote`} files={quoteFiles} onChange={setQuoteFiles} />
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3">
-        <UnitImagesField pathPrefix={pathPrefix} images={images} onChange={setImages} />
-        <AttachmentsField label="Documents" pathPrefix={`${pathPrefix}/docs`} files={docs} onChange={setDocs} />
+        <FileDropField label="Unit Images" pathPrefix={pathPrefix} files={images} onChange={setImages} images />
+        <FileDropField label="Documents" pathPrefix={`${pathPrefix}/docs`} files={docs} onChange={setDocs} />
         <Field label="Remarks" full><Textarea rows={2} value={f.remarks} onChange={(e) => set({ remarks: e.target.value })} className="resize-none text-sm" /></Field>
         <UpdatesField updates={updates} onChange={setUpdates} />
       </div>
