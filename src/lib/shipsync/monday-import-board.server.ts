@@ -27,6 +27,7 @@
  */
 import { createServerFn } from '@tanstack/react-start'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
+import { mergeMondayRow } from '@/lib/shipsync/monday-merge'
 import { storageRef } from '@/lib/signed-url'
 
 const db = () => supabaseAdmin as any
@@ -297,7 +298,12 @@ function mergeOntoExisting(
     delete newExtra.monday_group_title
     delete newExtra.monday_group_position
   }
-  merged.extra = { ...(existingExtra ?? {}), ...newExtra }
+  merged.extra = {
+    ...(existingExtra ?? {}), ...newExtra,
+    // A value edited here stays until Monday changes that cell (see monday-merge.ts).
+    monday: mergeMondayRow(existingExtra?.monday, oldMondayRow, newMondayRow),
+    monday_synced: newMondayRow,
+  }
   return merged
 }
 
@@ -364,6 +370,8 @@ async function importInner(): Promise<MondayImportBoardResult> {
         // from "a person moved it," since both write the same fields.
         monday_synced_group_title: item.group?.title ?? null,
         monday: row,
+        // Monday's row exactly as it sent it, so a later sync can tell a cell edited here from one Monday changed.
+        monday_synced: row,
         imported_at: now,
       },
     }
@@ -372,7 +380,7 @@ async function importInner(): Promise<MondayImportBoardResult> {
     const existingId = idByMonday.get(item.id) ?? (awb ? idByBarcode.get(awb) : undefined)
     if (existingId) {
       const existingExtra = extraById.get(existingId)
-      const oldMondayRow = (existingExtra?.monday ?? {}) as Record<string, string>
+      const oldMondayRow = (existingExtra?.monday_synced ?? existingExtra?.monday ?? {}) as Record<string, string>
       toUpdate.push({ id: existingId, itemName: item.name, record: keepPhoneFields(mergeOntoExisting(record, existingExtra, oldMondayRow, row, item.name), existingExtra, tradeTypeById.get(existingId)) })
       // Claim the AWB so two Monday items sharing one never fight over the row.
       if (awb) idByBarcode.delete(awb)

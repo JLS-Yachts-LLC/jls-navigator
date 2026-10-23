@@ -76,7 +76,8 @@ export function PackageDetailPanel({ pkg, note, driver, onClose, onEdit, onAddFi
   note?: ShipSyncDeliveryNote;
   driver?: ShipSyncDriver;
   onClose: () => void;
-  onEdit: (p: ShipSyncPackage) => void;
+  /** Omit where the screen edits in place (Import, Export): the Edit button is then not shown. */
+  onEdit?: (p: ShipSyncPackage) => void;
   onAddFiles: (p: ShipSyncPackage) => void;
   onRemoveFile: (p: ShipSyncPackage, index: number) => void;
   onDelete: (p: ShipSyncPackage) => void;
@@ -106,7 +107,7 @@ export function PackageDetailPanel({ pkg, note, driver, onClose, onEdit, onAddFi
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Button type="button" size="sm" className="gap-1.5" onClick={() => onEdit(pkg)}><Pencil className="h-3.5 w-3.5" /> Edit details</Button>
+                  {onEdit && <Button type="button" size="sm" className="gap-1.5" onClick={() => onEdit(pkg)}><Pencil className="h-3.5 w-3.5" /> Edit details</Button>}
                   <DialogPrimitive.Close className="rounded-md p-1.5 text-muted-foreground transition-colors duration-150 hover:bg-white/10 hover:text-foreground" aria-label="Close">
                     <X className="h-4 w-4" />
                   </DialogPrimitive.Close>

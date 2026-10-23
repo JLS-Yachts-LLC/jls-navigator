@@ -36,10 +36,11 @@
  * hijacks sticky onto that box's own, never-scrolling viewport).
  */
 import { SignedAnchor, SignedImage } from "@/components/ui/signed-file";
+import { PackageDetailPanel } from "@/components/shipsync/PackageDetailPanel";
 import { AwbScanDialog, type AwbScan } from "@/components/shipsync/AwbScanDialog";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Loader2, Search, ChevronDown, ChevronRight, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine, Camera } from "lucide-react";
+import { Loader2, PanelRightOpen, Search, ChevronDown, ChevronRight, FileText, ArrowDownToLine, Plus, Trash2, X, ScanLine, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -51,8 +52,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv, PillTabs, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle } from "@/components/shipsync/shared";
-import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile } from "@/lib/shipsync/data";
+import { fmtDate, mondayRow, extraMondayColumns, DocumentDropzoneDialog, TableChartToggle, ShipSyncChartsPanel, downloadCsv, PillTabs, ShipmentFilters, matchesWhen, clientsOf, useSearchShortcut, type When, FilesCell, TableSkeleton, RowMenu, semanticGroupBorder, semanticStatusColor, useColumnLines, ColumnLinesToggle, PhotoUploadCell } from "@/components/shipsync/shared";
+import { loadImportPackages, patchPackage, createPackage, deletePackage, addPackageDocuments, removePackageDocument, uploadShipSyncFile, uploadShipSyncImage } from "@/lib/shipsync/data";
 import { nextItemId, type ShipSyncPackage } from "@/lib/shipsync/model";
 import { pushShipmentStatus } from "@/lib/shipsync/monday-import-board.server";
 
@@ -316,6 +317,7 @@ export function ShipSyncImportBoard() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(null);
   const [docTarget, setDocTarget] = useState<ShipSyncPackage | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [paymentCopyTarget, setPaymentCopyTarget] = useState<ShipSyncPackage | null>(null);
   const [view, setView] = useState<"table" | "chart">("table");
   const [lines, setLines] = useColumnLines();
@@ -381,12 +383,14 @@ export function ShipSyncImportBoard() {
     await commit(p, `${p.id}:paymentCopy`, { extra: { ...extraOf(p), payment_copies, monday: { ...mondayRow(p), "PAYMENT COPY": "" } } } as any);
   }
 
-  async function uploadPhoto(p: ShipSyncPackage, file: File | undefined) {
+  /** Add or replace a shipment's received or delivery photo — from its table cell or its side panel. Shrunk like every other photo. */
+  async function uploadPackagePhoto(p: ShipSyncPackage, file: File | undefined, kind: "item" | "delivery" = "item") {
     if (!file) return;
-    setSavingCell(`${p.id}:photo`);
+    const cell = `${p.id}:${kind === "item" ? "photo" : "deliveryPhoto"}`;
+    setSavingCell(cell);
     try {
-      const url = await uploadShipSyncFile(file, `packages/${p.id}/item_${Date.now()}.jpg`);
-      await commit(p, `${p.id}:photo`, { item_photo_url: url });
+      const url = await uploadShipSyncImage(file, `packages/${p.id}/${kind}_${Date.now()}.jpg`);
+      await commit(p, cell, kind === "item" ? { item_photo_url: url } : { delivery_photo_url: url });
     } catch (e: any) {
       toast.error(e?.message ?? "Couldn't upload photo");
     } finally {
@@ -801,26 +805,9 @@ export function ShipSyncImportBoard() {
                               );
                             }
                             if (c.kind === "photo") {
-                              const url = p.item_photo_url;
-                              const uploading = savingCell === `${p.id}:photo`;
                               return (
                                 <td key="photo" className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
-                                  {!url ? (
-                                    <label className="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-primary hover:text-primary">
-                                      {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />} Add photo
-                                      <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
-                                    </label>
-                                  ) : (
-                                    <div className="group/photo relative inline-block">
-                                      <SignedAnchor stored={url}>
-                                        <SignedImage stored={url} alt="Item photo" className="h-8 w-8 rounded object-cover border border-border hover:ring-2 hover:ring-primary/40" />
-                                      </SignedAnchor>
-                                      <label className="absolute -right-1 -top-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground/70 opacity-0 hover:text-primary group-hover/photo:opacity-100">
-                                        {uploading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Camera className="h-2.5 w-2.5" />}
-                                        <input type="file" accept="image/*" className="hidden" disabled={uploading} onChange={(e) => void uploadPhoto(p, e.target.files?.[0])} />
-                                      </label>
-                                    </div>
-                                  )}
+                                  <PhotoUploadCell stored={p.item_photo_url} alt="Item photo" uploading={savingCell === `${p.id}:photo`} onFile={(f) => void uploadPackagePhoto(p, f, "item")} />
                                 </td>
                               );
                             }
@@ -855,6 +842,7 @@ export function ShipSyncImportBoard() {
                           ))}
                           <td className="px-1 py-0.5" onClick={(e) => e.stopPropagation()}>
                             <RowMenu items={[
+                              { label: "View details", icon: PanelRightOpen, onSelect: () => setDetailId(p.id) },
                               { label: "Add files", icon: FileText, onSelect: () => setDocTarget(p) },
                               { label: "Delete", icon: Trash2, danger: true, onSelect: () => setConfirmDeleteIds([p.id]) },
                             ]} />
@@ -934,6 +922,23 @@ export function ShipSyncImportBoard() {
       <DocumentDropzoneDialog open={!!paymentCopyTarget} onClose={() => setPaymentCopyTarget(null)}
         onUpload={(files) => uploadPaymentCopy(paymentCopyTarget!, files)} title="Attach payment copy" />
 
+      {/* A shipment's whole story — delivery photo, signature, files, history — without leaving the board. */}
+      {(() => {
+        const detail = detailId ? rows.find((r) => r.id === detailId) ?? null : null;
+        return (
+          <PackageDetailPanel
+            pkg={detail}
+            driver={detail && mondayText(detail, "DRIVER") ? ({ name: mondayText(detail, "DRIVER") } as any) : undefined}
+            onClose={() => setDetailId(null)}
+            onAddFiles={(x) => setDocTarget(x)}
+            onRemoveFile={(x, i) => removeDocument(x, i)}
+            onDelete={(x) => { setDetailId(null); setConfirmDeleteIds([x.id]); }}
+            onUploadPhoto={(x, f, kind) => void uploadPackagePhoto(x, f, kind)}
+            photoBusy={detail ? (savingCell === `${detail.id}:photo` ? "item" : savingCell === `${detail.id}:deliveryPhoto` ? "delivery" : null) : null}
+          />
+        );
+      })()}
+
       <AlertDialog open={!!confirmDeleteIds} onOpenChange={(o) => !o && setConfirmDeleteIds(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -941,6 +946,11 @@ export function ShipSyncImportBoard() {
             <AlertDialogDescription>
               {deleteTarget ? `${deleteTarget.barcode ?? deleteTarget.boat_name ?? "This shipment"} will be permanently removed.`
                 : `${confirmDeleteIds?.length ?? 0} shipments will be permanently removed.`}
+              {(confirmDeleteIds ?? []).some((id) => { const r = rows.find((x) => x.id === id); return !!(r && (r.extra as any)?.monday_item_id); }) && (
+                <span className="mt-2 block font-medium text-amber-500">
+                  This came from Monday. Removing it here does not remove it from Monday, so it comes back at the next hourly sync — delete it on Monday too if it should be gone.
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -439,6 +439,11 @@ export function ShipSyncEdasBoard() {
             <AlertDialogDescription>
               {deleteTarget ? `${deleteTarget.barcode ?? deleteTarget.boat_name ?? "This entry"} will be permanently removed.`
                 : `${confirmDeleteIds?.length ?? 0} entries will be permanently removed.`}
+              {(confirmDeleteIds ?? []).some((id) => { const r = rows.find((x) => x.id === id); return !!(r && (r.extra as any)?.monday_item_id); }) && (
+                <span className="mt-2 block font-medium text-amber-500">
+                  This came from Monday. Removing it here does not remove it from Monday, so it comes back at the next hourly sync — delete it on Monday too if it should be gone.
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
