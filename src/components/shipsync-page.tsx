@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, FileCheck2, LayoutDashboard, DoorOpen, Printer } from "lucide-react";
+import { Loader2, Package, Truck, Warehouse, Users, BarChart3, Smartphone, ArrowDownToLine, ArrowUpFromLine, Route, Navigation, MapPin, LifeBuoy, Boxes, Archive, FileCheck2, LayoutDashboard, DoorOpen, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadDeliverablePackages, isLocalPackage, loadDrivers, loadNotes, loadDestinations, loadDeliverySchedules, loadVehicles, loadYachtNames,
@@ -15,6 +15,7 @@ import { ShipSyncEdasBoard } from "@/components/shipsync/ShipSyncEdasBoard";
 import { ShipSyncDispatch } from "@/components/shipsync/ShipSyncDispatch";
 import { ShipSyncRouting } from "@/components/shipsync/ShipSyncRouting";
 import { ShipSyncWarehouse } from "@/components/shipsync/ShipSyncWarehouse";
+import { ShipSyncThirdPartyStorage } from "@/components/shipsync/ShipSyncThirdPartyStorage";
 import { ShipSyncDrivers } from "@/components/shipsync/ShipSyncDrivers";
 import { ShipSyncDashboard } from "@/components/shipsync/ShipSyncDashboard";
 import { ShipSyncOverview } from "@/components/shipsync/ShipSyncOverview";
@@ -46,6 +47,7 @@ const TABS = [
   { key: "routing",  label: "Routing",        icon: Route },
   { key: "dispatch", label: "Dispatched",     icon: Truck },
   { key: "warehouse", label: "Warehouse",     icon: Warehouse },
+  { key: "thirdparty", label: "3rd Party Storage", icon: Archive },
   { key: "locations", label: "Locations",     icon: MapPin },
   { key: "drivers",  label: "Drivers",        icon: Users },
   { key: "tracking", label: "Van Tracking",   icon: Navigation },
@@ -68,6 +70,8 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>(
     initialTab && TAB_KEYS.includes(initialTab) ? (initialTab as (typeof TABS)[number]["key"]) : "overview",
   );
+  // Keep the open tab in view when the tab row is scrolled sideways (only when the tab changes, so a manual scroll isn't undone).
+  useEffect(() => { document.querySelector("[data-shipsync-tab=active]")?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [tab]);
   const [data, setData] = useState<ShipSyncData>({ packages: [], deliverable: [], drivers: [], notes: [], destinations: [], schedule: [], vehicles: [], yachts: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,14 +125,17 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
       </header>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-border/60 bg-card/20 px-4">
+      {/* More tabs than fit across: the row scrolls sideways (drag the slider, swipe, or use the mouse wheel) instead of squeezing the labels. */}
+      <div className="pds-scroll flex gap-1 overflow-x-auto border-b border-border/60 bg-card/20 px-4"
+        onWheel={(e) => { if (e.deltaY !== 0 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY; }}>
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
+              data-shipsync-tab={active ? "active" : undefined}
               className={cn(
-                "flex items-center gap-2 border-b-2 px-4 py-1.5 text-sm font-medium transition-colors duration-150",
+                "flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-1.5 text-sm font-medium transition-colors duration-150",
                 active ? "border-primary bg-primary/10 font-semibold text-foreground" : "border-transparent text-muted-foreground hover:bg-white/[0.03] hover:text-foreground",
               )}>
               <Icon className="h-4 w-4" /> {t.label}
@@ -161,6 +168,7 @@ export function ShipSyncPage({ initialTab }: { initialTab?: string } = {}) {
             {tab === "dispatch" && <ShipSyncDispatch data={data} reload={reload} />}
             {tab === "routing" && <ShipSyncRouting data={data} reload={reload} />}
             {tab === "warehouse" && <ShipSyncWarehouse data={data} reload={reload} />}
+            {tab === "thirdparty" && <ShipSyncThirdPartyStorage />}
             {tab === "locations" && <ShipSyncLocations data={data} reload={reload} />}
             {tab === "drivers" && <ShipSyncDrivers data={data} reload={reload} />}
             {tab === "tracking" && <FleetTrackingPage />}
