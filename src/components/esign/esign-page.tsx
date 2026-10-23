@@ -16,7 +16,7 @@ import { ESIGN_STATUS_ORDER, ESIGN_STATUS_LABEL, ESIGN_STATUS_COLOR, sendOutcome
 
 type Doc = {
   id: string; reference: string | null; title: string; signer_name: string; signer_email: string;
-  status: string; sent_at: string | null; signed_at: string | null; updated_at: string;
+  status: string; sent_at: string | null; signed_at: string | null; updated_at: string; kind: string | null;
 };
 
 const EMPTY = { title: "", description: "", signer_name: "", signer_email: "", message: "" };
@@ -42,7 +42,7 @@ export function EsignPage({ onOpenDocument, confidential = false }: { onOpenDocu
   async function load() {
     setLoading(true);
     const { data, error } = await (supabase as any).from("esign_documents")
-      .select("id, reference, title, signer_name, signer_email, status, sent_at, signed_at, updated_at")
+      .select("id, reference, title, signer_name, signer_email, status, sent_at, signed_at, updated_at, kind")
       .eq("confidential", confidential)
       .order("created_at", { ascending: false });
     if (error) toast.error(error.message);
@@ -163,9 +163,10 @@ export function EsignPage({ onOpenDocument, confidential = false }: { onOpenDocu
                     <td className="px-4 py-3 whitespace-nowrap">{onOpenDocument
                       ? <button onClick={() => onOpenDocument(d.id)} className="font-mono text-xs text-primary hover:underline">{d.reference ?? "—"}</button>
                       : <Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-mono text-xs text-primary hover:underline">{d.reference ?? "—"}</Link>}</td>
-                    <td className="px-4 py-3">{onOpenDocument
+                    <td className="px-4 py-3"><div className="flex items-center gap-2">{onOpenDocument
                       ? <button onClick={() => onOpenDocument(d.id)} className="font-medium hover:text-primary transition-colors line-clamp-1 text-left">{d.title}</button>
-                      : <Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-medium hover:text-primary transition-colors line-clamp-1">{d.title}</Link>}</td>
+                      : <Link to="/esign/$documentId" params={{ documentId: d.id }} className="font-medium hover:text-primary transition-colors line-clamp-1">{d.title}</Link>}
+                      {d.kind === "quotation" && <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10.5px] font-semibold text-primary">Quote</span>}</div></td>
                     <td className="px-4 py-3 whitespace-nowrap"><div className="leading-tight">{d.signer_name}</div><div className="text-xs text-muted-foreground">{d.signer_email}</div></td>
                     <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold", ESIGN_STATUS_COLOR[d.status] ?? "bg-muted text-muted-foreground")}>{ESIGN_STATUS_LABEL[d.status] ?? d.status}</span></td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{fmt(d.sent_at)}</td>

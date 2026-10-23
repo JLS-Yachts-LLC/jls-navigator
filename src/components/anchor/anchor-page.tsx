@@ -109,12 +109,12 @@ export function AnchorPage() {
         {current === "confidential"
           ? confTab === "documents" ? <EsignPage confidential onOpenDocument={setOpenDocId} />
             : confTab === "campaigns" ? <CampaignsPage confidential onOpenDocument={setOpenDocId} />
-            : confTab === "templates" ? <EsignTemplatesPage confidential />
+            : confTab === "templates" ? <EsignTemplatesPage confidential onOpenDocument={setOpenDocId} />
             : confTab === "forms" ? <FormsPage confidential />
             : <SignatoriesPage confidential />
           : current === "documents" ? <EsignPage onOpenDocument={setOpenDocId} />
           : current === "campaigns" ? <CampaignsPage onOpenDocument={setOpenDocId} resumeCampaignId={campaignId} onDetailChange={setCampaignId} />
-          : current === "templates" ? <EsignTemplatesPage />
+          : current === "templates" ? <EsignTemplatesPage onOpenDocument={setOpenDocId} />
           : current === "signatories" ? <SignatoriesPage />
           : <FormsPage />}
       </div>

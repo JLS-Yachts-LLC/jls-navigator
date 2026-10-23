@@ -12,7 +12,7 @@ import { toast } from "sonner";
 type Loaded = {
   title: string; description: string | null; reference: string | null;
   signerName: string; message: string | null; status: string;
-  allowEsign?: boolean; signedMethod?: string | null;
+  allowEsign?: boolean; signedMethod?: string | null; isQuotation?: boolean;
   fileUrl: string; signedFileUrl: string | null;
   forms?: PackForm[]; documents?: string[];
 };
@@ -131,7 +131,7 @@ export function PublicSignPage() {
         ) : done === "signed" ? (
           <div className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
             <CheckCircle2 className="mx-auto mb-3 h-9 w-9 text-emerald-500" />
-            <h1 className="font-semibold text-lg">{uploaded ? "Thank you — signed copy received!" : "Thank you — signed!"}</h1>
+            <h1 className="font-semibold text-lg">{uploaded ? "Thank you — signed copy received!" : doc?.isQuotation ? "Thank you — quotation accepted!" : "Thank you — signed!"}</h1>
             <p className="mt-1 text-sm text-slate-500">{uploaded ? "We've received your signed copy" : "Your signature has been recorded"}{doc?.reference ? ` for ${doc.reference}` : ""}. A copy has been emailed to you.</p>
             {signedUrl && <Button asChild className="mt-4 gap-1.5"><a href={signedUrl} target="_blank" rel="noreferrer"><Download className="h-4 w-4" /> Download signed copy</a></Button>}
           </div>
@@ -144,9 +144,9 @@ export function PublicSignPage() {
         ) : doc ? (
           <div className="space-y-5">
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-xs uppercase tracking-wide text-slate-400">{doc.reference ?? "Document"}</div>
+              <div className="text-xs uppercase tracking-wide text-slate-400">{doc.reference ?? (doc.isQuotation ? "Quotation" : "Document")}</div>
               <h1 className="mt-0.5 text-xl font-bold">{doc.title}</h1>
-              <p className="mt-1 text-sm text-slate-500">Hello {doc.signerName}, please review the document below and {doc.allowEsign === false ? "return a signed copy" : "sign"}.</p>
+              <p className="mt-1 text-sm text-slate-500">Hello {doc.signerName}, please review the {doc.isQuotation ? "quotation" : "document"} below and {doc.allowEsign === false ? "return a signed copy" : doc.isQuotation ? "sign to accept it" : "sign"}.</p>
               {doc.message && <p className="mt-3 whitespace-pre-line border-l-2 border-blue-600 pl-3 text-sm text-slate-600">{doc.message.replace(/\*\*/g, "")}</p>}
             </div>
 
@@ -179,12 +179,12 @@ export function PublicSignPage() {
               <div className="mt-4"><VesselStampPicker onChange={setStamp} /></div>
               <label className="mt-4 flex items-start gap-2 text-sm text-slate-600">
                 <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-0.5" />
-                <span>I agree to sign this document electronically, and I consent to my signature, any vessel stamp I added, my name, IP address and timestamp being recorded as evidence of signing.</span>
+                <span>{doc.isQuotation ? "I accept this quotation and agree to sign it electronically," : "I agree to sign this document electronically,"} and I consent to my signature, any vessel stamp I added, my name, IP address and timestamp being recorded as evidence of signing.</span>
               </label>
               <div className="mt-4 flex items-center justify-between gap-3">
                 <Button variant="ghost" className="text-slate-500 hover:text-red-600" onClick={() => setDeclineOpen(true)} disabled={submitting}>Decline</Button>
                 <Button onClick={submit} disabled={submitting || !sig || !agreed} className="gap-1.5">
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} Sign document
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />} {doc.isQuotation ? "Accept & sign quotation" : "Sign document"}
                 </Button>
               </div>
             </div>

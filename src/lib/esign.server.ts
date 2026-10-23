@@ -71,16 +71,20 @@ async function signedUrl(path: string, expiresIn = 60 * 60): Promise<string> {
   return (data?.signedUrl as string) ?? "";
 }
 
+// Quotations (SD-0083) go out as "accept & sign" rather than a plain signature request.
+const isQuote = (doc: any) => doc?.kind === "quotation";
+
 function inviteHtml(doc: any, link: string): string {
+  const quote = isQuote(doc);
   return `<!DOCTYPE html><html><body style="margin:0;background:#f8fafc;font-family:Inter,Arial,sans-serif;color:#0f172a;">
   <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
     <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
       ${jlsEmailHeaderRow()}
       <tr><td style="padding:32px;">
         <p style="margin:0 0 6px;font-size:15px;color:#64748b;">Dear ${doc.signer_name},</p>
-        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">You have a document waiting for your electronic signature: <strong>${doc.title}</strong>${doc.reference ? ` <span style="color:#94a3b8;">(${doc.reference})</span>` : ""}.</p>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">${quote ? "Please find our quotation below for your review. To accept it, sign it electronically" : "You have a document waiting for your electronic signature"}: <strong>${doc.title}</strong>${doc.reference ? ` <span style="color:#94a3b8;">(${doc.reference})</span>` : ""}.</p>
         ${doc.message ? `<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#374151;border-left:3px solid #0070C0;padding-left:12px;">${doc.message}</p>` : ""}
-        <p style="margin:0 0 24px;"><a href="${link}" style="background:#0070C0;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:8px;display:inline-block;">Review &amp; Sign</a></p>
+        <p style="margin:0 0 24px;"><a href="${link}" style="background:#0070C0;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 24px;border-radius:8px;display:inline-block;">${quote ? "Review &amp; Accept" : "Review &amp; Sign"}</a></p>
         <p style="margin:0;font-size:12px;color:#94a3b8;">Or paste this link into your browser:<br>${link}</p>
         <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;">This link expires in ${TOKEN_TTL_DAYS} days.</p>
       </td></tr>
@@ -169,9 +173,9 @@ export async function deliverSigningInvite(doc: any, senderEmail: string | null,
       from: ANCHOR_SENDER,
       to: [doc.signer_email],
       cc: senderEmail ? [senderEmail] : [],
-      subject: `Signature requested: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
+      subject: `${isQuote(doc) ? "Quotation for acceptance" : "Signature requested"}: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
       html: inviteHtml(doc, link),
-      text: `Dear ${doc.signer_name},\n\nYou have a document waiting for your signature: ${doc.title}.\n${doc.message ? `\n${doc.message}\n` : ""}\nReview & sign: ${link}\n\nThis link expires in ${TOKEN_TTL_DAYS} days.\n\nJLS Yachts LLC`,
+      text: `Dear ${doc.signer_name},\n\n${isQuote(doc) ? "Please find our quotation for your review and acceptance" : "You have a document waiting for your signature"}: ${doc.title}.\n${doc.message ? `\n${doc.message}\n` : ""}\n${isQuote(doc) ? "Review & accept" : "Review & sign"}: ${link}\n\nThis link expires in ${TOKEN_TTL_DAYS} days.\n\nJLS Yachts LLC`,
     });
 
     await (supabaseAdmin as any).from("esign_documents").update({
@@ -221,6 +225,7 @@ async function responseFor(doc: any, status: string) {
     signerName: doc.signer_name as string,
     message: (doc.message ?? null) as string | null,
     status,
+    isQuotation: isQuote(doc),
     // Campaigns can switch e-signature off (paper only) — the page then offers
     // just the download + upload-a-signed-copy route.
     allowEsign: doc.allow_esign !== false,
@@ -508,8 +513,8 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
       await sendEmail({
         from: ANCHOR_SENDER,
         to: [doc.signer_email],
-        subject: `Signed: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
-        html: `<p>Thank you, ${doc.signer_name}. Your signed copy of <strong>${doc.title}</strong> is attached as a link below.</p><p><a href="${url}">Download signed document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts LLC</p>`,
+        subject: `${isQuote(doc) ? "Quotation accepted" : "Signed"}: ${doc.title}${doc.reference ? ` (${doc.reference})` : ""}`,
+        html: `<p>Thank you, ${doc.signer_name}. ${isQuote(doc) ? "We've received your acceptance of" : "Your signed copy of"} <strong>${doc.title}</strong>${isQuote(doc) ? " — your signed copy" : ""} is attached as a link below.</p><p><a href="${url}">Download signed document</a></p><p style="color:#94a3b8;font-size:12px;">JLS Yachts LLC</p>`,
         text: `Thank you, ${doc.signer_name}. Signed copy: ${url}`,
       });
     } catch { /* non-fatal */ }

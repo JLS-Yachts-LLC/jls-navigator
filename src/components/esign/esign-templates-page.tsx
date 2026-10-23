@@ -17,6 +17,7 @@ import { FileStack, Plus, Search, Loader2, Send, Upload, UploadCloud, FileText, 
 import { confidentialPath } from "@/components/anchor/confidential";
 import { toast } from "sonner";
 import { sendOutcome } from "./esign-meta";
+import { QuotationsBox } from "./quotations-box";
 import { cn } from "@/lib/utils";
 
 type Template = {
@@ -35,7 +36,7 @@ const EMPTY_NEW = { name: "", category: "", description: "", sigPage: "1", sigPo
 const EMPTY_USE = { title: "", signer_name: "", signer_email: "", message: "" };
 
 /** `confidential` → the Confidential area's templates (admins + the Anchor — Confidential permission only). */
-export function EsignTemplatesPage({ confidential = false }: { confidential?: boolean } = {}) {
+export function EsignTemplatesPage({ confidential = false, onOpenDocument }: { confidential?: boolean; onOpenDocument?: (id: string) => void } = {}) {
   const { user } = useAuth();
   const [rows, setRows] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -193,6 +194,8 @@ export function EsignTemplatesPage({ confidential = false }: { confidential?: bo
       </header>
 
       <div className="flex-1 overflow-auto px-6 py-5">
+        {/* SD-0083 — one-off quotes for the client to accept & sign, above the reusable templates. */}
+        <div className="mb-6"><QuotationsBox confidential={confidential} onOpenDocument={onOpenDocument} /></div>
         {loading ? (
           <div className="flex h-40 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : filtered.length === 0 ? (
