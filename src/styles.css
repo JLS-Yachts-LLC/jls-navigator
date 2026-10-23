@@ -479,6 +479,17 @@
   color: var(--foreground);
 }
 .pds-embed { background: #0D1E44; }
+/* Native <select> dropdowns: Windows Chrome draws the option list with its own
+   white background but keeps the select's light text, so options were invisible
+   (SD-0084 — Religion, Gender, Marital status in the visa personal-info step).
+   Give every option a solid surface + text and render the popup dark. */
+:is(.pds-embed, .pds-theme, [role="dialog"], [role="alertdialog"], [vaul-drawer]) select {
+  color-scheme: dark;
+}
+:is(.pds-embed, .pds-theme, [role="dialog"], [role="alertdialog"], [vaul-drawer]) select :is(option, optgroup) {
+  background-color: var(--card);
+  color: var(--foreground);
+}
 /* @theme inline bakes the Space Grotesk stack into the font-sans/font-display
    utility classes, so the variable remap above can't reach them — override the
    classes directly for embedded pages and portaled surfaces. */
