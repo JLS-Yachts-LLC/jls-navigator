@@ -62,6 +62,27 @@ export function fillDmaDocx(formKey: string, values: Record<string, any>): Uint8
   return zipSync(files, { level: 6 });
 }
 
+/**
+ * The agent's "Stamp & Signature" box on the rendered DMA PDF — measured from
+ * Graph's output, as fractions of the page from the top-left (the centre of
+ * the box). On the Departure notice the box is at the foot of page 2; on the
+ * Arrival notice it doesn't fit and Word carries it to the top of page 3.
+ *
+ * If a long answer pushes the layout onto a different number of pages, the
+ * box has moved and we don't know where to — no spot, and the signature goes
+ * on the certificate page only rather than over the form's text.
+ */
+const DMA_SIGNATURE_BOX: Record<string, { pages: number; x: number; y: number }> = {
+  "dma-notice-of-departure": { pages: 2, x: 0.256, y: 0.848 },
+  "dma-notice-of-arrival": { pages: 3, x: 0.258, y: 0.126 },
+};
+
+export function dmaSignatureFields(formKey: string, pageCount: number): any[] {
+  const box = DMA_SIGNATURE_BOX[formKey];
+  if (!box || box.pages !== pageCount) return [];
+  return [{ page: box.pages, x: box.x, y: box.y, role: "client", label: false }];
+}
+
 /** Generate the bilingual DMA PDF via Graph. Returns PDF bytes (throws on failure). */
 export async function generateDmaPdf(formKey: string, values: Record<string, any>, title: string): Promise<Uint8Array> {
   const cfg = await getSpConfig();

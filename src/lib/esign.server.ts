@@ -494,6 +494,12 @@ export const doSubmitSignature = createServerFn({ method: "POST" })
       ...(pack ? { pack } : {}),
     }).eq("id", doc.id);
     if (pack && partBytes.length) await fileCompletedForms(doc, pack, partBytes);
+    // A form sent from Anchor → Forms: its own record shows Signed and opens the signed copy.
+    try {
+      await (supabaseAdmin as any).from("anchor_form_submissions")
+        .update({ status: "signed", signed_pdf_path: signedPath, updated_at: signedAt.toISOString() })
+        .eq("esign_document_id", doc.id).eq("status", "sent_for_signature");
+    } catch { /* never blocks the signing */ }
     await logEvent(doc.id, "signed", doc.signer_email, meta);
     // Usage log: each company signature that went on, and who approved it.
     for (const sid of stampedCompany) {

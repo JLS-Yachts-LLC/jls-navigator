@@ -6,8 +6,8 @@
  *   sign     → create an Anchor (e-Sign) document from the PDF and send it for signature
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { buildFormPdf } from "@/lib/anchor-forms/pdf.server";
-import { generateDmaPdf } from "@/lib/anchor-forms/dma-docx.server";
+import { buildFormPdf, buildFormPdfDetailed } from "@/lib/anchor-forms/pdf.server";
+import { dmaSignatureFields, generateDmaPdf } from "@/lib/anchor-forms/dma-docx.server";
 import { generateCf12aPdf } from "@/lib/anchor-forms/cf12a-pdf.server";
 import { getFormDef } from "@/lib/anchor-forms/definitions";
 import { sendEmail } from "@/lib/ses.server";
@@ -25,8 +25,34 @@ async function signedUrl(path: string, expiresIn = 60 * 60 * 24 * 14): Promise<s
 }
 
 /**
- * Stamp a signatory's signature image onto the bottom-right of the form PDF's last page.
- * Only with an approved use of their signature for this submission and this exact PDF.
+ * Where the signature goes on a submission's PDF: its signature box / [[signature]]
+ * spot, recorded when the PDF was built. Submissions from before that was recorded
+ * work it out again — a DMA notice from its page count, an in-house form by
+ * rebuilding its layout. [] = no known spot (the certificate page carries it).
+ */
+async function signatureFieldsFor(sub: any): Promise<any[]> {
+  if (Array.isArray(sub.signature_fields)) return sub.signature_fields;
+  try {
+    const def = getFormDef(sub.form_key);
+    if (!def || def.key === "cf12a") return [];
+    if (def.key.startsWith("dma-")) {
+      const { data: blob } = await db().storage.from(BUCKET).download(sub.pdf_path);
+      if (!blob) return [];
+      const pdf = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), { ignoreEncryption: true });
+      return dmaSignatureFields(def.key, pdf.getPageCount());
+    }
+    const { signature } = await buildFormPdfDetailed(def, sub.values ?? {});
+    return signature ? [{ page: signature.page, x: signature.x, y: signature.y, role: "client", label: false }] : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Stamp a signatory's signature image onto the form PDF — in its signature box
+ * when it has one (the DMA "Stamp & Signature" box), else the bottom-right of
+ * the last page. Only with an approved use of their signature for this
+ * submission and this exact PDF.
  */
 async function stampSignature(sub: any, outPath: string): Promise<{ ok: boolean; name?: string; approvedBy?: string | null; reason?: string }> {
   const { data: sig } = await db().from("jls_signatories").select("full_name, signature_path").eq("id", sub.signatory_id).maybeSingle();
@@ -45,11 +71,15 @@ async function stampSignature(sub: any, outPath: string): Promise<{ ok: boolean;
   if (!pdfBlob || !pngBlob) return { ok: false, reason: "file missing" };
   const pdf = await PDFDocument.load(new Uint8Array(await pdfBlob.arrayBuffer()), { ignoreEncryption: true });
   const png = await pdf.embedPng(new Uint8Array(await pngBlob.arrayBuffer()));
-  const page = pdf.getPages()[pdf.getPageCount() - 1];
-  const { width } = page.getSize();
+  const spot = (await signatureFieldsFor(sub)).find((f) => typeof f.x === "number" && typeof f.y === "number");
+  const page = pdf.getPages()[Math.min(pdf.getPageCount(), spot?.page ?? pdf.getPageCount()) - 1];
+  const { width, height } = page.getSize();
   const w = 150; const h = (png.height / png.width) * w;
-  page.drawImage(png, { x: width - w - 48, y: 60, width: w, height: h });
-  page.drawText(`Signed: ${sig.full_name}`, { x: width - w - 48, y: 50, size: 7 });
+  // In the box: centred on its spot. Otherwise bottom-right, as before.
+  const x = spot ? Math.min(Math.max(spot.x * width - w / 2, 4), width - w - 4) : width - w - 48;
+  const y = spot ? Math.min(Math.max((1 - spot.y) * height - h / 2, 14), height - h - 4) : 60;
+  page.drawImage(png, { x, y, width: w, height: h });
+  page.drawText(`Signed: ${sig.full_name}`, { x, y: y - 10, size: 7 });
   const bytes = await pdf.save();
   const { error } = await db().storage.from(BUCKET).upload(outPath, bytes, { contentType: "application/pdf", upsert: true });
   if (error) return { ok: false, reason: "upload failed" };
@@ -139,22 +169,31 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
       // DMA notices render the authority-exact bilingual (EN/AR) PDF via Graph;
       // everything else uses the in-house pdf-lib renderer. Fall back to pdf-lib
       // if the Graph conversion fails so a document is always produced.
+      // Where a signature goes on this PDF is worked out here, from the layout
+      // actually produced, and kept on the submission (signatureFieldsFor).
       let pdfBytes: Uint8Array; let pdfWarning: string | null = null;
+      let signatureFields: any[] = [];
       if (def.key === "cf12a") {
         try { pdfBytes = await generateCf12aPdf(values); }
         catch (e: any) { pdfWarning = `Official CF12a fill failed (${e?.message ?? e}); served a plain version`; pdfBytes = await buildFormPdf(def, values); }
       } else if (def.key.startsWith("dma-")) {
-        try { pdfBytes = await generateDmaPdf(def.key, values, def.title); }
+        try {
+          pdfBytes = await generateDmaPdf(def.key, values, def.title);
+          const pages = (await PDFDocument.load(pdfBytes, { ignoreEncryption: true })).getPageCount();
+          signatureFields = dmaSignatureFields(def.key, pages);
+        }
         catch (e: any) { pdfWarning = `Bilingual PDF failed (${e?.message ?? e}); served the English version`; pdfBytes = await buildFormPdf(def, values); }
       } else {
-        pdfBytes = await buildFormPdf(def, values);
+        const built = await buildFormPdfDetailed(def, values);
+        pdfBytes = built.bytes;
+        if (built.signature) signatureFields = [{ page: built.signature.page, x: built.signature.x, y: built.signature.y, role: "client", label: false }];
       }
       const path = inArea(confidential, `forms/${sub.id}.pdf`);
       const { error: upErr } = await db().storage.from(BUCKET)
         .upload(path, pdfBytes, { contentType: "application/pdf", upsert: true });
       if (upErr) return json({ ok: false, error: `PDF upload failed: ${upErr.message}` }, 500);
 
-      await db().from("anchor_form_submissions").update({ pdf_path: path, updated_at: new Date().toISOString() }).eq("id", sub.id);
+      await db().from("anchor_form_submissions").update({ pdf_path: path, signature_fields: signatureFields, updated_at: new Date().toISOString() }).eq("id", sub.id);
       return json({ ok: true, submissionId: sub.id, pdfUrl: await signedUrl(path), emailTo: def.emailTo ?? null, title: def.title, pdfWarning });
     }
 
@@ -191,6 +230,8 @@ export async function anchorFormsHandler(request: Request): Promise<Response> {
 
       const { data: doc, error } = await db().from("esign_documents").insert({
         title: sub.title, file_path: sub.pdf_path, file_name: `${sub.title}.pdf`,
+        // The signature goes in the form's own box, not only on the certificate page.
+        signature_fields: await signatureFieldsFor(sub),
         signer_name: signerName, signer_email: signerEmail,
         status: "sent", signing_token: token, token_expires_at: expires,
         sent_at: new Date().toISOString(), created_by: user.id,
