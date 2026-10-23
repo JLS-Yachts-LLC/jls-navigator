@@ -77,12 +77,17 @@ export const Route = createFileRoute("/_app/polaris-redesign")({
   // `boat` / `view` deep-open an Orbit 2 managed boat (e.g. a service-due alert:
   // ?screen=orbit2&boat=<id>&view=services). `c` / `l` deep-open a WhatsApp chat
   // (contact + number), e.g. the "assigned to you" bell: ?screen=whatsapp&c=<id>&l=<id>.
-  validateSearch: (search: Record<string, unknown>): { screen?: string; boat?: string; view?: string; c?: string; l?: string } => ({
+  // `tab` / `date` / `time` open Permits → Vessel Operation Services on a new
+  // project for that slot (?screen=permits&tab=vessel-ops&date=…&time=…).
+  validateSearch: (search: Record<string, unknown>): { screen?: string; boat?: string; view?: string; c?: string; l?: string; tab?: string; date?: string; time?: string } => ({
     ...(typeof search.screen === "string" ? { screen: search.screen } : {}),
     ...(typeof search.boat === "string" ? { boat: search.boat } : {}),
     ...(typeof search.view === "string" ? { view: search.view } : {}),
     ...(typeof search.c === "string" ? { c: search.c } : {}),
     ...(typeof search.l === "string" ? { l: search.l } : {}),
+    ...(typeof search.tab === "string" ? { tab: search.tab } : {}),
+    ...(typeof search.date === "string" ? { date: search.date } : {}),
+    ...(typeof search.time === "string" ? { time: search.time } : {}),
   }),
   head: () => ({ meta: [{ title: "Polaris" }] }),
 });

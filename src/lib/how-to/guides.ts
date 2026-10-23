@@ -1735,7 +1735,7 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
     title: "Log an Orbit 2 project or bunkering job",
     summary: "Record vessel service jobs and bunkering for managed boats and track them to invoicing.",
     section: "Services",
-    screens: ["orbit2"],
+    screens: ["permits", "orbit2"],
     minutes: 3,
     steps: [
       {
@@ -1748,11 +1748,7 @@ export const HOW_TO_GUIDES: HowToGuide[] = [
       },
       {
         title: "Find projects",
-        text: "Click **Project**, then **Project List**, **Bunkering**, **Internal Request** or **EHS NOC Record**. Switch between **All**, **To Be Invoiced** and **Invoiced**, or search.",
-        image: img750("orbit2-projects", "Project tabs and views", [
-          { x: 197, y: 176, w: 386, h: 27 },
-          { x: 193, y: 214, w: 318, h: 29 },
-        ]),
+        text: "Click **Permits**, then the **Vessel Operation Services** tab (after **Abu Dhabi**), then **Project List**, **Bunkering** or **EHS NOC Record**. Switch between **All**, **To Be Invoiced** and **Invoiced**, or search. **Internal Request** stays in Orbit 2 under **Project**.",
       },
       {
         title: "Add a project",

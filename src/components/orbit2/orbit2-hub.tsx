@@ -4,38 +4,28 @@
  * Three modules across the top, per the specification:
  *
  *   Dashboard      analytics, the calendar and workforce scheduling
- *   Project        the master registry — Project List, Bunkering, Internal Request, EHS NOC Record
+ *   Project        Internal Request
  *   Managed Boats  small-boat operations and maintenance
  *
- * The hub owns the data. All three screens read the same load, so a record added
- * in Bunkering shows on the dashboard the moment it is saved without either
- * screen knowing the other exists.
+ * Project List, Bunkering and EHS NOC Record moved to Permits → Vessel Operation
+ * Services (orbit2-vessel-ops.tsx), where the Port Agency team works them. They
+ * read the same tables, so the dashboard still counts every record.
  */
 import { useEffect, useState } from "react";
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { LayoutDashboard, FolderKanban, Ship } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useOrbit2, suggestionsFor } from "./orbit2-data";
+import { useOrbit2 } from "./orbit2-data";
 import { Orbit2Dashboard } from "./orbit2-dashboard";
-import { Orbit2Projects, type Orbit2Prefill } from "./orbit2-projects";
-import { Orbit2Noc } from "./orbit2-noc";
 import { Orbit2InternalRequests } from "./orbit2-internal-requests";
 import { Orbit2Boats } from "./orbit2-boats";
 
 type Tab = "dashboard" | "project" | "boats";
-type Sub = "list" | "bunkering" | "internal" | "noc";
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "project", label: "Project", icon: FolderKanban },
   { key: "boats", label: "Managed Boats", icon: Ship },
-];
-
-const SUBS: { key: Sub; label: string }[] = [
-  { key: "list", label: "Project List" },
-  { key: "bunkering", label: "Bunkering" },
-  { key: "internal", label: "Internal Request" },
-  { key: "noc", label: "EHS NOC Record" },
 ];
 
 export function Orbit2Hub() {
@@ -46,24 +36,19 @@ export function Orbit2Hub() {
   const linkBoat = typeof link?.boat === "string" ? link.boat : null;
   const linkView = typeof link?.view === "string" ? link.view : null;
   useEffect(() => { if (linkBoat) setTab("boats"); }, [linkBoat]);
-  const [sub, setSub] = useState<Sub>("list");
-  const [prefill, setPrefill] = useState<Orbit2Prefill | null>(null);
+  const navigate = useNavigate();
 
   const {
     projects, noc, boats, boatTasks, boatDocuments, boatInventory, schedule, loading, reload,
   } = useOrbit2();
 
-  // Managed boats feed the client typeahead everywhere a boat can be named.
-  const boatNames = suggestionsFor(boats.map((b) => b.name));
-
   /**
    * Quick Task Initialization — a click on an empty calendar slot lands on the
-   * Project List with the date and time already filled in.
+   * Project List (Permits → Vessel Operation Services) with the date and time
+   * already filled in.
    */
   function createAt(date: string, time: string) {
-    setPrefill({ schedule_date: date, schedule_time: time, nonce: Date.now() });
-    setSub("list");
-    setTab("project");
+    navigate({ to: "/polaris-redesign", search: { screen: "permits", tab: "vessel-ops", date, time } as any });
   }
 
   return (
@@ -83,18 +68,6 @@ export function Orbit2Hub() {
         ))}
       </nav>
 
-      {tab === "project" && (
-        <nav className="flex items-center gap-1 border-b border-border/40 px-6 py-2">
-          {SUBS.map(({ key, label }) => (
-            <button key={key} onClick={() => setSub(key)}
-              className={cn("rounded-md px-3 py-1 text-[15px] font-medium transition",
-                sub === key ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60")}>
-              {label}
-            </button>
-          ))}
-        </nav>
-      )}
-
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === "dashboard" ? (
           <Orbit2Dashboard
@@ -107,20 +80,8 @@ export function Orbit2Hub() {
             loading={loading} reload={reload}
             focusBoatId={linkBoat} focusServices={linkView === "services"}
           />
-        ) : sub === "internal" ? (
-          <Orbit2InternalRequests />
-        ) : sub === "noc" ? (
-          <Orbit2Noc
-            rows={noc} loading={loading} reload={reload}
-            clientPool={[...boatNames, ...suggestionsFor(projects.map((p) => p.client_name))]}
-          />
         ) : (
-          <Orbit2Projects
-            key={sub}
-            recordType={sub === "bunkering" ? "bunkering" : "project"}
-            projects={projects} loading={loading} reload={reload} boatNames={boatNames}
-            prefill={sub === "list" ? prefill : null}
-          />
+          <Orbit2InternalRequests />
         )}
       </div>
     </div>

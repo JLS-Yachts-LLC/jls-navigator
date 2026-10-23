@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { Shield, FileText, Inbox } from "lucide-react";
+import { useRouterState } from "@tanstack/react-router";
+import { Shield, FileText, Inbox, Ship } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PermitInbox } from "@/components/permits/permit-inbox";
 import { cn } from "@/lib/utils";
 import { PermitCommandCentre } from "@/components/permit-command-centre";
 import { PermitsPage } from "@/components/permits-page";
 import { PERMIT_META, type PermitType } from "@/lib/permit-types";
+import { Orbit2VesselOps } from "@/components/orbit2/orbit2-vessel-ops";
+import type { Orbit2Prefill } from "@/components/orbit2/orbit2-projects";
 
 /**
  * Permits hub — the Command Centre plus every permit type as mini tabs
@@ -28,7 +31,19 @@ const SHORT_LABEL: Record<string, string> = {
 };
 
 export function PermitsHub() {
-  const [tab, setTab] = useState<"centre" | "inbox" | PermitType>("centre");
+  // ?tab=vessel-ops (optionally &date=&time=) opens Vessel Operation Services —
+  // the Orbit 2 calendar uses it to start a new project on the clicked slot.
+  const link = useRouterState({ select: (s) => s.location.search as { tab?: unknown; date?: unknown; time?: unknown } });
+  const linkVesselOps = link?.tab === "vessel-ops";
+  const linkDate = typeof link?.date === "string" ? link.date : null;
+  const linkTime = typeof link?.time === "string" ? link.time : "";
+  const [tab, setTab] = useState<"centre" | "inbox" | "vessel_ops" | PermitType>(linkVesselOps ? "vessel_ops" : "centre");
+  const [prefill, setPrefill] = useState<Orbit2Prefill | null>(null);
+  useEffect(() => {
+    if (!linkVesselOps) return;
+    setTab("vessel_ops");
+    if (linkDate) setPrefill({ schedule_date: linkDate, schedule_time: linkTime, nonce: Date.now() });
+  }, [linkVesselOps, linkDate, linkTime]);
   // Emailed permits waiting for the Agency team — shown on the Inbox tab.
   const [inboxCount, setInboxCount] = useState(0);
   useEffect(() => {
@@ -78,6 +93,18 @@ export function PermitsHub() {
             <FileText className="h-3.5 w-3.5" /> {SHORT_LABEL[t] ?? PERMIT_META[t].label}
           </button>
         ))}
+        {/* Orbit 2 Project List, Bunkering and EHS NOC Record, worked by the Port Agency team. */}
+        <button
+          onClick={() => setTab("vessel_ops")}
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition",
+            tab === "vessel_ops"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Ship className="h-3.5 w-3.5" /> Vessel Operation Services
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -85,6 +112,8 @@ export function PermitsHub() {
           <PermitCommandCentre onOpenType={(t) => setTab(t)} />
         ) : tab === "inbox" ? (
           <PermitInbox onCountChange={setInboxCount} />
+        ) : tab === "vessel_ops" ? (
+          <Orbit2VesselOps prefill={prefill} />
         ) : (
           <PermitsPage key={tab} permitType={tab} />
         )}
